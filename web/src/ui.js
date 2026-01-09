@@ -682,10 +682,14 @@ export function closeTerminalModal() {
 }
 
 // Save dropdown
+let saveBtn;
+
 function setupSaveDropdown() {
-    // Toggle dropdown on button click
-    const btn = saveDropdown.querySelector('.btn-primary');
-    btn.addEventListener('click', (e) => {
+    saveBtn = document.getElementById('saveBtn');
+    const toggle = document.getElementById('saveToggle');
+
+    // Toggle dropdown on arrow click
+    toggle.addEventListener('click', (e) => {
         e.stopPropagation();
         saveMenu.classList.toggle('visible');
     });
@@ -695,7 +699,7 @@ function setupSaveDropdown() {
         saveMenu.classList.remove('visible');
     });
 
-    // Prevent dropdown from closing when clicking inside
+    // Prevent dropdown from closing when clicking inside menu
     saveMenu.addEventListener('click', (e) => {
         e.stopPropagation();
     });
@@ -722,7 +726,11 @@ export function setSaveMode(mode) {
     saveMenu.querySelectorAll('.dropdown-item').forEach(item => {
         item.classList.toggle('active', item.dataset.action === mode);
     });
-    // Execute the action
+    // Update button text
+    const labels = { shareUrl: 'Share URL', terminal: 'Copy for CLI', download: 'Download' };
+    saveBtn.textContent = labels[mode];
+    // Close menu and execute the action
+    saveMenu.classList.remove('visible');
     saveDefault();
 }
 

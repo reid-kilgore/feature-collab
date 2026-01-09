@@ -20,8 +20,8 @@
             <span class="shortcuts-hint"><kbd>⌘E</kbd> comment</span>
             <button class="btn" onclick="mdannotate.showHelp()">Help</button>
             <button class="btn" onclick="mdannotate.openFile()">Open</button>
-            <div class="dropdown" id="saveDropdown">
-                <button class="btn btn-primary" onclick="mdannotate.saveDefault()">Save ▾</button>
+            <div class="split-button" id="saveDropdown">
+                <button class="btn btn-primary split-main" onclick="mdannotate.saveDefault()" id="saveBtn">Share URL</button><button class="btn btn-primary split-toggle" id="saveToggle">▾</button>
                 <div class="dropdown-menu" id="saveMenu">
                     <button class="dropdown-item active" data-action="shareUrl" onclick="mdannotate.setSaveMode('shareUrl')">Share URL</button>
                     <button class="dropdown-item" data-action="terminal" onclick="mdannotate.setSaveMode('terminal')">Copy for CLI</button>
