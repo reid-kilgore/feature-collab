@@ -10,7 +10,7 @@ let editor, toolbar, commentsList, commentModal, commentInput, selectedPreview;
 let helpModal, status, stats, position, lineNumbers, syntaxHighlight;
 let previewPane, previewContent, previewToggle, commentCount, modalTitle, modalSubmit;
 let clearAllBtn, sourcePane, sourceToggle, annotationsToggle, commentsPane, toast;
-let welcomeOverlay, fileInput, terminalModal, terminalCommand;
+let fileInput, terminalModal, terminalCommand;
 let saveDropdown, saveMenu;
 
 let toastTimeout;
@@ -45,7 +45,6 @@ export function initUI() {
     annotationsToggle = document.getElementById('annotationsToggle');
     commentsPane = document.querySelector('.comments-pane');
     toast = document.getElementById('toast');
-    welcomeOverlay = document.getElementById('welcomeOverlay');
     fileInput = document.getElementById('fileInput');
     terminalModal = document.getElementById('terminalModal');
     terminalCommand = document.getElementById('terminalCommand');
@@ -70,12 +69,6 @@ function setupEventListeners() {
     editor.addEventListener('input', () => {
         setContent(editor.value);
         updateAll();
-        // Hide welcome overlay when user starts typing
-        showWelcome(false);
-    });
-    editor.addEventListener('focus', () => {
-        // Hide welcome overlay when editor is focused
-        showWelcome(false);
     });
     editor.addEventListener('scroll', () => {
         syntaxHighlight.scrollTop = editor.scrollTop;
@@ -132,10 +125,6 @@ function setupEventListeners() {
         }
     });
     document.body.addEventListener('drop', handleFileDrop);
-
-    // Download button drag
-    const downloadBtn = document.getElementById('downloadBtn');
-    downloadBtn.addEventListener('dragstart', handleDownloadDrag);
 
     // Resizers
     initResizer(document.getElementById('previewResizer'), previewPane, 'left', handlePreviewResize);
@@ -233,15 +222,6 @@ function handleKeyboardShortcuts(e) {
 export function setEditorContent(content) {
     editor.value = content;
     updateAll();
-}
-
-/**
- * Show or hide the welcome overlay
- */
-export function showWelcome(show) {
-    if (welcomeOverlay) {
-        welcomeOverlay.classList.toggle('hidden', !show);
-    }
 }
 
 /**
@@ -569,7 +549,6 @@ function loadFile(file) {
         setContent(cleanContent);
 
         updateTitle(file.name);
-        showWelcome(false);
         updateAll();
 
         // Check if already has annotations

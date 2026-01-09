@@ -5,7 +5,7 @@ import { initState, state, setHadAnnotations } from './editor.js';
 import { loadFromHash, stripHeader } from './url.js';
 import { getAnnotations } from './annotations.js';
 import {
-    initUI, setEditorContent, showWelcome, updateTitle, updateAll,
+    initUI, setEditorContent, updateTitle, updateAll,
     toolbarAddHighlight, openCommentModal, submitComment, closeModal,
     jumpToAnnotation, editCommentAt, deleteAnnotationAt, clearAllAnnotationsAction,
     toggleSource, togglePreview, toggleAnnotations,
@@ -25,7 +25,6 @@ async function init() {
             initState(hashData.content, hashData.filename, true);
             setEditorContent(hashData.content);
             updateTitle(hashData.filename, true);
-            showWelcome(false);
 
             // Check if document has annotations
             if (getAnnotations(hashData.content).length > 0) {
@@ -64,7 +63,6 @@ Add comments to highlights: {==highlighted==}{>>your note here<<}
     initState(welcomeContent, 'document.md', false);
     setEditorContent(welcomeContent);
     updateTitle('mdannotate');
-    showWelcome(false);
     updateAll();
 }
 
