@@ -14,7 +14,6 @@ let fileInput, terminalModal, terminalCommand;
 let saveDropdown, saveMenu;
 
 let toastTimeout;
-let saveMode = 'shareUrl'; // 'shareUrl', 'terminal', 'download'
 
 /**
  * Initialize UI with DOM elements
@@ -560,6 +559,7 @@ function loadFile(file) {
 }
 
 export function downloadFile() {
+    saveMenu.classList.remove('visible');
     const content = editor.value;
     const header = `<!--
 ANNOTATION FORMAT: CriticMarkup
@@ -608,6 +608,7 @@ Learn more: https://criticmarkup.com
 }
 
 export async function copyShareUrl() {
+    saveMenu.classList.remove('visible');
     try {
         const { url, size } = await generateShareUrl(editor.value, state.filename);
 
@@ -638,6 +639,7 @@ export async function copyShareUrl() {
 }
 
 export async function copyTerminalCommand() {
+    saveMenu.classList.remove('visible');
     try {
         const { command, size } = await generateTerminalCommand(editor.value, state.filename);
 
@@ -661,61 +663,18 @@ export function closeTerminalModal() {
 }
 
 // Save dropdown
-let saveBtn;
-
 function setupSaveDropdown() {
-    saveBtn = document.getElementById('saveBtn');
-    const toggle = document.getElementById('saveToggle');
-
-    // Toggle dropdown on arrow click
-    toggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        saveMenu.classList.toggle('visible');
-    });
-
     // Close dropdown when clicking outside
-    document.addEventListener('click', () => {
-        saveMenu.classList.remove('visible');
-    });
-
-    // Prevent dropdown from closing when clicking inside menu
-    saveMenu.addEventListener('click', (e) => {
-        e.stopPropagation();
+    document.addEventListener('click', (e) => {
+        if (!saveDropdown.contains(e.target)) {
+            saveMenu.classList.remove('visible');
+        }
     });
 }
 
 export function toggleSaveMenu(e) {
     if (e) e.stopPropagation();
     saveMenu.classList.toggle('visible');
-}
-
-export function saveDefault() {
-    saveMenu.classList.remove('visible');
-    switch (saveMode) {
-        case 'shareUrl':
-            copyShareUrl();
-            break;
-        case 'terminal':
-            copyTerminalCommand();
-            break;
-        case 'download':
-            downloadFile();
-            break;
-    }
-}
-
-export function setSaveMode(mode) {
-    saveMode = mode;
-    // Update active state in dropdown
-    saveMenu.querySelectorAll('.dropdown-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.action === mode);
-    });
-    // Update button text
-    const labels = { shareUrl: 'Share URL', terminal: 'Copy for CLI', download: 'Download' };
-    saveBtn.textContent = labels[mode];
-    // Close menu and execute the action
-    saveMenu.classList.remove('visible');
-    saveDefault();
 }
 
 // Toast notifications

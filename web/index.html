@@ -20,12 +20,12 @@
             <span class="shortcuts-hint"><kbd>⌘E</kbd> comment</span>
             <button class="btn" onclick="mdannotate.showHelp()">Help</button>
             <button class="btn" onclick="mdannotate.openFile()">Open</button>
-            <div class="split-button" id="saveDropdown">
-                <button class="btn btn-primary split-main" onclick="mdannotate.saveDefault()" id="saveBtn">Share URL</button><button class="btn btn-primary split-toggle" onclick="mdannotate.toggleSaveMenu(event)" id="saveToggle">▾</button>
+            <div class="dropdown" id="saveDropdown">
+                <button class="btn btn-primary" id="saveBtn" onclick="mdannotate.toggleSaveMenu(event)">Save <span class="dropdown-arrow">▾</span></button>
                 <div class="dropdown-menu" id="saveMenu">
-                    <button class="dropdown-item active" data-action="shareUrl" onclick="mdannotate.setSaveMode('shareUrl')">Share URL</button>
-                    <button class="dropdown-item" data-action="terminal" onclick="mdannotate.setSaveMode('terminal')">Copy for CLI</button>
-                    <button class="dropdown-item" data-action="download" onclick="mdannotate.setSaveMode('download')">Download</button>
+                    <button class="dropdown-item" data-action="shareUrl" onclick="mdannotate.copyShareUrl()">Share URL</button>
+                    <button class="dropdown-item" data-action="terminal" onclick="mdannotate.copyTerminal()">Copy for CLI</button>
+                    <button class="dropdown-item" data-action="download" onclick="mdannotate.download()">Download</button>
                 </div>
             </div>
         </div>
