@@ -8,7 +8,7 @@
 set -e
 
 # Configuration - Update this URL after deployment
-HOSTED_URL="${MDANNOTATE_URL:-https://mdannotate.example.com}"
+HOSTED_URL="${MDANNOTATE_URL:-https://mdannotate.onrender.com}"
 
 # Get the directory where this script lives (for local mode)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

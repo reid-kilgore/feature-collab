@@ -63,6 +63,12 @@ function setupEventListeners() {
     editor.addEventListener('input', () => {
         setContent(editor.value);
         updateAll();
+        // Hide welcome overlay when user starts typing
+        showWelcome(false);
+    });
+    editor.addEventListener('focus', () => {
+        // Hide welcome overlay when editor is focused
+        showWelcome(false);
     });
     editor.addEventListener('scroll', () => {
         syntaxHighlight.scrollTop = editor.scrollTop;

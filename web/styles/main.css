@@ -732,6 +732,14 @@ body {
     z-index: 100;
     padding: 40px;
     text-align: center;
+    pointer-events: none;
+}
+
+.welcome-overlay .btn,
+.welcome-overlay h2,
+.welcome-overlay p,
+.welcome-overlay .or-text {
+    pointer-events: auto;
 }
 
 .welcome-overlay.hidden {
