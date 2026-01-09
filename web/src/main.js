@@ -9,7 +9,8 @@ import {
     toolbarAddHighlight, openCommentModal, submitComment, closeModal,
     jumpToAnnotation, editCommentAt, deleteAnnotationAt, clearAllAnnotationsAction,
     toggleSource, togglePreview, toggleAnnotations, toggleDarkMode,
-    showHelp, closeHelp, openFilePicker, downloadFile, copyShareUrl, copyTerminalCommand
+    showHelp, closeHelp, openFilePicker, downloadFile, copyShareUrl, copyTerminalCommand,
+    closeTerminalModal
 } from './ui.js';
 
 // Initialize the application
@@ -70,6 +71,7 @@ window.mdannotate = {
     // Help
     showHelp,
     closeHelp,
+    closeTerminalModal,
 
     // File operations
     openFile: openFilePicker,

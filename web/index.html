@@ -133,6 +133,24 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="terminalModal">
+        <div class="modal" style="width: 540px;">
+            <h3>Save to Terminal</h3>
+            <div class="help-content">
+                <p style="margin-bottom: 12px;">Command copied to clipboard! Paste it in your terminal to save the file:</p>
+                <pre id="terminalCommand" style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;"></pre>
+
+                <h4 style="margin-top: 16px;">Need the CLI tool?</h4>
+                <p>Install <code>mdannotate</code> to open files directly from your terminal:</p>
+                <pre style="background: var(--bg-tertiary); padding: 8px 12px; border-radius: 4px; font-size: 11px; margin: 8px 0;">curl -o ~/.local/bin/mdannotate https://gist.githubusercontent.com/reid-kilgore/942febd6ffd4849e7bf9ce82cd5f5cb6/raw/mdannotate.sh && chmod +x ~/.local/bin/mdannotate</pre>
+                <p style="font-size: 12px; color: var(--text-muted);">Or view the script: <a href="https://gist.github.com/reid-kilgore/942febd6ffd4849e7bf9ce82cd5f5cb6" target="_blank" style="color: var(--accent-color);">gist.github.com/reid-kilgore/mdannotate</a></p>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="mdannotate.closeTerminalModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Hidden file input -->
     <input type="file" id="fileInput" class="file-input" accept=".md,.txt,text/markdown,text/plain">
 

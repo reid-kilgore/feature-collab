@@ -10,7 +10,7 @@ let editor, toolbar, commentsList, commentModal, commentInput, selectedPreview;
 let helpModal, status, stats, position, lineNumbers, syntaxHighlight;
 let previewPane, previewContent, previewToggle, commentCount, modalTitle, modalSubmit;
 let clearAllBtn, sourcePane, sourceToggle, annotationsToggle, commentsPane, toast;
-let welcomeOverlay, fileInput;
+let welcomeOverlay, fileInput, terminalModal, terminalCommand;
 
 let toastTimeout;
 
@@ -45,6 +45,8 @@ export function initUI() {
     toast = document.getElementById('toast');
     welcomeOverlay = document.getElementById('welcomeOverlay');
     fileInput = document.getElementById('fileInput');
+    terminalModal = document.getElementById('terminalModal');
+    terminalCommand = document.getElementById('terminalCommand');
 
     setupEventListeners();
     loadDarkModePreference();
@@ -655,16 +657,23 @@ export async function copyTerminalCommand() {
     try {
         const { command, size } = await generateTerminalCommand(editor.value, state.filename);
 
+        await navigator.clipboard.writeText(command);
+
+        // Show the terminal modal with the command
+        terminalCommand.textContent = command;
+        terminalModal.classList.add('visible');
+
         if (size > 32000) {
             showToast('Warning: Document is large. Command may be too long for some terminals.');
         }
-
-        await navigator.clipboard.writeText(command);
-        showToast('Terminal command copied!');
     } catch (e) {
         console.error('Failed to create terminal command:', e);
         alert('Failed to create terminal command: ' + e.message);
     }
+}
+
+export function closeTerminalModal() {
+    terminalModal.classList.remove('visible');
 }
 
 // Toast notifications
