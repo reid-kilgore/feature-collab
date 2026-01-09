@@ -705,6 +705,11 @@ function setupSaveDropdown() {
     });
 }
 
+export function toggleSaveMenu(e) {
+    if (e) e.stopPropagation();
+    saveMenu.classList.toggle('visible');
+}
+
 export function saveDefault() {
     saveMenu.classList.remove('visible');
     switch (saveMode) {

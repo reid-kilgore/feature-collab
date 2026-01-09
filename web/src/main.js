@@ -10,7 +10,7 @@ import {
     jumpToAnnotation, editCommentAt, deleteAnnotationAt, clearAllAnnotationsAction,
     toggleSource, togglePreview, toggleAnnotations,
     showHelp, closeHelp, openFilePicker, downloadFile, copyShareUrl, copyTerminalCommand,
-    closeTerminalModal, saveDefault, setSaveMode
+    closeTerminalModal, saveDefault, setSaveMode, toggleSaveMenu
 } from './ui.js';
 
 // Initialize the application
@@ -100,7 +100,8 @@ window.mdannotate = {
 
     // Save dropdown
     saveDefault,
-    setSaveMode
+    setSaveMode,
+    toggleSaveMenu
 };
 
 // Start the app
