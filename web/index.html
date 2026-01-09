@@ -10,18 +10,24 @@
     <div class="header">
         <div class="header-left">
             <h1>mdannotate</h1>
-            <span class="shortcuts-hint"><kbd>⌘E</kbd> comment</span>
+            <div class="view-toggles">
+                <button class="view-toggle active" id="sourceToggle" onclick="mdannotate.toggleSource()">Source</button>
+                <button class="view-toggle active" id="previewToggle" onclick="mdannotate.togglePreview()">Preview</button>
+                <button class="view-toggle" id="annotationsToggle" onclick="mdannotate.toggleAnnotations()" style="display: none;">Annotations</button>
+            </div>
         </div>
         <div class="header-buttons">
-            <button class="btn btn-icon" onclick="mdannotate.toggleDarkMode()" title="Toggle dark mode">🌓</button>
-            <button class="btn active" id="sourceToggle" onclick="mdannotate.toggleSource()">Source</button>
-            <button class="btn active" id="previewToggle" onclick="mdannotate.togglePreview()">Preview</button>
-            <button class="btn" id="annotationsToggle" onclick="mdannotate.toggleAnnotations()" style="display: none;">Annotations</button>
+            <span class="shortcuts-hint"><kbd>⌘E</kbd> comment</span>
             <button class="btn" onclick="mdannotate.showHelp()">Help</button>
-            <button class="btn" onclick="mdannotate.openFile()">Open File</button>
-            <button class="btn" onclick="mdannotate.copyTerminal()">Copy for Terminal</button>
-            <button class="btn" onclick="mdannotate.copyShareUrl()">Share URL</button>
-            <button class="btn btn-primary" id="downloadBtn" onclick="mdannotate.download()" draggable="true">Download</button>
+            <button class="btn" onclick="mdannotate.openFile()">Open</button>
+            <div class="dropdown" id="saveDropdown">
+                <button class="btn btn-primary" onclick="mdannotate.saveDefault()">Save ▾</button>
+                <div class="dropdown-menu" id="saveMenu">
+                    <button class="dropdown-item active" data-action="shareUrl" onclick="mdannotate.setSaveMode('shareUrl')">Share URL</button>
+                    <button class="dropdown-item" data-action="terminal" onclick="mdannotate.setSaveMode('terminal')">Copy for CLI</button>
+                    <button class="dropdown-item" data-action="download" onclick="mdannotate.setSaveMode('download')">Download</button>
+                </div>
+            </div>
         </div>
     </div>
 

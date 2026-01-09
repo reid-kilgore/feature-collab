@@ -8,9 +8,9 @@ import {
     initUI, setEditorContent, showWelcome, updateTitle, updateAll,
     toolbarAddHighlight, openCommentModal, submitComment, closeModal,
     jumpToAnnotation, editCommentAt, deleteAnnotationAt, clearAllAnnotationsAction,
-    toggleSource, togglePreview, toggleAnnotations, toggleDarkMode,
+    toggleSource, togglePreview, toggleAnnotations,
     showHelp, closeHelp, openFilePicker, downloadFile, copyShareUrl, copyTerminalCommand,
-    closeTerminalModal
+    closeTerminalModal, saveDefault, setSaveMode
 } from './ui.js';
 
 // Initialize the application
@@ -86,7 +86,6 @@ window.mdannotate = {
     toggleSource,
     togglePreview,
     toggleAnnotations,
-    toggleDarkMode,
 
     // Help
     showHelp,
@@ -97,7 +96,11 @@ window.mdannotate = {
     openFile: openFilePicker,
     download: downloadFile,
     copyShareUrl,
-    copyTerminal: copyTerminalCommand
+    copyTerminal: copyTerminalCommand,
+
+    // Save dropdown
+    saveDefault,
+    setSaveMode
 };
 
 // Start the app

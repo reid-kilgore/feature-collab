@@ -11,8 +11,10 @@ let helpModal, status, stats, position, lineNumbers, syntaxHighlight;
 let previewPane, previewContent, previewToggle, commentCount, modalTitle, modalSubmit;
 let clearAllBtn, sourcePane, sourceToggle, annotationsToggle, commentsPane, toast;
 let welcomeOverlay, fileInput, terminalModal, terminalCommand;
+let saveDropdown, saveMenu;
 
 let toastTimeout;
+let saveMode = 'shareUrl'; // 'shareUrl', 'terminal', 'download'
 
 /**
  * Initialize UI with DOM elements
@@ -47,8 +49,11 @@ export function initUI() {
     fileInput = document.getElementById('fileInput');
     terminalModal = document.getElementById('terminalModal');
     terminalCommand = document.getElementById('terminalCommand');
+    saveDropdown = document.getElementById('saveDropdown');
+    saveMenu = document.getElementById('saveMenu');
 
     setupEventListeners();
+    setupSaveDropdown();
     loadDarkModePreference();
 }
 
@@ -674,6 +679,51 @@ export async function copyTerminalCommand() {
 
 export function closeTerminalModal() {
     terminalModal.classList.remove('visible');
+}
+
+// Save dropdown
+function setupSaveDropdown() {
+    // Toggle dropdown on button click
+    const btn = saveDropdown.querySelector('.btn-primary');
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        saveMenu.classList.toggle('visible');
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+        saveMenu.classList.remove('visible');
+    });
+
+    // Prevent dropdown from closing when clicking inside
+    saveMenu.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+
+export function saveDefault() {
+    saveMenu.classList.remove('visible');
+    switch (saveMode) {
+        case 'shareUrl':
+            copyShareUrl();
+            break;
+        case 'terminal':
+            copyTerminalCommand();
+            break;
+        case 'download':
+            downloadFile();
+            break;
+    }
+}
+
+export function setSaveMode(mode) {
+    saveMode = mode;
+    // Update active state in dropdown
+    saveMenu.querySelectorAll('.dropdown-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.action === mode);
+    });
+    // Execute the action
+    saveDefault();
 }
 
 // Toast notifications
