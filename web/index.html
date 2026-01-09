@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mdannotate - Markdown Annotation Tool</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <h1>mdannotate</h1>
+            <span class="shortcuts-hint"><kbd>⌘E</kbd> comment</span>
+        </div>
+        <div class="header-buttons">
+            <button class="btn btn-icon" onclick="mdannotate.toggleDarkMode()" title="Toggle dark mode">🌓</button>
+            <button class="btn active" id="sourceToggle" onclick="mdannotate.toggleSource()">Source</button>
+            <button class="btn active" id="previewToggle" onclick="mdannotate.togglePreview()">Preview</button>
+            <button class="btn" id="annotationsToggle" onclick="mdannotate.toggleAnnotations()" style="display: none;">Annotations</button>
+            <button class="btn" onclick="mdannotate.showHelp()">Help</button>
+            <button class="btn" onclick="mdannotate.openFile()">Open File</button>
+            <button class="btn" onclick="mdannotate.copyTerminal()">Copy for Terminal</button>
+            <button class="btn" onclick="mdannotate.copyShareUrl()">Share URL</button>
+            <button class="btn btn-primary" id="downloadBtn" onclick="mdannotate.download()" draggable="true">Download</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="source-pane">
+            <div class="pane-header">
+                <span>Source</span>
+            </div>
+            <div class="editor-wrapper">
+                <div class="line-numbers" id="lineNumbers"></div>
+                <div class="syntax-highlight" id="syntaxHighlight"></div>
+                <textarea class="source-editor" id="editor" spellcheck="false"></textarea>
+
+                <!-- Welcome overlay -->
+                <div class="welcome-overlay" id="welcomeOverlay">
+                    <h2>Welcome to mdannotate</h2>
+                    <p>A markdown annotation tool using CriticMarkup syntax. Open a file to get started, or paste content directly.</p>
+                    <button class="btn btn-primary" onclick="mdannotate.openFile()">Open Markdown File</button>
+                    <div class="or-text">or drag & drop a file anywhere</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="resizer" id="previewResizer"></div>
+        <div class="preview-pane" id="previewPane">
+            <div class="pane-header">Preview</div>
+            <div class="preview-content" id="previewContent"></div>
+        </div>
+
+        <div class="resizer" id="commentsResizer"></div>
+        <div class="comments-pane collapsed">
+            <div class="pane-header">
+                <span>Annotations <span id="commentCount"></span></span>
+                <button class="clear-all-btn" id="clearAllBtn" onclick="mdannotate.clearAllAnnotations()" style="display: none;">Clear All</button>
+            </div>
+            <div class="comments-list" id="commentsList"></div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="left">
+            <span id="status">Ready</span>
+            <span id="stats"></span>
+        </div>
+        <span id="position">Ln 1, Col 1</span>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="toolbar" id="toolbar">
+        <button onclick="mdannotate.addHighlight()">Highlight</button>
+        <button onclick="mdannotate.addComment()">Comment<span class="shortcut">⌘E</span></button>
+    </div>
+
+    <div class="modal-overlay" id="commentModal">
+        <div class="modal">
+            <h3 id="modalTitle">Add Comment</h3>
+            <div class="selected-preview" id="selectedPreview"></div>
+            <textarea id="commentInput" placeholder="Enter your comment..."></textarea>
+            <div class="modal-buttons">
+                <button class="btn" onclick="mdannotate.closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalSubmit" onclick="mdannotate.submitComment()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="helpModal">
+        <div class="modal" style="width: 480px;">
+            <h3>Keyboard Shortcuts & Help</h3>
+            <div class="help-content">
+                <h4>Shortcuts</h4>
+                <ul>
+                    <li><kbd>⌘</kbd>+<kbd>E</kbd> — Add comment to selection</li>
+                    <li><kbd>⌘</kbd>+<kbd>S</kbd> — Download file</li>
+                    <li><kbd>Esc</kbd> — Close modals</li>
+                </ul>
+
+                <h4>How to Use</h4>
+                <ul>
+                    <li>Select text in the source editor or preview</li>
+                    <li>Click Highlight or Comment (or use shortcuts)</li>
+                    <li>Click an annotation card to jump to that location</li>
+                    <li>Edit or delete annotations from the sidebar</li>
+                    <li>Drag pane borders to resize</li>
+                </ul>
+
+                <h4>Terminal Workflow</h4>
+                <ul>
+                    <li><strong>Open from terminal:</strong> <code>mdannotate file.md</code></li>
+                    <li><strong>Save back:</strong> Click "Copy for Terminal" and paste the command</li>
+                </ul>
+
+                <h4>Saving & Sharing</h4>
+                <ul>
+                    <li><strong>Download:</strong> Click or drag to Finder/Desktop</li>
+                    <li><strong>Share URL:</strong> Copies a link with the full document encoded</li>
+                    <li><strong>Copy for Terminal:</strong> Copies a decode command to save the file</li>
+                </ul>
+
+                <h4>Format: CriticMarkup</h4>
+                <ul>
+                    <li>Highlight: <code>{==text==}</code></li>
+                    <li>Comment: <code>{==text==}{&gt;&gt;note&lt;&lt;}</code></li>
+                </ul>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="mdannotate.closeHelp()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" class="file-input" accept=".md,.txt,text/markdown,text/plain">
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
