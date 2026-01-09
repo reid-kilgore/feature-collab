@@ -40,11 +40,31 @@ async function init() {
         alert(e.message);
     }
 
-    // No URL hash - show welcome screen
-    initState('', 'document.md', false);
-    setEditorContent('');
+    // No URL hash - show welcome content
+    const welcomeContent = `# Welcome to mdannotate
+
+A markdown annotation tool using CriticMarkup syntax.
+
+## How to use
+
+1. **Open a file** using the button above, or drag & drop
+2. **Select text** and click Highlight or Comment (or press ⌘E)
+3. **Save changes** via Download or "Copy for Terminal"
+
+## CriticMarkup syntax
+
+Highlight text like this: {==important text==}
+
+Add comments to highlights: {==highlighted==}{>>your note here<<}
+
+---
+
+*Delete this and start typing, or open a file to begin.*
+`;
+    initState(welcomeContent, 'document.md', false);
+    setEditorContent(welcomeContent);
     updateTitle('mdannotate');
-    showWelcome(true);
+    showWelcome(false);
     updateAll();
 }
 
