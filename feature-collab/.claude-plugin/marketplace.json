@@ -1,0 +1,13 @@
+{
+  "name": "feature-collab-marketplace",
+  "description": "Local marketplace for feature-collab plugin",
+  "owner": {
+    "name": "Reid"
+  },
+  "plugins": [
+    {
+      "name": "feature-collab",
+      "source": "./plugins/feature-collab"
+    }
+  ]
+}
