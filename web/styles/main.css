@@ -347,6 +347,45 @@ body {
 .preview-content h1 { font-size: 1.8em; margin: 0.5em 0; font-weight: 600; }
 .preview-content h2 { font-size: 1.4em; margin: 0.8em 0 0.4em; font-weight: 600; color: var(--text-secondary); }
 .preview-content h3 { font-size: 1.2em; margin: 0.8em 0 0.4em; font-weight: 600; }
+
+/* Heading anchors */
+.preview-content h1,
+.preview-content h2,
+.preview-content h3 {
+    position: relative;
+    padding-left: 1.2em;
+    margin-left: -1.2em;
+}
+
+.preview-content .heading-anchor {
+    position: absolute;
+    left: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.preview-content h1:hover .heading-anchor,
+.preview-content h2:hover .heading-anchor,
+.preview-content h3:hover .heading-anchor,
+.preview-content .heading-anchor:focus {
+    opacity: 1;
+}
+
+.preview-content .heading-anchor:hover {
+    color: var(--accent-color);
+}
+
+.preview-content .anchor-icon {
+    width: 0.7em;
+    height: 0.7em;
+}
+
+.preview-content [id] {
+    scroll-margin-top: 1em;
+}
+
 .preview-content p { margin: 0.6em 0; }
 .preview-content ul, .preview-content ol { margin: 0.2em 0; padding-left: 1.2em; }
 .preview-content > ul { margin: 0.4em 0; }

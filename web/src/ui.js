@@ -84,6 +84,24 @@ function setupEventListeners() {
         setTimeout(handlePreviewSelection, 10);
     });
 
+    // Heading anchor clicks
+    previewContent.addEventListener('click', (e) => {
+        const anchor = e.target.closest('.heading-anchor');
+        if (anchor) {
+            e.preventDefault();
+            const hash = anchor.getAttribute('href');
+            if (e.altKey || e.metaKey) {
+                // Alt/Cmd+click: copy URL
+                const url = window.location.origin + window.location.pathname + hash;
+                navigator.clipboard.writeText(url).then(() => showToast('Link copied'));
+            } else {
+                // Regular click: navigate
+                history.pushState(null, '', hash);
+                document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    });
+
     // Global click to hide toolbar
     document.addEventListener('mousedown', (e) => {
         if (!toolbar.contains(e.target) && e.target !== editor && !previewContent.contains(e.target)) {

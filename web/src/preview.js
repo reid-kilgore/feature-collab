@@ -2,6 +2,21 @@
 
 import { escapeHtml } from './annotations.js';
 
+// SVG icon for heading anchors (GitHub-style link icon)
+const ANCHOR_ICON = `<svg class="anchor-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M7.775 3.275a.75.75 0 001.06 1.06l1.25-1.25a2 2 0 112.83 2.83l-2.5 2.5a2 2 0 01-2.83 0 .75.75 0 00-1.06 1.06 3.5 3.5 0 004.95 0l2.5-2.5a3.5 3.5 0 00-4.95-4.95l-1.25 1.25zm-.5 9.5a.75.75 0 00-1.06-1.06l-1.25 1.25a2 2 0 11-2.83-2.83l2.5-2.5a2 2 0 012.83 0 .75.75 0 001.06-1.06 3.5 3.5 0 00-4.95 0l-2.5 2.5a3.5 3.5 0 004.95 4.95l1.25-1.25z"/></svg>`;
+
+/**
+ * Generate a URL-safe slug from heading text
+ */
+function generateSlug(text) {
+    return text.toLowerCase().trim()
+        .replace(/<[^>]*>/g, '')      // Strip HTML tags
+        .replace(/[^\w\s-]/g, '')     // Remove special chars
+        .replace(/\s+/g, '-')         // Spaces to hyphens
+        .replace(/-+/g, '-')          // Collapse multiple hyphens
+        .replace(/^-|-$/g, '');       // Trim leading/trailing hyphens
+}
+
 /**
  * Render markdown content to HTML
  */
@@ -28,10 +43,21 @@ export function renderMarkdown(md) {
         return '<table><thead><tr>' + headerCells + '</tr></thead><tbody>' + bodyRows + '</tbody></table>';
     });
 
-    // Simple markdown rendering
-    md = md.replace(/^### (.*)$/gm, '<h3>$1</h3>');
-    md = md.replace(/^## (.*)$/gm, '<h2>$1</h2>');
-    md = md.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+    // Headings with anchor links
+    const slugCounts = {};
+    function createHeading(level, text) {
+        let slug = generateSlug(text) || 'heading';
+        if (slugCounts[slug] !== undefined) {
+            slug = `${slug}-${++slugCounts[slug]}`;
+        } else {
+            slugCounts[slug] = 0;
+        }
+        return `<h${level} id="${slug}"><a class="heading-anchor" href="#${slug}">${ANCHOR_ICON}</a>${text}</h${level}>`;
+    }
+
+    md = md.replace(/^### (.*)$/gm, (_, t) => createHeading(3, t));
+    md = md.replace(/^## (.*)$/gm, (_, t) => createHeading(2, t));
+    md = md.replace(/^# (.*)$/gm, (_, t) => createHeading(1, t));
     md = md.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     md = md.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     md = md.replace(/`([^`]+)`/g, '<code>$1</code>');
