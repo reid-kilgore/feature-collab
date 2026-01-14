@@ -26,13 +26,15 @@ The user will annotate PLAN.md using CriticMarkup:
 
 When you see annotations, address each one explicitly and update the plan accordingly. Keep a log at the very bottom summarizing annotations and responses. Remove the inline annotations once they have been handled.
 
-**You should also use CriticMarkup** when updating PLAN.md to draw the user's attention to specific items:
-- Use `{==highlight==}{>>your comment<<}` to flag decisions that need user input
-- Use `{==highlight==}{>>CHANGED: explanation<<}` when you've modified something significant
-- Use `{==highlight==}{>>QUESTION: your question<<}` for inline questions about specific content
-- Use `{==highlight==}{>>ASSUMPTION: what you assumed<<}` when you made a judgment call they should verify
+**You should also use CriticMarkup highlighting** when updating PLAN.md to draw the user's attention to specific items. Use ONLY highlights (`{==text==}`)—all your thoughts, questions, and explanations must be written in the markdown content itself, not in CriticMarkup comments.
 
-This creates a two-way annotation conversation in the document itself.
+For example, instead of `{==highlight==}{>>QUESTION: should we use Redis?<<}`, write a highlighted question directly in the markdown:
+
+```markdown
+{==**Open Question**: Should we use Redis for caching, or is an in-memory solution sufficient?==}
+```
+
+This keeps the document readable and ensures all context is in the actual content.
 
 ---
 
@@ -52,15 +54,31 @@ Initial request: $ARGUMENTS
 
 ```markdown
 <!--
-ANNOTATION GUIDE - Two-way CriticMarkup conversation:
-- You: {==text==}{>>your feedback<<} to comment on something
-- Claude: {==text==}{>>QUESTION/CHANGED/ASSUMPTION: note<<} to flag items for your attention
+ANNOTATION GUIDE:
+- You: Use any CriticMarkup to comment, add, or delete text
+- Claude: Uses {==highlights==} only—questions and notes are written in the markdown itself
 -->
 
 # Feature: [Feature Name]
 
+## Table of Contents
+- [Status](#status)
+- [Overview](#overview)
+- [Constraints](#constraints)
+- [Questions](#immediate-questions)
+- [Codebase Context](#codebase-context)
+- [Verification Plan](#verification-plan)
+- [Test Status](#test-status)
+- [Architecture](#architecture)
+- [Tasks](#tasks)
+- [Security Review](#security-review-results)
+- [Verification Results](#verification-results)
+- [Review Findings](#review-findings)
+- [Final Summary](#final-summary)
+- [Annotation Log](#annotation-log)
+
 ## Status
-**Current Phase**: Discovery  
+**Current Phase**: Discovery
 
 **Waiting For**: User review and annotation
 
@@ -113,7 +131,7 @@ ANNOTATION GUIDE - Two-way CriticMarkup conversation:
 5. Write the outputs of this phase to the document and add a concise summary of your understanding of the change so far. Retain the original goal statement.
 
 6. **CHECKPOINT**: Tell the user:
-   > "I've updated PLAN.md with my initial understanding. Please review and annotate with CriticMarkup. When ready, say **'continue'** to proceed to codebase exploration."
+   > "I've updated PLAN.md with my initial understanding. Please review [Overview](#overview) and [Immediate Questions](#immediate-questions), and annotate with CriticMarkup. When ready, say **'continue'** to proceed to codebase exploration."
 
 7. When user responds, re-read PLAN.md, address any annotations, perform any requested tasks, update the plan, and proceed to Phase 2 if there are no annotations or tasks which require response.
 
@@ -166,6 +184,8 @@ ANNOTATION GUIDE - Two-way CriticMarkup conversation:
 
 ### Testing Infrastructure
 [Existing test frameworks, patterns, locations]
+
+→ *These patterns inform [Architecture](#architecture) decisions.*
 ```
 
 5. Update status and **CHECKPOINT**:
@@ -178,7 +198,7 @@ ANNOTATION GUIDE - Two-way CriticMarkup conversation:
    We can skip user confirmation at this phase since we will move to clarifying questions next. Consider any ambiguities or clarifications you may like to have the user clear up. If the answers may affect the next phase, take this opportunity to use your tools to ask the user.
 
    Otherwise tell them:
-   > "I've updated PLAN.md with codebase findings and questions. Continuing to clarifying questions.""
+   > "I've updated [Codebase Context](#codebase-context) with findings. Continuing to clarifying questions."
 
 6. Proceed to Phase 3.
 
@@ -245,7 +265,7 @@ ANNOTATION GUIDE - Two-way CriticMarkup conversation:
    ```
 
    Tell the user:
-   > "I've added clarifying questions to PLAN.md, including security and performance considerations. Please answer them directly in the document or annotate with comments. When ready, say **'continue'** to proceed to verification planning."
+   > "I've added clarifying questions to [Open Questions](#open-questions), including security and performance considerations. Please answer them directly in the document or annotate with comments. When ready, say **'continue'** to proceed to verification planning."
 
 7. When user responds, re-read PLAN.md, capture all answers, mark questions done if they were resolved. Consider repeating this phase. If necessary, repeat it, otherwise proceed to Phase 4.
 
@@ -324,6 +344,8 @@ The curls in particular should be comprehensive enough to make clear at any mome
 
 **The test-runner agent will fill this out during Phase 9. One column per behavior, 20+ columns expected.**
 
+→ *Results will appear in [Verification Results](#verification-results) after Phase 9.*
+
 | Run | E2E | Unit | Lint | [curl-behavior-1] | [curl-behavior-2] | ... |
 |-----|-----|------|------|-------------------|-------------------|-----|
 | *Rows added during verification* |
@@ -337,7 +359,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Tell the user:
-   > "I've updated PLAN.md with the verification plan, including performance testing. This defines how we'll prove the feature works. Please review and annotate. When ready, say **'continue'** to proceed to writing failing tests."
+   > "I've updated PLAN.md with the [Verification Plan](#verification-plan) and [Draft Scorecard](#draft-verification-scorecard), including performance testing. This defines how we'll prove the feature works. Please review and annotate. When ready, say **'continue'** to proceed to writing failing tests."
 
 5. When user responds, re-read PLAN.md, address any annotations, and either revisit this phase or proceed to Phase 5.
 
@@ -400,7 +422,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Briefly inform the user:
-   > "Failing tests written and confirmed RED. Proceeding to architecture design."
+   > "Failing tests written and confirmed RED. See [Test Status](#test-status). Proceeding to architecture design."
 
 ---
 
@@ -468,7 +490,11 @@ The curls in particular should be comprehensive enough to make clear at any mome
 
 *See DETAILS.md for implementation code samples.*
 
+→ **Implementation tasks**: See [Tasks](#tasks) below.
+
 ## Tasks
+
+→ *Based on [Architecture](#architecture) above.*
 
 ### Phase 1: [Component/Area]
 - [ ] Task 1
@@ -501,7 +527,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Tell the user:
-   > "I've completed the architecture design and task breakdown in PLAN.md. Please review the Architecture and Tasks sections. When you're satisfied with the plan, say **'implement'** to begin implementation. If you have feedback, say so and I will revisit this phase."
+   > "I've completed the architecture design and task breakdown. Please review [Architecture](#architecture) and [Tasks](#tasks). When you're satisfied with the plan, say **'implement'** to begin implementation. If you have feedback, say so and I will revisit this phase."
 
 7. **Do not proceed until user explicitly approves.** Address any annotations first, assume that this phase will require the most iteration with the user.
 
@@ -557,7 +583,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Tell the user:
-   > "I've completed the implementation and all tests are now passing (GREEN). Please review the code changes. When ready, say **'security'** to run the security review. If you have feedback on the implementation, let me know and I'll address it."
+   > "I've completed the implementation and all tests are now passing (GREEN). See [Test Status](#test-status) and [Tasks](#tasks). Please review the code changes. When ready, say **'security'** to run the security review. If you have feedback on the implementation, let me know and I'll address it."
 
 7. If user requests changes, address them and repeat step 6. Only proceed to Phase 8 when user says 'security'.
 
@@ -611,7 +637,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    - Fix them immediately
    - Update PLAN.md with findings and fixes
    - **CHECKPOINT**: Tell the user:
-     > "Security review found issues that I've fixed. Please review the Security Review Results in PLAN.md to confirm the fixes are acceptable. Say **'verify'** to proceed to verification."
+     > "Security review found issues that I've fixed. Please review [Security Review Results](#security-review-results) to confirm the fixes are acceptable. Say **'verify'** to proceed to verification."
    - Wait for user confirmation before proceeding
 
 5. **If no security issues are found**, update status and **proceed automatically to Phase 9**:
@@ -671,7 +697,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Briefly inform the user:
-   > "All verification passed - scorecard shows all ✅. Proceeding to quality review."
+   > "All verification passed. See [Verification Results](#verification-results) - scorecard shows all ✅. Proceeding to quality review."
 
 **Important**: The test-runner agent's scorecard is the truth. You must not:
 - Mark verification as complete if any ❌ exists
@@ -720,7 +746,7 @@ The curls in particular should be comprehensive enough to make clear at any mome
    ```
 
    Tell the user:
-   > "Quality review complete. I've added findings to PLAN.md. Please review and let me know: **'fix all'**, **'fix critical only'**, or **'done'** to finalize."
+   > "Quality review complete. Please review [Review Findings](#review-findings) and let me know: **'fix all'**, **'fix critical only'**, or **'done'** to finalize."
 
 5. Address issues based on user decision. If fixes are requested, make them and re-run the quality review (repeat from step 2) to confirm fixes are clean.
 
