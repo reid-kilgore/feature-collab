@@ -61,6 +61,7 @@ export function renderMarkdown(md) {
     md = md.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     md = md.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     md = md.replace(/`([^`]+)`/g, '<code>$1</code>');
+    md = md.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
     md = md.replace(/^---+$/gm, '<hr>');
     md = md.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
 
