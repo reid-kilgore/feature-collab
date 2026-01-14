@@ -18,6 +18,24 @@ function generateSlug(text) {
 }
 
 /**
+ * Render inline markdown (bold, italic, code, links) - for use in annotation cards
+ */
+export function renderInlineMarkdown(text) {
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    return html;
+}
+
+/**
  * Render markdown content to HTML
  */
 export function renderMarkdown(md) {

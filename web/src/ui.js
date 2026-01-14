@@ -2,7 +2,7 @@
 
 import { state, setContent, setSelection, clearSelection, setEditingIndex, setActiveComment, setUserHidAnnotations, setHadAnnotations, markSaved, getPositionInfo, getStats } from './editor.js';
 import { getAnnotations, addHighlight, addCommentAnnotation, updateAnnotationComment, deleteAnnotation, clearAllAnnotations, generateSyntaxHighlight, escapeHtml, findTextInSource } from './annotations.js';
-import { renderMarkdown } from './preview.js';
+import { renderMarkdown, renderInlineMarkdown } from './preview.js';
 import { generateShareUrl, generateTerminalCommand } from './url.js';
 
 // DOM elements (initialized in setup)
@@ -327,8 +327,8 @@ function updateCommentsDisplay() {
         <div class="comment-card ${state.activeCommentIndex === i ? 'active' : ''}"
              onclick="window.mdannotate.jumpToAnnotation(${i})">
             <button class="close-x" onclick="event.stopPropagation(); window.mdannotate.deleteAnnotationAt(${i})" title="Delete">×</button>
-            <div class="highlight-text">${escapeHtml(ann.highlight)}</div>
-            ${ann.comment ? `<div class="comment-text">${escapeHtml(ann.comment)}</div>` : '<div class="comment-text" style="color: var(--text-muted); font-style: italic;">No comment</div>'}
+            <div class="highlight-text">${renderInlineMarkdown(ann.highlight)}</div>
+            ${ann.comment ? `<div class="comment-text">${renderInlineMarkdown(ann.comment)}</div>` : '<div class="comment-text" style="color: var(--text-muted); font-style: italic;">No comment</div>'}
             <div class="card-actions">
                 <button onclick="event.stopPropagation(); window.mdannotate.editCommentAt(${i})">${ann.comment ? 'Edit' : 'Add Comment'}</button>
             </div>
