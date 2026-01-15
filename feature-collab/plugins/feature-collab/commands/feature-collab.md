@@ -15,6 +15,19 @@ You are helping a developer implement a new feature through a collaborative, doc
 - **Security **: Explicitly address security considerations.
 - **Use TodoWrite**: Track all progress throughout
 
+## Context Compaction
+
+When the conversation is compacted (context summarization), your compaction summary **must** include:
+
+1. **Current phase** from PLAN.md's Status section
+2. **What you were waiting for** (user input, agent results, etc.)
+3. **Instruction to re-invoke** `/feature-collab` to continue
+
+Example compaction note:
+> "Feature development in progress. PLAN.md at Phase 6 (Architecture Design), waiting for user approval. On resume: re-read PLAN.md and invoke `/feature-collab` to continue the workflow."
+
+This ensures continuity across compaction boundaries—PLAN.md is the source of truth, and re-invoking the skill re-establishes the workflow context.
+
 ## CriticMarkup Format
 
 The user will annotate PLAN.md using CriticMarkup:
