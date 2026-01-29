@@ -18,6 +18,7 @@ show_help() {
     echo ""
     echo "Usage:"
     echo "  mdannotate <file.md>           Open file in web annotation editor"
+    echo "  mdannotate --edit <file.md>    Open, wait for paste-back, save (use as \$EDITOR)"
     echo "  mdannotate --local <file.md>   Use local HTML (offline mode)"
     echo "  mdannotate --decode <hash>     Decode a document hash to stdout"
     echo "  mdannotate --help              Show this help"
@@ -118,6 +119,63 @@ if [ "$1" = "--decode" ]; then
         exit 1
     fi
     decode_from_url "$2"
+    exit 0
+fi
+
+# Handle --edit flag (editor mode: open browser, wait for paste-back, save)
+if [ "$1" = "--edit" ]; then
+    shift
+    if [ -z "$1" ]; then
+        echo "Error: --edit requires a file argument"
+        exit 1
+    fi
+    EDIT_FILE="$1"
+    EDIT_FILENAME=$(basename "$EDIT_FILE")
+
+    # Encode and open in browser
+    URL_PARAMS=$(encode_to_url "$EDIT_FILE" "$EDIT_FILENAME")
+    FULL_URL="${HOSTED_URL}/#${URL_PARAMS}"
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open "$FULL_URL"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        xdg-open "$FULL_URL" 2>/dev/null || echo "Open this URL in your browser: $FULL_URL"
+    else
+        echo "Open this URL in your browser: $FULL_URL"
+    fi
+
+    echo "Editing $EDIT_FILENAME in browser..."
+    echo "When done, click 'Copy for CLI' then paste here and press Enter:"
+    echo ""
+    read -r PASTED
+
+    if [ -z "$PASTED" ]; then
+        echo "No input received, file unchanged."
+        exit 0
+    fi
+
+    # Extract the encoded payload from whatever was pasted:
+    # - Full URL: https://mdannotate.onrender.com/#doc=H4sI...&name=file.md
+    # - CLI command: mdannotate --decode H4sI... > "file.md"
+    # - Raw encoded string: H4sI...
+    ENCODED="$PASTED"
+    # Strip URL up to doc= parameter
+    if [[ "$ENCODED" == *"#doc="* ]]; then
+        ENCODED="${ENCODED#*#doc=}"
+        ENCODED="${ENCODED%%&*}"
+    fi
+    # Strip CLI command wrapper
+    ENCODED="${ENCODED#mdannotate --decode }"
+    ENCODED="${ENCODED%% >*}"
+
+    # Decode, strip CriticMarkup header comment, and write back to original file
+    decode_from_url "$ENCODED" | python3 -c "
+import sys, re
+content = sys.stdin.read()
+content = re.sub(r'^<!--\nANNOTATION FORMAT:[\s\S]*?-->\n\n?', '', content)
+sys.stdout.write(content)
+" > "$EDIT_FILE"
+    echo "Saved to $EDIT_FILE"
     exit 0
 fi
 
