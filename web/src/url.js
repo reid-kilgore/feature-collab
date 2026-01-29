@@ -138,7 +138,7 @@ export async function generateShareUrl(content, filename = null) {
  * Allows copying the URL from the address bar at any time.
  */
 let _syncTimeout = null;
-export function syncUrlHash(content, filename = null, delay = 500) {
+export function syncUrlHash(content, filename = null, delay = 100) {
     clearTimeout(_syncTimeout);
     _syncTimeout = setTimeout(async () => {
         try {
