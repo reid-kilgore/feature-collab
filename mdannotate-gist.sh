@@ -11,9 +11,10 @@ show_help() {
     echo "mdannotate - Markdown annotation tool using CriticMarkup"
     echo ""
     echo "Usage:"
-    echo "  mdannotate <file.md>       Open file in web annotation editor"
-    echo "  mdannotate --decode <hash> Decode a document hash to stdout"
-    echo "  mdannotate --help          Show this help"
+    echo "  mdannotate <file.md>         Open file in web annotation editor"
+    echo "  mdannotate --edit <file.md>  Open, wait for paste-back, save (use as \$EDITOR)"
+    echo "  mdannotate --decode <hash>   Decode a document hash to stdout"
+    echo "  mdannotate --help            Show this help"
     echo ""
     echo "Workflow:"
     echo "  1. Run: mdannotate notes.md"
@@ -66,6 +67,32 @@ case "$1" in
     --help|-h|"")
         show_help
         [ -z "$1" ] && exit 1 || exit 0
+        ;;
+    --edit)
+        [ -z "$2" ] && echo "Error: --edit requires a file argument" && exit 1
+        FILE="$2"
+        PARAMS=$(encode_file "$FILE" "$(basename "$FILE")")
+        URL="${HOSTED_URL}/#${PARAMS}"
+        if [[ "$OSTYPE" == darwin* ]]; then open "$URL"
+        elif command -v xdg-open &>/dev/null; then xdg-open "$URL"
+        else echo "Open: $URL"; fi
+        echo "Editing $(basename "$FILE") in browser..."
+        echo "When done, click 'Copy for CLI' then paste here and press Enter:"
+        echo ""
+        read -r PASTED
+        [ -z "$PASTED" ] && echo "No input received, file unchanged." && exit 0
+        ENCODED="$PASTED"
+        if [[ "$ENCODED" == *"#doc="* ]]; then
+            ENCODED="${ENCODED#*#doc=}"; ENCODED="${ENCODED%%&*}"
+        fi
+        ENCODED="${ENCODED#mdannotate --decode }"; ENCODED="${ENCODED%% >*}"
+        decode_hash "$ENCODED" | python3 -c "
+import sys, re
+content = sys.stdin.read()
+content = re.sub(r'^<!--\nANNOTATION FORMAT:[\s\S]*?-->\n\n?', '', content)
+sys.stdout.write(content)
+" > "$FILE"
+        echo "Saved to $FILE"
         ;;
     --decode)
         [ -z "$2" ] && echo "Error: --decode requires a hash" && exit 1
