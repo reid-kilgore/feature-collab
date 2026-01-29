@@ -134,6 +134,27 @@ export async function generateShareUrl(content, filename = null) {
 }
 
 /**
+ * Update the URL hash with the current document content (debounced).
+ * Allows copying the URL from the address bar at any time.
+ */
+let _syncTimeout = null;
+export function syncUrlHash(content, filename = null, delay = 500) {
+    clearTimeout(_syncTimeout);
+    _syncTimeout = setTimeout(async () => {
+        try {
+            const { encoded } = await compressContent(content);
+            let hash = '#doc=' + encoded;
+            if (filename && filename !== 'document.md') {
+                hash += '&name=' + encodeURIComponent(filename);
+            }
+            history.replaceState(null, '', hash);
+        } catch (e) {
+            // Silently fail — not critical
+        }
+    }, delay);
+}
+
+/**
  * Generate a terminal command to decode the document
  */
 export async function generateTerminalCommand(content, filename = 'document.md') {

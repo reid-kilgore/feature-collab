@@ -1,8 +1,8 @@
 // Main entry point for mdannotate web app
 
 import '../styles/main.css';
-import { initState, state, setHadAnnotations } from './editor.js';
-import { loadFromHash, stripHeader } from './url.js';
+import { initState, state, setHadAnnotations, addListener } from './editor.js';
+import { loadFromHash, stripHeader, syncUrlHash } from './url.js';
 import { getAnnotations } from './annotations.js';
 import {
     initUI, setEditorContent, updateTitle, updateAll,
@@ -99,6 +99,11 @@ window.mdannotate = {
     // Save dropdown
     toggleSaveMenu
 };
+
+// Sync URL hash as content changes
+addListener('contentChange', (s) => {
+    syncUrlHash(s.content, s.filename);
+});
 
 // Start the app
 init();
