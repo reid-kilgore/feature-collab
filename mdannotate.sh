@@ -98,7 +98,7 @@ sys.stdout.write(content)
         [ -z "$2" ] && echo "Error: --decode requires a hash" && exit 1
         decode_hash "$2"
         ;;
-    H4sI*)
+    H4sI* | doc=* | *"#doc="*)
         decode_hash "$1"
         ;;
     *)
