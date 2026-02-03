@@ -1,0 +1,14 @@
+{
+  "name": "gh-checks",
+  "version": "1.0.0",
+  "description": "Monitor GitHub CI checks and iterate on failures until all pass",
+  "author": {
+    "name": "Reid"
+  },
+  "keywords": [
+    "github",
+    "ci",
+    "checks",
+    "automation"
+  ]
+}

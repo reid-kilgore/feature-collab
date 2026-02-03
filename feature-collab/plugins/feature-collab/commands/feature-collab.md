@@ -100,22 +100,13 @@ ANNOTATION GUIDE:
 
 # Feature: [Feature Name]
 
-## Table of Contents
-- [Status](#status)
-- [Scope Boundaries](#scope-boundaries)
+## Sections Needing Review
+<!-- _Links to sections that the agent wants to call particular attention to_. May be highlighted with CriticMarkup -->
 - [Overview](#overview)
-- [Constraints](#constraints)
 - [Questions](#questions)
 - [Codebase Context](#codebase-context)
 - [Contracts](#contracts)
-- [Verification Plan](#verification-plan)
-- [Architecture](#architecture)
-- [Tasks](#tasks)
-- [Security Review](#security-review-results)
 - [Verification Results](#verification-results)
-- [Exit Criteria](#exit-criteria)
-- [Final Summary](#final-summary)
-- [Annotation Log](#annotation-log)
 
 ## Status
 **Current Phase**: Discovery

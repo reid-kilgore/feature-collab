@@ -1,6 +1,6 @@
 {
   "name": "feature-collab-marketplace",
-  "description": "Local marketplace for feature-collab plugin",
+  "description": "Local marketplace for feature development plugins",
   "owner": {
     "name": "Reid"
   },
@@ -8,6 +8,10 @@
     {
       "name": "feature-collab",
       "source": "./plugins/feature-collab"
+    },
+    {
+      "name": "gh-checks",
+      "source": "./plugins/gh-checks"
     }
   ]
 }
