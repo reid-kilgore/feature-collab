@@ -1,123 +1,169 @@
 ---
-description: Collaborative feature development with TDD, security review, and performance requirements
+description: Collaborative feature development with contract-first TDD, scope locking, and adversarial verification
 argument-hint: Optional feature description or local PLAN.md file
 ---
 
-# Collaborative Feature Development
+# Feature-Collab v2: Collaborative Feature Development
 
-You are helping a developer implement a new feature through a collaborative, document-first, test-driven process. **PLAN.md is the single source of truth from the very first moment.** Every phase updates PLAN.md, and feedback is received by the user annotating the PLAN.md with CriticMarkup. You iterate together until both parties are satisfied.
+You are helping a developer implement a new feature through a collaborative, document-first, contract-first, test-driven process.
 
 ## Core Principles
 
-- **PLAN.md is paramount**: Read it immediately and create it if it does not exist, update it every phase, it is the living record of everything
-- **Pause for collaboration**: Every phase ends with a checkpoint for user annotation before proceeding. This may result in multiple rounds of feedback, exploration and revisiting prior work phases.
-- **TDD**: Write failing tests BEFORE implementation. Tests guide architecture and provide immediate feedback.
-- **Security **: Explicitly address security considerations.
-- **Use TodoWrite**: Track all progress throughout
+- **PLAN.md is the single source of truth**: Read it immediately, create if missing, update every phase
+- **Contracts before architecture**: Define types, routes, and function signatures BEFORE designing implementation
+- **Tests before implementation**: TDD RED-GREEN - write failing tests, then make them pass
+- **Scope is locked**: After Phase 1, scope changes require explicit unlock
+- **Main thread orchestrates, agents execute**: Keep main thread thin, delegate heavy work
+- **Test-runner is authoritative**: Never bypass or override test-runner's findings
+- **Curl tests are MANDATORY**: Never skip API verification with curl commands
 
 ## Context Compaction
 
-When the conversation is compacted (context summarization), your compaction summary **must** include:
+When conversation is compacted, your summary **must** include:
 
-1. **Current phase** from PLAN.md's Status section
+1. **Current phase** from PLAN.md Status section
 2. **What you were waiting for** (user input, agent results, etc.)
 3. **Instruction to re-invoke** `/feature-collab` to continue
 
-Example compaction note:
-> "Feature development in progress. PLAN.md at Phase 6 (Architecture Design), waiting for user approval. On resume: re-read PLAN.md and invoke `/feature-collab` to continue the workflow."
-
-This ensures continuity across compaction boundaries—PLAN.md is the source of truth, and re-invoking the skill re-establishes the workflow context.
+Example:
+> "Feature development at Phase 5 (Implementation), 7/15 tests passing. On resume: re-read PLAN.md and SESSION_STATE.md, invoke `/feature-collab` to continue."
 
 ## CriticMarkup Format
 
-The user will annotate PLAN.md using CriticMarkup:
+User annotates PLAN.md using CriticMarkup:
 - Highlights: `{==highlighted text==}`
 - Comments: `{>>comment text<<}`
-- Combined: `{==highlight==}{>>comment<<}`
 - Additions: `{++added text++}`
 - Deletions: `{--deleted text--}`
 
-When you see annotations, address each one explicitly and update the plan accordingly. Keep a log at the very bottom summarizing annotations and responses. Remove the inline annotations once they have been handled.
-
-**You should also use CriticMarkup highlighting** when updating PLAN.md to draw the user's attention to specific items. Use ONLY highlights (`{==text==}`)—all your thoughts, questions, and explanations must be written in the markdown content itself, not in CriticMarkup comments.
-
-For example, instead of `{==highlight==}{>>QUESTION: should we use Redis?<<}`, write a highlighted question directly in the markdown:
-
-```markdown
-{==**Open Question**: Should we use Redis for caching, or is an in-memory solution sufficient?==}
-```
-
-This keeps the document readable and ensures all context is in the actual content.
+Address annotations explicitly and update plan accordingly. Keep a log at the bottom.
 
 ---
 
-## Phase 1: Discovery
+## Phase 0: Session Setup
 
-**Goal**: Understand what needs to be built, including performance and security context
+**Goal**: Initialize documents and establish context for resumability
+
+**Actions**:
+
+1. Check if PLAN.md exists at git root
+2. Check if SESSION_STATE.md exists
+3. Create/update SESSION_STATE.md:
+
+```markdown
+# Session State
+
+## Current State
+**Phase**: 0 (Setup)
+**Status**: INITIALIZING
+**Last Updated**: [timestamp]
+
+## If You're a New Session
+
+### Do NOT
+- Re-explore codebase (done in Phase 2)
+- Re-design architecture (done in Phase 4)
+- Re-discuss scope (locked in Phase 1)
+
+### Do
+1. Read this file first
+2. Read PLAN.md current section
+3. Continue from current phase
+
+## Session Boundaries
+- Max tool calls this session: 100
+- Checkpoint trigger: 50 tool calls or phase boundary
+```
+
+4. Proceed immediately to Phase 1
+
+---
+
+## Phase 1: Discovery & Scope Lock
+
+**Goal**: Understand requirements and LOCK scope boundaries
 
 Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create todo list with all 10 phases
+1. Create todo list with all 9 phases
 
-2. If feature is unclear and the PLAN.md document is empty, ask the user for a description of their goals.
-
-3. **Create or update PLAN.md at the git root** with initial structure:
+2. **Create or update PLAN.md** at git root with initial structure:
 
 ```markdown
 <!--
 ANNOTATION GUIDE:
 - You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only—questions and notes are written in the markdown itself
+- Claude: Uses {==highlights==} only
 -->
 
 # Feature: [Feature Name]
 
 ## Table of Contents
 - [Status](#status)
+- [Scope Boundaries](#scope-boundaries)
 - [Overview](#overview)
 - [Constraints](#constraints)
-- [Questions](#immediate-questions)
+- [Questions](#questions)
 - [Codebase Context](#codebase-context)
+- [Contracts](#contracts)
 - [Verification Plan](#verification-plan)
-- [Test Status](#test-status)
 - [Architecture](#architecture)
 - [Tasks](#tasks)
 - [Security Review](#security-review-results)
 - [Verification Results](#verification-results)
-- [Review Findings](#review-findings)
+- [Exit Criteria](#exit-criteria)
 - [Final Summary](#final-summary)
 - [Annotation Log](#annotation-log)
 
 ## Status
 **Current Phase**: Discovery
+**Waiting For**: User review
 
-**Waiting For**: User review and annotation
+## Scope Boundaries (LOCKED after Phase 1)
+
+### In Scope (MVP)
+- [ ] Item 1 - [justification]
+- [ ] Item 2
+
+### Explicitly Out of Scope
+- Item A - [why not now]
+
+### Fast Follows (Future PRs)
+| ID | Item | Rationale | Dependency |
+|----|------|-----------|------------|
+| FF-001 | Feature X | Not needed for MVP | Core PR |
+
+### Scope Lock Status
+**Status**: UNLOCKED
+**Lock requires**: User confirmation at Phase 1 checkpoint
 
 ## Overview
-[Brief description of the feature and its purpose, based on initial request]
+[Brief description of feature and purpose]
 
 ## Constraints
-[Any constraints or requirements mentioned]
+[Any constraints or requirements]
 
-## Immediate Questions
-[Questions that need answers now]
+## Questions
 
-## Open Questions
-[Questions that need answers but be resolved in later phases]
+### Immediate (Block Progress)
+- [ ] Q: [question]
+
+### Open (Resolve Later)
+- [ ] Q: [question]
 
 ---
-*Sections below will be populated in subsequent phases:*
+*Sections below populated in subsequent phases*
 
 ## Codebase Context
 *To be filled after exploration*
 
-## Verification Plan
-*To be filled after verification planning*
+## Contracts
+*To be filled in Phase 2 (see CONTRACTS.md)*
 
-## Test Status
-*To be filled after writing tests*
+## Verification Plan
+*To be filled in Phase 2 (see TEST_SPEC.md)*
 
 ## Architecture
 *To be filled after architecture design*
@@ -131,317 +177,200 @@ ANNOTATION GUIDE:
 ## Verification Results
 *To be filled after verification*
 
+## Exit Criteria
+*To be filled in Phase 1, assessed in Phase 7*
+
 ---
 
 ## Annotation Log
 | Date | Phase | Annotation | Response |
 |------|-------|------------|----------|
-| *Entries added as annotations are addressed* |
 ```
 
-4. If the user has left instructions in the PLAN.md launch an agent per type of request. For instance, you may be looking for specific files, line numbers or function signatures discussed, or conducting light web research. This doesn't replace the later exploratory phases, but provides some initial flesh to the plan.
+3. Launch 2 `code-explorer` agents in parallel (delegate exploration):
+   - "Find features similar to [feature] and trace implementation"
+   - "Map architecture and testing patterns for [area]"
 
-5. Write the outputs of this phase to the document and add a concise summary of your understanding of the change so far. Retain the original goal statement.
+4. Review agent findings, update PLAN.md with Codebase Context
 
-6. **CHECKPOINT**: Tell the user:
-   > "I've updated PLAN.md with my initial understanding. Please review [Overview](#overview) and [Immediate Questions](#immediate-questions), and annotate with CriticMarkup. When ready, say **'continue'** to proceed to codebase exploration."
-
-7. When user responds, re-read PLAN.md, address any annotations, perform any requested tasks, update the plan, and proceed to Phase 2 if there are no annotations or tasks which require response.
-
----
-
-## Phase 2: Codebase Exploration
-
-**Goal**: Understand relevant existing code and patterns, update PLAN.md with findings
-
-**Actions**:
-
-1. Update PLAN.md status:
-   ```markdown
-   ## Status
-   **Current Phase**: Codebase Exploration
-
-   **Waiting For**: Agent analysis
-   ```
-
-2. Launch 2-3+ code-explorer agents in parallel. Each agent should:
-   - Trace through the code comprehensively
-   - Target a different aspect (similar features, architecture, patterns, testing infrastructure)
-   - Return a list of 5-10 key files to read
-
-   **Example prompts**:
-   - "Find features similar to [feature] and trace their implementation comprehensively. Return key files."
-   - "Map the architecture and abstractions for [area]. Return key files."
-   - "Analyze testing infrastructure and patterns. Return key files."
-
-3. Read all key files identified by agents
-
-4. **Update PLAN.md** with a comprehensive "Codebase Context" section:
+5. Define **Exit Criteria** (what does "done" mean?):
 
 ```markdown
-## Codebase Context
+## Exit Criteria
 
-### Relevant Patterns
-[Patterns discovered with file:line references]
+### Must Have (PR cannot ship without)
+- [ ] All In Scope items implemented
+- [ ] All tests passing (unit, integration, E2E)
+- [ ] All curl tests passing
+- [ ] Security review: no critical/high issues
+- [ ] PLAN.md < 200 lines
 
-### Similar Features
-[Existing similar implementations to reference]
-
-### Key Files
-| File | Purpose | Relevance |
-|------|---------|-----------|
-| `path/to/file.ts:42` | Description | Why it matters |
-
-### Architecture Notes
-[How the codebase is structured, abstractions used]
-
-### Testing Infrastructure
-[Existing test frameworks, patterns, locations]
-
-→ *These patterns inform [Architecture](#architecture) decisions.*
+### Should Have
+- [ ] Test coverage > 80%
+- [ ] No TODO comments without tickets
 ```
 
-5. Update status and **CHECKPOINT**:
-   ```markdown
-   ## Status
-   **Current Phase**: Codebase Exploration (Complete)
-   **Waiting For**: User review and annotation
-   ```
+6. **CHECKPOINT**:
+   > "I've updated PLAN.md with scope boundaries and exit criteria. Please review [Scope Boundaries](#scope-boundaries) and confirm the scope is correct. When ready, say **'lock scope'** to lock scope and proceed to contract definition."
 
-   We can skip user confirmation at this phase since we will move to clarifying questions next. Consider any ambiguities or clarifications you may like to have the user clear up. If the answers may affect the next phase, take this opportunity to use your tools to ask the user.
-
-   Otherwise tell them:
-   > "I've updated [Codebase Context](#codebase-context) with findings. Continuing to clarifying questions."
-
-6. Proceed to Phase 3.
+7. When user says "lock scope":
+   - Update Scope Lock Status to LOCKED with timestamp
+   - Proceed to Phase 2
 
 ---
 
-## Phase 3: Clarifying Questions
+## Phase 2: Contract Definition
 
-**Goal**: Resolve all ambiguities including security and performance considerations
+**Goal**: Define ALL contracts (types, routes, function signatures) and tests BEFORE architecture
+
+**Why contracts first?** Tests define the specification. Architecture serves tests, not vice versa.
 
 **Actions**:
 
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Clarifying Questions
-   **Waiting For**: Analysis
+   **Current Phase**: Contract Definition
+   **Waiting For**: Contract drafting
    ```
 
-2. Review everything gathered so far:
-   - Original feature request
-   - Codebase context and patterns
-   - Performance requirements
-
-3. Identify underspecified aspects:
-   - Edge cases and error handling
-   - Integration points
-   - Scope boundaries
-   - Performance requirements
-   - Backward compatibility
-   - Security considerations
-
-4. **Update PLAN.md** Open Questions section with organized questions:
+2. **Create CONTRACTS.md** at git root:
 
 ```markdown
-## Open Questions
+# Feature Contracts
 
-### Scope
-- [ ] Q: [Question about scope]
+## Types
 
-### Behavior
-- [ ] Q: [Question about behavior]
+### New Types
+\`\`\`typescript
+interface NotificationDelivery {
+  id: string;
+  notificationId: string;
+  channel: 'push' | 'email' | 'sms';
+  status: 'pending' | 'sent' | 'failed';
+}
+\`\`\`
 
-### Edge Cases
-- [ ] Q: [Question about edge cases]
+### Modified Types
+\`\`\`typescript
+interface Notification {
+  // existing fields...
+  deliveries?: NotificationDelivery[]; // NEW
+}
+\`\`\`
 
-### Security
-- [ ] Q: Does this handle user input? What validation is needed?
-- [ ] Q: Does this require authentication/authorization?
-- [ ] Q: Any sensitive data (PII, secrets) involved?
+## Routes/Endpoints
 
-### Performance
-- [ ] Q: Are the latency targets in the Performance Requirements section accurate?
+### New Routes
+| Method | Path | Input | Output | Auth |
+|--------|------|-------|--------|------|
+| POST | /api/notifications | CreateNotificationInput | Notification | Required |
 
+### Modified Routes
+| Route | Change |
+|-------|--------|
+| GET /api/notifications | Now includes delivery status |
+
+## Function Signatures
+
+### New Functions
+\`\`\`typescript
+// notification.delivery.service.ts
+function createNotificationWithDelivery(
+  input: CreateNotificationInput,
+  repos: { notificationRepo, deliveryRepo }
+): Promise<Result<Notification, NotificationError>>
+\`\`\`
+
+### Modified Functions
+| Function | File | Change |
+|----------|------|--------|
+| createNotification | notification.service.ts | Add delivery creation |
 ```
 
-5. **If no clarifying questions exist**, skip the checkpoint and proceed directly to Phase 4.
+3. **Launch code-verifier agent** to generate TEST_SPEC.md:
+   - Reads CONTRACTS.md
+   - Produces exhaustive test list
+   - Includes MANDATORY curl tests for every endpoint
 
-6. **If clarifying questions exist**, update status and **CHECKPOINT**:
-   ```markdown
-   ## Status
-   **Current Phase**: Clarifying Questions
+4. **Launch test-gap-finder agent** (adversarial):
+   - Reviews CONTRACTS.md and TEST_SPEC.md
+   - Finds gaps, missing edge cases, untested scenarios
+   - Returns critical/important/nice-to-have gaps
 
-   **Waiting For**: User answers
-   ```
+5. Update TEST_SPEC.md with gap findings
 
-   Tell the user:
-   > "I've added clarifying questions to [Open Questions](#open-questions), including security and performance considerations. Please answer them directly in the document or annotate with comments. When ready, say **'continue'** to proceed to verification planning."
+6. **Launch test-implementer agent**:
+   - Reads CONTRACTS.md and TEST_SPEC.md
+   - Writes actual test files
+   - Tests will FAIL (TDD RED state) - this is correct
 
-7. When user responds, re-read PLAN.md, capture all answers, mark questions done if they were resolved. Consider repeating this phase. If necessary, repeat it, otherwise proceed to Phase 4.
-
----
-
-## Phase 4: Verification Planning
-
-**Goal**: Define how we'll prove the feature works, including performance testing
-
-**Why verification before architecture?** Knowing how you'll test something shapes how you build it. This prevents "how do we even test this?" surprises later.
-
-For backend changes, manual curls are a required test type in addition to typical E2E and unit tests. Tests which require browser interaction are likely required, but must be driven entirely by a script with no user intervention. Playwright is a good tool here, but there are more options.
-
-The curls in particular should be comprehensive enough to make clear at any moment whether or not the implementation is complete and fully correct. This will be a major piece of the feedback and iteration loop in the verification phase.
-
-**Actions**:
-
-1. Update PLAN.md status:
-   ```markdown
-   ## Status
-   **Current Phase**: Verification Planning
-   **Waiting For**: Agent analysis
-   ```
-
-2. Launch a code-verifier agent to analyze the feature and codebase context. The agent should:
-   - Read PLAN.md to understand what's being built
-   - Explore existing test infrastructure
-   - Design concrete verification approaches like curl, playwright tests, etc
-   - Include performance testing based on requirements
-
-3. **Update PLAN.md** with the Verification Plan and Draft Scorecard:
-
-```markdown
-## Verification Plan
-
-### Prerequisites
-[Setup required: database state, environment, running services]
-
-### API Verification (no fewer than 5 calls should be made here, be thorough!)
-- [ ]  Insert description of desired behavior `POST /api/endpoint`
-<details>
-<summary>Three word description</summary>
-
-  ```bash
-  curl -X POST http://localhost:3000/api/endpoint \
-    -H "Content-Type: application/json" \
-    -d '{"field": "value"}'
-  ```
-  **Expected**: 200 OK, `{"success": true}`
-
-</details>
-
-
-### E2E Tests
-- [ ] User flow: [description]
-  - File: `tests/e2e/feature.spec.ts`
-  - Run: `npx playwright test feature.spec.ts`
-  - Assertions: [what to verify]
-
-### Unit Tests
-- [ ] [Function/component]: [what to test]
-  - File: `tests/unit/feature.test.ts`
-  - Key assertions: [list]
-
-### Performance Verification
-- [ ] Baseline measurement before implementation
-- [ ] Load test: `npm run perf:test` or equivalent
-- [ ] P50 target: [from requirements]
-- [ ] P99 target: [from requirements]
-- [ ] Database query analysis: EXPLAIN for new queries
-
-### Error Cases
-- [ ] [Error scenario]: Expected behavior
-
-## Draft Verification Scorecard
-
-**The test-runner agent will fill this out during Phase 9. One column per behavior, 20+ columns expected.**
-
-→ *Results will appear in [Verification Results](#verification-results) after Phase 9.*
-
-| Run | E2E | Unit | Lint | [curl-behavior-1] | [curl-behavior-2] | ... |
-|-----|-----|------|------|-------------------|-------------------|-----|
-| *Rows added during verification* |
-```
-
-4. Update status and **CHECKPOINT**:
-   ```markdown
-   ## Status
-   **Current Phase**: Verification Planning (Complete)
-   **Waiting For**: User review and annotation
-   ```
-
-   Tell the user:
-   > "I've updated PLAN.md with the [Verification Plan](#verification-plan) and [Draft Scorecard](#draft-verification-scorecard), including performance testing. This defines how we'll prove the feature works. Please review and annotate. When ready, say **'continue'** to proceed to writing failing tests."
-
-5. When user responds, re-read PLAN.md, address any annotations, and either revisit this phase or proceed to Phase 5.
-
----
-
-## Phase 5: Write Failing Tests
-
-**Goal**: Create executable test code that fails before implementation exists (TDD RED phase)
-
-**Why write tests first?** Tests written first guide architecture, provide immediate feedback during implementation, and ensure testability by design. This is true TDD.
-
-**Actions**:
-
-1. Update PLAN.md status:
-   ```markdown
-   ## Status
-   **Current Phase**: Write Failing Tests
-   **Waiting For**: Test code creation
-   ```
-
-2. Based on the Verification Plan, write actual test files:
-   - Unit tests: `tests/unit/[feature].test.ts`
-   - Integration tests: `tests/integration/[feature].test.ts`
-   - E2E tests: `tests/e2e/[feature].spec.ts`
-
-3. Tests should:
-   - Import modules/components that DON'T EXIST YET
-   - Define expected behavior in assertions
-   - Fail with "module not found" or "assertion failed" - this is expected
-
-4. Run test suite to confirm RED state:
+7. Run tests to confirm RED state:
    ```bash
-   npm test -- --testNamePattern="[feature]"
+   npm test
    ```
-   Tests SHOULD fail. If they pass, something is wrong.
+   Tests SHOULD fail. Update PLAN.md with test status.
 
-5. **Update PLAN.md** with test status:
+8. Update PLAN.md with Verification Plan summary and Draft Scorecard
 
-```markdown
-## Test Status (Pre-Implementation)
-
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| `tests/unit/feature.test.ts` | 5 | FAILING (expected) |
-| `tests/e2e/feature.spec.ts` | 3 | FAILING (expected) |
-
-**Total**: 8 tests, 0 passing, 8 failing
-
-### Test Code Summary
-- Unit tests cover: [list what's tested]
-- E2E tests cover: [list user flows]
-- Error cases covered: [list]
-```
-
-6. Update status and **proceed automatically to Phase 6**:
-   ```markdown
-   ## Status
-   **Current Phase**: Write Failing Tests (Complete)
-   **Proceeding to**: Architecture Design
-   ```
-
-   Briefly inform the user:
-   > "Failing tests written and confirmed RED. See [Test Status](#test-status). Proceeding to architecture design."
+9. **CHECKPOINT**:
+   > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to walking skeleton."
 
 ---
 
-## Phase 6: Architecture Design
+## Phase 3: Walking Skeleton
 
-**Goal**: Design the implementation approach that will make the failing tests pass
+**Goal**: Implement the thinnest possible end-to-end slice that proves architecture works
+
+**What is a Walking Skeleton?** The absolute minimum code that makes ONE test pass E2E. No features, no error handling, no edge cases.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: Walking Skeleton
+   **Waiting For**: Implementation
+   ```
+
+2. Identify which test represents the walking skeleton (simplest happy path E2E)
+
+3. Implement ONLY what's needed to pass that ONE test:
+   - Database schema (if needed)
+   - Repository (minimal - just create)
+   - Service (minimal - happy path only)
+   - Route (minimal - one endpoint)
+
+4. Run the skeleton test to verify it passes
+
+5. Update PLAN.md:
+
+```markdown
+## Walking Skeleton
+
+### Target Test
+`notification.e2e.spec.ts: "creates notification with delivery"`
+
+### Skeleton Status
+- [x] Schema migrated
+- [x] Repository create() working
+- [x] Service happy path working
+- [x] Route POST working
+- [x] Target test PASSING
+
+**Skeleton Verified**: YES
+```
+
+6. Proceed automatically to Phase 4:
+   > "Walking skeleton verified. Target test passing. Proceeding to architecture design."
+
+---
+
+## Phase 4: Architecture Design
+
+**Goal**: Design complete architecture to make ALL tests pass
+
+**Key constraint**: Architecture must satisfy failing tests from Phase 2.
 
 **Actions**:
 
@@ -452,28 +381,23 @@ The curls in particular should be comprehensive enough to make clear at any mome
    **Waiting For**: Agent analysis
    ```
 
-2. Launch 2-3+ code-architect agents in parallel with different focuses:
-   - **Minimal changes**: Smallest change, maximum reuse of existing code
-   - **Clean architecture**: Best maintainability, elegant abstractions
-   - **Pragmatic balance**: Speed + quality trade-off
+2. Launch 2-3 `code-architect` agents in parallel with different focuses:
+   - Minimal changes approach
+   - Clean architecture approach
+   - Pragmatic balance approach
 
    Each agent MUST:
-   - Read the failing test files first
-   - Design components that will make tests pass
-   - Ensure interfaces match what tests import/call
-   - Reference the codebase context from PLAN.md
-   - Consider the verification requirements (design must be testable!)
-   - Address the answered security questions
+   - Read failing test files first
+   - Design to make tests pass
+   - Ensure interfaces match test imports
 
-3. Review all approaches and form your recommendation
-
-4. **Update PLAN.md** with architecture and tasks (high-level only):
+3. Review approaches, select one, update PLAN.md:
 
 ```markdown
 ## Architecture
 
 ### Test-Driven Constraints
-[What the tests require - interfaces, return types, behaviors]
+[What tests require - interfaces, return types, behaviors]
 
 ### Approach
 [Chosen approach with rationale]
@@ -481,76 +405,45 @@ The curls in particular should be comprehensive enough to make clear at any mome
 ### Alternatives Considered
 | Approach | Pros | Cons | Why Not |
 |----------|------|------|---------|
-| [Alt 1] | ... | ... | ... |
 
 ### Component Design
-[Components, responsibilities, interfaces - must match test expectations]
-
-### Types and API Shapes
-[Interface definitions, type signatures - these are OK in PLAN.md as high-level concepts]
-
-### Security Considerations
-[How security requirements from Phase 3 are addressed]
-
-### Data Flow
-[How data moves through the system]
+[Components, responsibilities, interfaces]
 
 ### Files to Create/Modify
 | File | Action | Purpose |
 |------|--------|---------|
-| `path/file.ts` | Create | Description |
-| `path/other.ts` | Modify | What changes |
 
-*See DETAILS.md for implementation code samples.*
-
-→ **Implementation tasks**: See [Tasks](#tasks) below.
+*Full implementation details in DETAILS.md*
 
 ## Tasks
 
-→ *Based on [Architecture](#architecture) above.*
+### Phase 1: Repository Layer
+- [ ] Create notification.repository.ts
+- [ ] Add CRUD methods
 
-### Phase 1: [Component/Area]
-- [ ] Task 1
-  - Details
-- [ ] Task 2
-
-### Phase 2: [Component/Area]
-- [ ] Task 3
-- [ ] Task 4
-
-### Phase 3: Integration & Polish
-- [ ] Wire up components
+### Phase 2: Service Layer
+- [ ] Implement createNotificationWithDelivery
 - [ ] Add error handling
-- [ ] Update documentation
+
+### Phase 3: Integration
+- [ ] Wire up routes
+- [ ] Add middleware
 ```
 
-5. **Update DETAILS.md** with code samples:
-   - Full function implementations
-   - Component code examples
-   - Complex logic and algorithms
-   - Configuration samples
+4. Update DETAILS.md with code samples
 
-   Keep PLAN.md scannable; put implementation details in DETAILS.md.
+5. **CHECKPOINT** (CRITICAL - do not skip):
+   > "Architecture complete. Please review [Architecture](#architecture) and [Tasks](#tasks). When satisfied, say **'implement'** to begin implementation."
 
-6. Update status and **CHECKPOINT**:
-   ```markdown
-   ## Status
-   **Current Phase**: Architecture Design (Complete)
-   **Waiting For**: User approval to implement
-   ```
-
-   Tell the user:
-   > "I've completed the architecture design and task breakdown. Please review [Architecture](#architecture) and [Tasks](#tasks). When you're satisfied with the plan, say **'implement'** to begin implementation. If you have feedback, say so and I will revisit this phase."
-
-7. **Do not proceed until user explicitly approves.** Address any annotations first, assume that this phase will require the most iteration with the user.
+6. **Do NOT proceed without explicit user approval.**
 
 ---
 
-## Phase 7: Implementation
+## Phase 5: Implementation
 
-**Goal**: Build the feature to make the failing tests pass (TDD GREEN phase)
+**Goal**: Make all tests pass (TDD GREEN phase)
 
-**DO NOT START WITHOUT EXPLICIT USER APPROVAL**
+**DO NOT START WITHOUT EXPLICIT USER APPROVAL FROM PHASE 4**
 
 **Actions**:
 
@@ -561,209 +454,126 @@ The curls in particular should be comprehensive enough to make clear at any mome
    **Waiting For**: In progress
    ```
 
-2. Read all relevant files identified in previous phases
+2. For each task group, delegate to `code-architect` agent:
+   > "Implement [component] following DETAILS.md section X. Make tests [list] pass."
 
-3. Implement following the approved architecture:
-   - Follow codebase conventions strictly
-   - Write clean, well-documented code
-   - Check off tasks in PLAN.md as completed: `- [x] Task`
-   - Run tests frequently to track progress toward GREEN
+3. After each implementation batch, run `test-runner` agent:
+   - Updates scorecard
+   - Reports pass/fail status
+   - **Test-runner is authoritative** - do not dispute its findings
 
-4. Update todos as you progress
-
-5. Run the test suite to confirm tests are passing:
-   ```bash
-   npm test -- --testNamePattern="[feature]"
+4. **Scorecard-driven iteration**:
+   ```
+   Loop until scorecard all green:
+     1. test-runner reports status
+     2. Identify failing tests
+     3. Delegate fix to code-architect
+     4. test-runner verifies
    ```
 
-6. When implementation is complete and tests pass, update status and **CHECKPOINT**:
+5. **CRITICAL: Test-Runner Authority**
+   - Main thread MUST NOT claim tests pass without test-runner verification
+   - Main thread MUST NOT skip curl tests
+   - Main thread MUST NOT override test-runner findings
+   - If test-runner says it fails, it fails. Period.
+
+6. When scorecard shows all green:
    ```markdown
    ## Status
    **Current Phase**: Implementation (Complete)
-   **Waiting For**: User review before security check
+   **Waiting For**: User review
    ```
 
-   Update Test Status in PLAN.md:
-   ```markdown
-   ## Test Status (Post-Implementation)
-
-   | Test File | Tests | Status |
-   |-----------|-------|--------|
-   | `tests/unit/feature.test.ts` | 5 | PASSING |
-   | `tests/e2e/feature.spec.ts` | 3 | PASSING |
-
-   **Total**: 8 tests, 8 passing, 0 failing
-   ```
-
-   Tell the user:
-   > "I've completed the implementation and all tests are now passing (GREEN). See [Test Status](#test-status) and [Tasks](#tasks). Please review the code changes. When ready, say **'security'** to run the security review. If you have feedback on the implementation, let me know and I'll address it."
-
-7. If user requests changes, address them and repeat step 6. Only proceed to Phase 8 when user says 'security'.
+   > "All tests passing. Scorecard green. Please review implementation. Say **'security'** to proceed to security review."
 
 ---
 
-## Phase 8: Security Review
+## Phase 6: Security Review
 
 **Goal**: Verify implementation meets security standards
 
 **Actions**:
 
-1. Update PLAN.md status:
+1. Update status:
    ```markdown
    ## Status
    **Current Phase**: Security Review
    **Waiting For**: Security analysis
    ```
 
-2. Launch code-security agent (or code-reviewer with security focus) to check:
-   - Input validation and sanitization
-   - Authentication enforcement on new endpoints
+2. Launch `code-security` agent to check:
+   - Input validation
+   - Authentication enforcement
    - Authorization/permission checks
-   - No PII/secrets in logs or error messages
-   - SQL injection prevention (parameterized queries)
-   - XSS prevention (output encoding)
-   - CSRF protection
-   - Rate limiting on new APIs
-   - Dependency vulnerabilities
+   - No secrets in logs
+   - SQL injection prevention
+   - XSS prevention
+   - Rate limiting
 
-3. **Update PLAN.md** with security results:
+3. Update PLAN.md with Security Review Results
 
-```markdown
-## Security Review Results
+4. **If issues found**:
+   - Fix them
+   - Update PLAN.md
+   - **CHECKPOINT**: Ask user to confirm fixes, say **'verify'** to proceed
 
-| Check | Status | Notes |
-|-------|--------|-------|
-| Input validation | PASS/FAIL | Details |
-| Auth enforcement | PASS/FAIL | Details |
-| Authorization | PASS/FAIL | Details |
-| No secrets in logs | PASS/FAIL | Details |
-| SQL injection | PASS/FAIL | Details |
-| XSS prevention | PASS/FAIL | Details |
-| CSRF protection | PASS/FAIL | Details |
-| Rate limiting | PASS/FAIL | Details |
-| Dependencies | PASS/FAIL | Details |
-
-**Overall**: PASS / NEEDS FIXES
-```
-
-4. **If security issues are found**:
-   - Fix them immediately
-   - Update PLAN.md with findings and fixes
-   - **CHECKPOINT**: Tell the user:
-     > "Security review found issues that I've fixed. Please review [Security Review Results](#security-review-results) to confirm the fixes are acceptable. Say **'verify'** to proceed to verification."
-   - Wait for user confirmation before proceeding
-
-5. **If no security issues are found**, update status and **proceed automatically to Phase 9**:
-   ```markdown
-   ## Status
-   **Current Phase**: Security Review (Complete - PASS)
-
-   **Proceeding to**: Verification
-   ```
-
-   Briefly inform the user:
-   > "Security review passed with no issues. Proceeding to verification."
+5. **If no issues**: Proceed automatically to Phase 7
 
 ---
 
-## Phase 9: Verification
+## Phase 7: Exit Criteria Assessment
 
-**Goal**: Execute the full verification plan and fill out the verification scorecard
-
-**The scorecard is the single source of truth.** The test-runner agent owns the scorecard and its results are authoritative. Do not override or second-guess the scorecard.
+**Goal**: Adversarial assessment of whether we're actually done
 
 **Actions**:
 
-1. Update PLAN.md status:
+1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Verification
-   **Waiting For**: Test execution
+   **Current Phase**: Exit Criteria Assessment
+   **Waiting For**: Assessment
    ```
 
-2. **Launch the test-runner agent** to execute verification:
-   - The agent will read the Verification Plan and Draft Scorecard from PLAN.md
-   - It will run ALL tests (unit, E2E, curl commands, etc.)
-   - It will fill out the scorecard with results
-   - It will add columns if new behaviors are discovered (but never remove columns)
+2. Compile exit criteria from Phase 1 and all subsequent phases
 
-   **Agent prompt**:
-   > "Execute the verification plan in PLAN.md. Run all tests and fill out the verification scorecard. Report back with the complete scorecard and summary of results."
+3. Launch `criteria-assessor` agent (adversarial):
+   - Independently verifies each criterion
+   - Runs tests itself
+   - Checks code matches claims
+   - Returns READY or NOT READY verdict
 
-3. **Review the test-runner's output**:
-   - The scorecard is authoritative - accept its results
-   - If any column shows ❌, the verification has not passed
+4. **If NOT READY**:
+   - Address all FAIL items
+   - Launch criteria-assessor again
+   - Repeat until READY
 
-4. **If any verification fails** (any ❌ in scorecard):
-   - Review the test-runner's failure details
-   - Fix the identified issues
-   - **Launch test-runner again** - it will add a new row to the scorecard
-   - Tell the user: "Test run N: X/Y passing. Fixing [brief summary of issues]."
-   - Repeat until all columns show ✅
-   - **Do not exit this loop until the scorecard shows all ✅**
-
-5. **If all verification passes** (all ✅ in scorecard), update status and **proceed automatically to Phase 10**:
-   ```markdown
-   ## Status
-   **Current Phase**: Verification (Complete - ALL PASS)
-   **Proceeding to**: Quality Review
-   ```
-
-   Briefly inform the user:
-   > "All verification passed. See [Verification Results](#verification-results) - scorecard shows all ✅. Proceeding to quality review."
-
-**Important**: The test-runner agent's scorecard is the truth. You must not:
-- Mark verification as complete if any ❌ exists
-- Override or edit the scorecard results yourself
-- Skip re-running tests after fixes
+5. **If READY**: Proceed to Phase 8
 
 ---
 
-## Phase 10: Quality Review & Summary
+## Phase 8: Documentation & Handoff
 
-**Goal**: Ensure code is clean, follows conventions, and document what was built
+**Goal**: Finalize documents and prepare for PR
 
 **Actions**:
 
-1. Update PLAN.md status:
+1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Quality Review
-   **Waiting For**: Agent analysis
+   **Current Phase**: Documentation & Handoff
+   **Waiting For**: Finalization
    ```
 
-2. Launch 3 code-reviewer agents in parallel:
-   - Focus 1: Simplicity, DRY, elegance
-   - Focus 2: Bugs, logic errors (beyond what tests catch)
-   - Focus 3: Project conventions, abstractions
+2. Prune PLAN.md to final summary (<200 lines):
+   - Keep: Status, Final Summary, key decisions
+   - Move details to DECISIONS.md
+   - Archive exploration notes if valuable
 
-3. Consolidate findings and add to PLAN.md:
+3. Ensure DECISIONS.md is complete (architectural decision records)
 
-```markdown
-## Review Findings
+4. Generate CHANGELOG.md for PR description
 
-### Issues Found
-| Severity | Issue | Location | Recommendation |
-|----------|-------|----------|----------------|
-| High | ... | file:line | ... |
-
-### Summary
-[Overall assessment]
-```
-
-4. Update status and **CHECKPOINT**:
-   ```markdown
-   ## Status
-   **Current Phase**: Quality Review (Complete)
-   **Waiting For**: User decision on issues
-   ```
-
-   Tell the user:
-   > "Quality review complete. Please review [Review Findings](#review-findings) and let me know: **'fix all'**, **'fix critical only'**, or **'done'** to finalize."
-
-5. Address issues based on user decision. If fixes are requested, make them and re-run the quality review (repeat from step 2) to confirm fixes are clean.
-
-6. Only when user says 'done', finalize PLAN.md:
+5. Update Final Summary:
 
 ```markdown
 ## Final Summary
@@ -771,35 +581,61 @@ The curls in particular should be comprehensive enough to make clear at any mome
 ### Files Modified
 | File | Changes |
 |------|---------|
-| `path/file.ts` | Added feature component |
 
 ### What Was Built
-[Summary of the feature]
+[Summary]
 
 ### Key Decisions
-[Important choices made during development]
+[Important choices - see DECISIONS.md for full rationale]
 
 ### Test Coverage
-[Summary of tests written]
+[Summary of tests]
 
 ### Security Posture
-[Summary of security measures implemented]
+[Summary of security measures]
 
-### Performance
-[Final performance metrics]
-
-### Follow-up Suggestions (only if you have real, useful suggestions)
-- [ ] Potential improvement 1
-- [ ] Potential improvement 2
+## Status
+**Current Phase**: Complete
+**Completed**: [date]
 ```
 
-7. Mark all tasks complete and update final status:
-   ```markdown
-   ## Status
-   **Current Phase**: Complete
-   **Completed**: [date]
-   ```
-
-8. Present final summary to user.
+6. **Final CHECKPOINT**:
+   > "Feature complete. PLAN.md finalized. Ready for PR. See [Final Summary](#final-summary)."
 
 ---
+
+## Stacked PR Guidance
+
+**For medium-to-large features only** (>200 lines, >5 files).
+
+Small changes ship as single PRs. Large changes use stacked PRs:
+
+| Change Size | Strategy |
+|-------------|----------|
+| Small (<200 lines, <5 files) | Single PR |
+| Medium (200-600 lines) | Consider 2-3 stacked PRs |
+| Large (>600 lines) | Required 3-5 stacked PRs |
+
+Each stacked PR must be a **complete working vertical slice**:
+- PR #1: Walking skeleton (working E2E)
+- PR #2: Repository layer (tests pass)
+- PR #3: Service layer (tests pass)
+- PR #4: API + integration (all tests pass)
+
+PRs merge in order: #1 → main, #2 → main, #3 → main...
+
+---
+
+## Quick Reference
+
+| Phase | Checkpoint | User Action |
+|-------|------------|-------------|
+| 0 | None | Auto |
+| 1 | Scope review | "lock scope" |
+| 2 | Contracts/tests | "continue" |
+| 3 | None | Auto |
+| 4 | **CRITICAL** | "implement" |
+| 5 | Code review | "security" |
+| 6 | Security fixes | "verify" (if issues) |
+| 7 | None | Auto (iterate until READY) |
+| 8 | Final | Complete |
