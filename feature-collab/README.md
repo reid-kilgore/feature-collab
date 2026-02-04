@@ -1,14 +1,14 @@
 # feature-collab
 
-Collaborative feature development plugin for Claude Code with iterative PLAN.md planning and concrete verification requirements.
+Collaborative feature development plugin for Claude Code with contract-first TDD, scope locking, and adversarial verification.
 
 ## Overview
 
-This plugin extends the standard feature development workflow with two key enhancements:
+This plugin provides a structured, document-driven workflow for building features:
 
-1. **Collaborative Planning**: All planning happens in a `PLAN.md` file at your git root. You annotate it with CriticMarkup, Claude addresses your feedback, and you iterate until satisfied.
-
-2. **Verification Requirements**: Before implementation begins, you must have a concrete plan to verify the changes work—curl commands, Playwright tests, or manual verification steps.
+1. **Contract-First TDD**: Define types, routes, and function signatures in CONTRACTS.md, write failing tests, then implement
+2. **Scope Locking**: Explicitly lock scope after discovery to prevent creep
+3. **Adversarial Verification**: Multiple agents verify work independently before completion
 
 ## Usage
 
@@ -16,44 +16,61 @@ This plugin extends the standard feature development workflow with two key enhan
 /feature-collab [optional feature description]
 ```
 
+## Documents
+
+| Document | Purpose |
+|----------|---------|
+| PLAN.md | Single source of truth for feature status and decisions |
+| SESSION_STATE.md | Resumability state for conversation compaction |
+| CONTRACTS.md | Types, routes, and function signatures |
+| TEST_SPEC.md | Exhaustive test specifications |
+| DETAILS.md | Implementation details and code samples |
+| DECISIONS.md | Architectural decision records |
+
 ## Workflow Phases
 
-| Phase | Description |
-|-------|-------------|
-| 1. Discovery | Understand what needs to be built |
-| 2. Codebase Exploration | Analyze existing patterns and architecture |
-| 3. Clarifying Questions | Resolve ambiguities before design |
-| 4. Architecture Design | Design implementation approach |
-| **5. Collaborative Planning** | Write and iterate on PLAN.md with CriticMarkup |
-| **6. Verification Planning** | Define concrete verification steps |
-| 7. Implementation | Build the feature |
-| 8. Quality Review | Review code for issues |
-| 9. Verification & Summary | Execute verification and document results |
-
-## PLAN.md Format
-
-The plan uses CriticMarkup for annotations:
-- Highlights: `{==highlighted text==}`
-- Comments: `{>>comment text<<}`
-- Combined: `{==highlight==}{>>comment<<}`
-
-Tasks use GitHub-style checkboxes for easy extraction:
-```markdown
-- [ ] Task description
-  - Subtask or context
-  - More details
-```
+| Phase | Name | Checkpoint |
+|-------|------|------------|
+| 0 | Session Setup | Auto |
+| 1 | Discovery & Scope Lock | "lock scope" |
+| 2 | Contract Definition | "continue" |
+| 3 | Walking Skeleton | Auto |
+| 4 | Architecture Design | **"implement"** (critical) |
+| 5 | Implementation | "security" |
+| 6 | Security Review | "verify" (if issues) |
+| 7 | Exit Criteria Assessment | Auto (iterate until READY) |
+| 8 | Documentation & Handoff | Complete |
 
 ## Agents
 
-- **code-explorer** (yellow): Traces code paths and maps architecture
-- **code-architect** (green): Designs implementation blueprints
-- **code-reviewer** (red): Reviews code for bugs and quality issues
-- **code-verifier** (blue): Designs verification strategies beyond unit tests
+| Agent | Purpose |
+|-------|---------|
+| code-explorer | Traces code paths and maps architecture |
+| code-architect | Designs and implements based on contracts |
+| code-reviewer | Reviews code for bugs and quality issues |
+| code-verifier | Designs verification strategies and TEST_SPEC.md |
+| code-security | Reviews for security vulnerabilities |
+| test-runner | Executes tests, maintains scorecard (authoritative) |
+| test-implementer | Writes test files from TEST_SPEC.md |
+| test-gap-finder | Adversarially finds gaps in test coverage |
+| criteria-assessor | Skeptically assesses exit criteria |
+| scope-guardian | Monitors for scope creep |
 
-## Key Differences from feature-dev
+## Key Principles
 
-1. **PLAN.md as source of truth**: All planning lands in a file you can annotate and review
-2. **Iterative planning loop**: Expect multiple rounds of feedback before proceeding
-3. **Verification gate**: Must have concrete verification plan approved before implementation
-4. **Task extraction**: GitHub checkbox format lets you extract todos for personal tracking
+- **PLAN.md is the single source of truth** - read it first, update every phase
+- **Contracts before architecture** - tests define the spec
+- **Tests before implementation** - TDD RED-GREEN cycle
+- **Scope is locked** - changes require explicit unlock after Phase 1
+- **Test-runner is authoritative** - never bypass or override findings
+- **Curl tests are mandatory** - never skip API verification
+
+## CriticMarkup
+
+User annotates PLAN.md using CriticMarkup:
+- Highlights: `{==highlighted text==}`
+- Comments: `{>>comment text<<}`
+- Additions: `{++added text++}`
+- Deletions: `{--deleted text--}`
+
+Claude uses `{==highlights==}` only when writing to PLAN.md.
