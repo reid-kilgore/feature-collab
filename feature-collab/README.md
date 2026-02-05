@@ -14,6 +14,8 @@ This plugin provides a structured, document-driven workflow for building feature
 
 ```
 /feature-collab [optional feature description]
+/handoff [optional reason]
+/resume [optional path to PLAN.md]
 ```
 
 ## Documents
@@ -26,6 +28,7 @@ This plugin provides a structured, document-driven workflow for building feature
 | TEST_SPEC.md | Exhaustive test specifications |
 | DETAILS.md | Implementation details and code samples |
 | DECISIONS.md | Architectural decision records |
+| HANDOFF.md | Session transfer context and learnings |
 
 ## Workflow Phases
 
@@ -55,6 +58,7 @@ This plugin provides a structured, document-driven workflow for building feature
 | test-gap-finder | Adversarially finds gaps in test coverage |
 | criteria-assessor | Skeptically assesses exit criteria |
 | scope-guardian | Monitors for scope creep |
+| resume-agent | Bootstraps new session from handoff context |
 
 ## Key Principles
 
