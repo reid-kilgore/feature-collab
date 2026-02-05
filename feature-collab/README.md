@@ -15,7 +15,7 @@ This plugin provides a structured, document-driven workflow for building feature
 ```
 /feature-collab [optional feature description]
 /handoff [optional reason]
-/resume [optional path to PLAN.md]
+/pickup [optional path to PLAN.md]
 ```
 
 ## Documents

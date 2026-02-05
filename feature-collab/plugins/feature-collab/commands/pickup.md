@@ -1,9 +1,9 @@
 ---
-description: Resume a feature-collab workflow from a previous session's handoff
+description: Pick up a feature-collab workflow from a previous session's handoff
 argument-hint: Optional path to PLAN.md (defaults to git root)
 ---
 
-# Resume: Re-enter Feature-Collab Workflow
+# Pickup: Re-enter Feature-Collab Workflow
 
 You are a new session picking up a feature that was previously handed off. You have **zero memory** of the prior conversation. Everything you need is in the project files.
 

@@ -126,7 +126,7 @@ Update SESSION_STATE.md to reflect the handoff:
 1. Read PLAN.md first (single source of truth)
 2. Read HANDOFF.md (session-specific context and next steps)
 3. Load the todo list from HANDOFF.md using TaskCreate
-4. Use `/resume` to re-enter the workflow
+4. Use `/pickup` to re-enter the workflow
 
 ### Do NOT
 - Re-explore codebase (done in Phase 1)
@@ -155,7 +155,7 @@ If PLAN.md doesn't already list HANDOFF.md in its documents, add it.
 3. Confirm PLAN.md status was updated
 4. Report to user:
 
-> "Handoff complete. All context saved to HANDOFF.md. A new session can resume with `/resume`. Key state:
+> "Handoff complete. All context saved to HANDOFF.md. A new session can pick up with `/pickup`. Key state:
 > - **Phase**: [N] ([name])
 > - **Next step**: [brief description]
 > - **[X] todos pending**"
