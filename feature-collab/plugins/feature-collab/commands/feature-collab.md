@@ -7,6 +7,11 @@ argument-hint: Optional feature description or local PLAN.md file
 
 You are helping a developer implement a new feature through a collaborative, document-first, contract-first, test-driven process.
 
+## Model Usage
+- Use Opus for the main thread (planning, user interaction, synthesis)
+- When spawning agents, the agent frontmatter specifies the correct model
+- Never use Opus for agents that just run commands or read files
+
 ## Core Principles
 
 - **PLAN.md is the single source of truth**: Read it immediately, create if missing, update every phase
@@ -16,6 +21,10 @@ You are helping a developer implement a new feature through a collaborative, doc
 - **Main thread orchestrates, agents execute**: Keep main thread thin, delegate heavy work
 - **Test-runner is authoritative**: Never bypass or override test-runner's findings
 - **Curl tests are MANDATORY**: Never skip API verification with curl commands
+- **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
+- **Phases 5-7 are dark factory**: After user says "implement", run autonomously to completion
+- **Phase 8 is proof**: Showboat + rodney demo as proof of work
 
 ## Context Compaction
 
@@ -75,7 +84,9 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 - Checkpoint trigger: 50 tool calls or phase boundary
 ```
 
-4. Proceed immediately to Phase 1
+4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
+
+5. Proceed immediately to Phase 1
 
 ---
 
@@ -208,6 +219,15 @@ ANNOTATION GUIDE:
    - Update Scope Lock Status to LOCKED with timestamp
    - Proceed to Phase 2
 
+### Context Checkpoint
+
+All state has been saved to disk:
+- PLAN.md: Scope boundaries and exit criteria
+- SESSION_STATE.md: Current phase
+- DEMO.md: Initialized
+
+**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
+
 ---
 
 ## Phase 2: Contract Definition
@@ -296,16 +316,22 @@ function createNotificationWithDelivery(
    - Writes actual test files
    - Tests will FAIL (TDD RED state) - this is correct
 
-7. Run tests to confirm RED state:
-   ```bash
-   npm test
-   ```
-   Tests SHOULD fail. Update PLAN.md with test status.
+7. Launch `test-runner` agent to confirm RED state (tests SHOULD fail). Update PLAN.md with test status.
 
 8. Update PLAN.md with Verification Plan summary and Draft Scorecard
 
 9. **CHECKPOINT**:
    > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to walking skeleton."
+
+### Context Checkpoint
+
+All state has been saved to disk:
+- PLAN.md: Verification plan and scorecard
+- CONTRACTS.md: Type definitions
+- TEST_SPEC.md: Test specifications
+- Test files written to disk
+
+**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
 
 ---
 
@@ -326,13 +352,13 @@ function createNotificationWithDelivery(
 
 2. Identify which test represents the walking skeleton (simplest happy path E2E)
 
-3. Implement ONLY what's needed to pass that ONE test:
+3. Launch `code-architect` agent to implement ONLY what's needed to pass that ONE test:
    - Database schema (if needed)
    - Repository (minimal - just create)
    - Service (minimal - happy path only)
    - Route (minimal - one endpoint)
 
-4. Run the skeleton test to verify it passes
+4. Launch `test-runner` agent to verify the skeleton test passes
 
 5. Update PLAN.md:
 
@@ -424,25 +450,37 @@ function createNotificationWithDelivery(
 4. Update DETAILS.md with code samples
 
 5. **CHECKPOINT** (CRITICAL - do not skip):
-   > "Architecture complete. Please review [Architecture](#architecture) and [Tasks](#tasks). When satisfied, say **'implement'** to begin implementation."
+   > "Architecture complete. Please review [Architecture](#architecture) and [Tasks](#tasks). When satisfied, say **'implement'** to begin the dark factory — I'll implement, test, review security, and verify exit criteria autonomously, then present you with proof of work."
 
 6. **Do NOT proceed without explicit user approval.**
 
+### Context Checkpoint
+
+All state has been saved to disk:
+- PLAN.md: Architecture, tasks, full plan
+- DETAILS.md: Implementation details
+- CONTRACTS.md: Type definitions
+- TEST_SPEC.md: Test specifications
+
+**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window. The dark factory phases (5-7) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
+
 ---
 
-## Phase 5: Implementation
+## Phase 5: Implementation (Dark Factory)
 
 **Goal**: Make all tests pass (TDD GREEN phase)
 
 **DO NOT START WITHOUT EXPLICIT USER APPROVAL FROM PHASE 4**
+
+**Dark Factory**: This phase runs autonomously. No user checkpoints until complete. State is fully on disk.
 
 **Actions**:
 
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Implementation
-   **Waiting For**: In progress
+   **Current Phase**: Implementation (Dark Factory)
+   **Waiting For**: Autonomous — will report when complete
    ```
 
 2. For each task group, delegate to `code-architect` agent:
@@ -451,6 +489,7 @@ function createNotificationWithDelivery(
 3. After each implementation batch, run `test-runner` agent:
    - Updates scorecard
    - Reports pass/fail status
+   - Captures results with showboat: `uvx showboat exec DEMO.md bash "npm test"`
    - **Test-runner is authoritative** - do not dispute its findings
 
 4. **Scorecard-driven iteration**:
@@ -468,28 +507,29 @@ function createNotificationWithDelivery(
    - Main thread MUST NOT override test-runner findings
    - If test-runner says it fails, it fails. Period.
 
-6. When scorecard shows all green:
-   ```markdown
-   ## Status
-   **Current Phase**: Implementation (Complete)
-   **Waiting For**: User review
-   ```
+6. **Escalation (5 failure cycles)**: If test-runner reports failures and code-architect can't fix them in 5 cycles, **escalate to user** with:
+   - What was tried (all 5 attempts summarized)
+   - Current error state
+   - Proposed next approach
+   - Ask user for guidance before continuing
 
-   > "All tests passing. Scorecard green. Please review implementation. Say **'security'** to proceed to security review."
+7. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
 
 ---
 
-## Phase 6: Security Review
+## Phase 6: Security Review (Dark Factory)
 
 **Goal**: Verify implementation meets security standards
+
+**Dark Factory**: Continues autonomously from Phase 5.
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Security Review
-   **Waiting For**: Security analysis
+   **Current Phase**: Security Review (Dark Factory)
+   **Waiting For**: Autonomous — security analysis
    ```
 
 2. Launch `code-security` agent to check:
@@ -504,25 +544,27 @@ function createNotificationWithDelivery(
 3. Update PLAN.md with Security Review Results
 
 4. **If issues found**:
-   - Fix them
-   - Update PLAN.md
-   - **CHECKPOINT**: Ask user to confirm fixes, say **'verify'** to proceed
+   - Fix them automatically via `code-architect`
+   - Re-run `code-security` to verify fixes
+   - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
 
-5. **If no issues**: Proceed automatically to Phase 7
+5. Proceed directly to Phase 7 (no user checkpoint).
 
 ---
 
-## Phase 7: Exit Criteria Assessment
+## Phase 7: Exit Criteria Assessment (Dark Factory)
 
 **Goal**: Adversarial assessment of whether we're actually done
+
+**Dark Factory**: Continues autonomously from Phase 6.
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Exit Criteria Assessment
-   **Waiting For**: Assessment
+   **Current Phase**: Exit Criteria Assessment (Dark Factory)
+   **Waiting For**: Autonomous — assessment
    ```
 
 2. Compile exit criteria from Phase 1 and all subsequent phases
@@ -534,37 +576,49 @@ function createNotificationWithDelivery(
    - Returns READY or NOT READY verdict
 
 4. **If NOT READY**:
-   - Address all FAIL items
+   - Address all FAIL items via `code-architect`
    - Launch criteria-assessor again
-   - Repeat until READY
+   - Repeat until READY (max 3 cycles, then escalate to user)
 
 5. **If READY**: Proceed to Phase 8
 
 ---
 
-## Phase 8: Documentation & Handoff
+## Phase 8: Demo & Documentation
 
-**Goal**: Finalize documents and prepare for PR
+**Goal**: Build proof-of-work, finalize documents, prepare for PR
+
+**This phase returns to interactive mode — user reviews the proof.**
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Documentation & Handoff
-   **Waiting For**: Finalization
+   **Current Phase**: Demo & Documentation
+   **Waiting For**: Proof generation
    ```
 
-2. Prune PLAN.md to final summary (<200 lines):
+2. Launch `demo-builder` agent:
+   - Run `uvx showboat verify DEMO.md` to re-run all captures and confirm they still pass
+   - Add final summary to DEMO.md
+   - Capture final test run, curl results, any key outputs
+
+3. **If this is a web feature**, launch `browser-verifier` agent:
+   - Create rodney walkthrough script
+   - Run the walkthrough, capture screenshots
+   - Add screenshots to DEMO.md via `uvx showboat image`
+
+4. Prune PLAN.md to final summary (<200 lines):
    - Keep: Status, Final Summary, key decisions
    - Move details to DECISIONS.md
    - Archive exploration notes if valuable
 
-3. Ensure DECISIONS.md is complete (architectural decision records)
+5. Ensure DECISIONS.md is complete (architectural decision records)
 
-4. Generate CHANGELOG.md for PR description
+6. Generate CHANGELOG.md for PR description
 
-5. Update Final Summary:
+7. Update Final Summary:
 
 ```markdown
 ## Final Summary
@@ -585,13 +639,18 @@ function createNotificationWithDelivery(
 ### Security Posture
 [Summary of security measures]
 
+### Proof of Work
+See DEMO.md for re-executable proof that the feature works.
+
 ## Status
 **Current Phase**: Complete
 **Completed**: [date]
 ```
 
-6. **Final CHECKPOINT**:
-   > "Feature complete. PLAN.md finalized. Ready for PR. See [Final Summary](#final-summary)."
+8. **Final CHECKPOINT**:
+   > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
+   >
+   > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."
 
 ---
 
@@ -619,14 +678,14 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 
 ## Quick Reference
 
-| Phase | Checkpoint | User Action |
-|-------|------------|-------------|
-| 0 | None | Auto |
-| 1 | Scope review | "lock scope" |
-| 2 | Contracts/tests | "continue" |
-| 3 | None | Auto |
-| 4 | **CRITICAL** | "implement" |
-| 5 | Code review | "security" |
-| 6 | Security fixes | "verify" (if issues) |
-| 7 | None | Auto (iterate until READY) |
-| 8 | Final | Complete |
+| Phase | Mode | Checkpoint | User Action |
+|-------|------|------------|-------------|
+| 0 | Interactive | None | Auto |
+| 1 | Interactive | Scope review | "lock scope" |
+| 2 | Interactive | Contracts/tests | "continue" |
+| 3 | Interactive | None | Auto |
+| 4 | Interactive | **CRITICAL** | "implement" (starts dark factory) |
+| 5 | **Dark Factory** | None (escalate after 5 failures) | Auto |
+| 6 | **Dark Factory** | None | Auto |
+| 7 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
+| 8 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |

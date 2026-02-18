@@ -1,15 +1,24 @@
 {
   "name": "feature-collab",
-  "version": "1.0.0",
-  "description": "Collaborative feature development with iterative PLAN.md planning, CriticMarkup annotations, and concrete verification requirements",
+  "version": "2.0.0",
+  "description": "Multi-shape collaborative development: features, bugfixes, enhancements, refactors, spikes, releases, and hotfixes with contract-first TDD, showboat proof-of-work, and rodney browser verification",
   "author": {
     "name": "Reid"
   },
   "keywords": [
     "feature-development",
+    "bugfix",
+    "enhancement",
+    "refactor",
+    "spike",
+    "release",
+    "hotfix",
     "planning",
     "collaboration",
     "verification",
-    "criticmarkup"
+    "criticmarkup",
+    "tdd",
+    "showboat",
+    "rodney"
   ]
 }

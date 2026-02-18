@@ -2,7 +2,7 @@
 name: resume-agent
 description: Bootstraps a new session by loading handoff context and re-entering the feature-collab workflow
 tools: Bash, Glob, Grep, LS, Read, TodoWrite, WebSearch, KillShell, BashOutput
-model: sonnet
+model: haiku
 color: blue
 ---
 
