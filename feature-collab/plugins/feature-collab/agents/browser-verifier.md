@@ -27,7 +27,7 @@ You use `uvx rodney` for browser operations:
 
 ### 1. Analyze the Feature
 
-Read PLAN.md and CONTRACTS.md to understand:
+Read PLAN.md and CONTRACTS.md (located at `docs/reidplans/$(git branch --show-current)/`) to understand:
 - What URLs/pages are involved
 - What user interactions to test
 - What visual states to verify

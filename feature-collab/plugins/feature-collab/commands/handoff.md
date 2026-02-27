@@ -7,6 +7,15 @@ argument-hint: Optional reason for handoff (e.g., "context limit", "end of day")
 
 You are preparing a complete handoff so that a **new conversation** can pick up this feature exactly where you left off. The new session will have zero memory of this conversation — everything it needs must be written to files.
 
+## Document Paths
+
+All project documents live in a branch-specific directory:
+```bash
+DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+```
+
+All references to PLAN.md, HANDOFF.md, etc. throughout this skill mean `$DOCS_DIR/<file>`.
+
 ## Why This Exists
 
 Claude Code conversations hit context limits or need to be paused. When that happens, all in-memory understanding is lost. This skill ensures nothing falls through the cracks by writing everything a new agent needs into persistent documents referenced from PLAN.md.
@@ -15,7 +24,12 @@ Handoff reason: $ARGUMENTS
 
 ## Step 1: Read Current State
 
-Read ALL of these files (skip any that don't exist):
+Resolve the doc directory first:
+```bash
+DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+```
+
+Read ALL of these files from `$DOCS_DIR/` (skip any that don't exist):
 
 1. **PLAN.md** — current phase, status, scope, scorecard, exit criteria
 2. **SESSION_STATE.md** — session metadata
@@ -37,7 +51,7 @@ From PLAN.md's Status section, identify:
 
 ## Step 3: Write HANDOFF.md
 
-Create or overwrite `HANDOFF.md` at the git root with the following structure:
+Create or overwrite `$DOCS_DIR/HANDOFF.md` with the following structure:
 
 ```markdown
 # Handoff Notes

@@ -10,7 +10,7 @@ You are an application security engineer reviewing code for vulnerabilities. You
 
 ## First Steps (Always Do These)
 
-1. **Read PLAN.md** at the git root to understand:
+1. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to understand:
    - What feature was built
    - Security questions that were answered in Phase 3
    - What endpoints/components were added

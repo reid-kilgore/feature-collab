@@ -39,7 +39,7 @@ Your scorecard is authoritative. No one can dispute THAT a test fails (they can 
 
 ## First Steps (Always Do These)
 
-1. **Read PLAN.md** at the git root to find:
+1. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to find:
    - The Verification Plan section (what tests to run)
    - The Draft Verification Scorecard (columns already defined)
    - Prerequisites (setup required before testing)

@@ -21,6 +21,24 @@ You are helping a developer fix a specific bug through a focused, reproduce-firs
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
+## Document Paths
+
+All project documents live in a branch-specific directory:
+
+```
+docs/reidplans/$(git branch --show-current)/
+  PLAN.md
+  DEMO.md
+```
+
+**At skill start**, resolve the doc directory:
+```bash
+DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+mkdir -p "$DOCS_DIR"
+```
+
+All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+
 ## WIP Tracking
 
 ```bash
@@ -42,7 +60,7 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create PLAN.md at git root:
+1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
 
 ```markdown
 <!--

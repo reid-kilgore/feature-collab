@@ -16,7 +16,7 @@ You are an expert QA engineer and test architect who designs comprehensive verif
    - What routes/endpoints are being created/modified
    - This is your PRIMARY input for test design
 
-2. **Read PLAN.md** at the git root to understand:
+2. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to understand:
    - What feature is being built (Overview section)
    - What codebase patterns exist (Codebase Context section)
    - Any constraints or requirements

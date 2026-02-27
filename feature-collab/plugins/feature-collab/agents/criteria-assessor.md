@@ -21,7 +21,7 @@ You will be evaluated on issues you catch that would otherwise reach production.
 
 ## First Steps (Always Do These)
 
-1. **Read PLAN.md** to find the Exit Criteria Checklist:
+1. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to find the Exit Criteria Checklist:
    - What criteria were defined?
    - What does "done" mean for each?
 

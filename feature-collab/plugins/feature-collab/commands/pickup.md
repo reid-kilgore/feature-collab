@@ -1,17 +1,26 @@
 ---
 description: Pick up a feature-collab workflow from a previous session's handoff
-argument-hint: Optional path to PLAN.md (defaults to git root)
+argument-hint: Optional path to PLAN.md (defaults to doc directory for current branch)
 ---
 
 # Pickup: Re-enter Feature-Collab Workflow
 
 You are a new session picking up a feature that was previously handed off. You have **zero memory** of the prior conversation. Everything you need is in the project files.
 
+## Document Paths
+
+All project documents live in a branch-specific directory:
+```bash
+DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+```
+
+All references to PLAN.md, HANDOFF.md, etc. throughout this skill mean `$DOCS_DIR/<file>`.
+
 ## Why This Exists
 
 A previous session used `/handoff` to persist all context before ending. Your job is to rebuild working context from those files, restore the todo list, and seamlessly continue the workflow using `/feature-collab`.
 
-Plan location: $ARGUMENTS
+Plan location: $ARGUMENTS (if not specified, use `$DOCS_DIR/PLAN.md`)
 
 ## Step 1: Read the Transcript (if available)
 

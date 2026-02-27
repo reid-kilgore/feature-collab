@@ -27,6 +27,30 @@ You are helping a developer implement a new feature through a collaborative, doc
 - **Phase 9 is proof**: Showboat + rodney demo as proof of work
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
+## Document Paths
+
+All project documents live in a branch-specific directory:
+
+```
+docs/reidplans/$(git branch --show-current)/
+  PLAN.md
+  DEMO.md
+  CONTRACTS.md
+  TEST_SPEC.md
+  DETAILS.md
+  DECISIONS.md
+  SESSION_STATE.md
+  CHANGELOG.md
+```
+
+**At skill start**, resolve the doc directory:
+```bash
+DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+mkdir -p "$DOCS_DIR"
+```
+
+All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`, etc.
+
 ## WIP Tracking
 
 Track progress and branches via the `wip` CLI throughout the workflow. These are orchestration commands and run in the main thread.
@@ -92,7 +116,11 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 
 **Actions**:
 
-1. Check if PLAN.md exists at git root
+1. Resolve doc directory and check if PLAN.md exists:
+   ```bash
+   DOCS_DIR="docs/reidplans/$(git branch --show-current)"
+   mkdir -p "$DOCS_DIR"
+   ```
 2. Check if SESSION_STATE.md exists
 3. Create/update SESSION_STATE.md:
 
@@ -142,7 +170,7 @@ Initial request: $ARGUMENTS
 
 1. Create todo list with all 10 phases
 
-2. **Create or update PLAN.md** at git root with initial structure:
+2. **Create or update PLAN.md** in the doc directory (`$DOCS_DIR/PLAN.md`) with initial structure:
 
 ```markdown
 <!--
@@ -288,7 +316,7 @@ All state has been saved to disk:
    **Waiting For**: Contract drafting
    ```
 
-2. **Create CONTRACTS.md** at git root:
+2. **Create CONTRACTS.md** in the doc directory (`$DOCS_DIR/CONTRACTS.md`):
 
 ```markdown
 # Feature Contracts
