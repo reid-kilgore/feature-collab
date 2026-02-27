@@ -76,13 +76,12 @@ wip add-branch <item> <new-branch-name>
 
 **At completion** (Phase 9):
 ```bash
-wip status <item> DONE
-wip note <item> "feature-collab complete — ready for PR"
+wip note <item> "feature-collab complete — ready for PR/merge"
 ```
 
-**When branches are merged**:
+**DONE status is set only after the branch is actually merged** (not by this skill):
 ```bash
-wip branch-status <item> <branch> MERGED
+wip branch-status <item> <branch> MERGED && wip status <item> DONE
 ```
 
 If `wip get` fails (no item found), skip wip tracking silently — the user may not be in a tracked worktree.
@@ -774,7 +773,7 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-8. **WIP**: `wip status <item> DONE && wip note <item> "feature-collab complete — ready for PR"`
+8. **WIP**: `wip note <item> "feature-collab complete — ready for PR/merge"`
 
 9. **Final CHECKPOINT**:
    > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).

@@ -46,8 +46,9 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting release: [version]"
 # When creating release branch: wip add-branch <item> <release-branch>
 # At phase transitions: wip note <item> "Phase N: [status]"
-# At completion: wip status <item> DONE
-# When branch is merged: wip branch-status <item> <branch> MERGED
+# At completion: wip note <item> "release complete — ready to push/merge"
+# DONE status is set only after branch is merged (not by this skill)
+# When branch is merged: wip branch-status <item> <branch> MERGED && wip status <item> DONE
 # If wip get fails, skip tracking silently
 ```
 
@@ -193,7 +194,7 @@ ANNOTATION GUIDE:
 [Any caveats or known issues with this release]
 ```
 
-4. **WIP**: `wip status <item> DONE && wip note <item> "release complete — ready to push"`
+4. **WIP**: `wip note <item> "release complete — ready to push/merge"`
 
 5. Prompt user:
    > "Release branch ready. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review. When ready, push with `git push origin [release-branch]`."

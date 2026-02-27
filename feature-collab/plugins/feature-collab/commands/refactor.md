@@ -46,7 +46,8 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting refactor: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip status <item> DONE
+# At completion: wip note <item> "refactor complete — ready for PR/merge"
+# DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
 
@@ -195,7 +196,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-4. **WIP**: `wip status <item> DONE && wip note <item> "refactor complete"`
+4. **WIP**: `wip note <item> "refactor complete — ready for PR/merge"`
 
 5. Prompt user:
    > "Refactor complete. All tests still passing. See DEMO.md for before/after proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."

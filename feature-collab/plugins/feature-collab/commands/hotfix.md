@@ -47,8 +47,9 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting hotfix: [issue]"
 # When creating hotfix branch: wip add-branch <item> hotfix/[name]
 # At phase transitions: wip note <item> "Phase N: [status]"
-# At completion: wip status <item> DONE
-# When branch is merged: wip branch-status <item> <branch> MERGED
+# At completion: wip note <item> "hotfix complete — ready to deploy/merge"
+# DONE status is set only after branch is merged (not by this skill)
+# When branch is merged: wip branch-status <item> <branch> MERGED && wip status <item> DONE
 # If wip get fails, skip tracking silently
 ```
 
@@ -217,7 +218,7 @@ ANNOTATION GUIDE:
 - [ ] Ready for deploy
 ```
 
-4. **WIP**: `wip status <item> DONE && wip note <item> "hotfix complete — ready to deploy"`
+4. **WIP**: `wip note <item> "hotfix complete — ready to deploy/merge"`
 
 5. Prompt user:
    > "Hotfix ready. Both hotfix branch and main have the fix with passing tests. See DEMO.md for proof. Run `mdannotate PLAN.md` to review. Push when ready:

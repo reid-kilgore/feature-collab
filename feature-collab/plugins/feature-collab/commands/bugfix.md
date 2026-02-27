@@ -46,7 +46,8 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting bugfix: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip status <item> DONE
+# At completion: wip note <item> "bugfix complete — ready for PR/merge"
+# DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
 
@@ -196,7 +197,7 @@ ANNOTATION GUIDE:
 - **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip status <item> DONE && wip note <item> "bugfix complete"`
+5. **WIP**: `wip note <item> "bugfix complete — ready for PR/merge"`
 
 6. Prompt user:
    > "Bug fixed and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."

@@ -45,7 +45,8 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 # At start: detect and activate wip item
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting spike: [question]"
 # At phase transitions: wip note <item> "Phase N: [status]"
-# At completion: wip status <item> DONE
+# At completion: wip note <item> "spike complete — ready for PR/merge"
+# DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
 
@@ -149,7 +150,7 @@ ANNOTATION GUIDE:
 3. Clean up scratch files:
    > "Spike scratch files are in `spike-scratch/`. Keep them for reference or delete with `rm -rf spike-scratch/`."
 
-4. **WIP**: `wip status <item> DONE && wip note <item> "spike complete"`
+4. **WIP**: `wip note <item> "spike complete — ready for PR/merge"`
 
 5. Prompt user:
    > "Spike complete. See DEMO.md for executable findings and PLAN.md for recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."

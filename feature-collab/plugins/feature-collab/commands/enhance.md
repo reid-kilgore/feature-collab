@@ -48,7 +48,8 @@ All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/<
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip status <item> DONE
+# At completion: wip note <item> "enhance complete — ready for PR/merge"
+# DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
 
@@ -261,7 +262,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip status <item> DONE && wip note <item> "enhance complete"`
+5. **WIP**: `wip note <item> "enhance complete — ready for PR/merge"`
 
 6. Prompt user:
    > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
