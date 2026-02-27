@@ -20,6 +20,19 @@ You are helping a developer fix an urgent production issue with minimal risk and
 - **Cherry-pick back**: Fix goes to hotfix branch AND main
 - **PLAN.md is source of truth**
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents. Exception: git workflow commands (branch, cherry-pick) are orchestration and stay in the main thread.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting hotfix: [issue]"
+# When creating hotfix branch: wip add-branch <item> hotfix/[name]
+# At phase transitions: wip note <item> "Phase N: [status]"
+# At completion: wip status <item> DONE
+# When branch is merged: wip branch-status <item> <branch> MERGED
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -86,7 +99,13 @@ ANNOTATION GUIDE:
    git checkout -b hotfix/[name] [production-branch]
    ```
 
-4. Launch `code-explorer` agent to trace the issue.
+4. **WIP**: Track the new branch:
+   ```bash
+   wip add-branch <item> hotfix/[name]
+   wip note <item> "Phase 1: Hotfix branch created from [production-branch]"
+   ```
+
+5. Launch `code-explorer` agent to trace the issue.
 
 5. Launch `test-implementer` agent to write failing test.
 
@@ -94,8 +113,10 @@ ANNOTATION GUIDE:
 
 7. Launch `demo-builder` agent to initialize proof doc and capture failing state.
 
-8. **CHECKPOINT**:
-   > "Issue triaged, failing test written on hotfix branch. Review [Root Cause](#root-cause) and [Hotfix Plan](#hotfix-plan). Say **'fix'** to proceed."
+9. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
+
+10. **CHECKPOINT**:
+    > "Issue triaged, failing test written on hotfix branch. Review [Root Cause](#root-cause) and [Hotfix Plan](#hotfix-plan). Say **'fix'** to proceed."
 
 ---
 
@@ -134,6 +155,8 @@ ANNOTATION GUIDE:
 6. Launch `test-runner` agent on main to verify tests pass after cherry-pick.
 
 7. Launch `scope-guardian` agent to verify minimal change.
+
+8. **WIP**: `wip note <item> "Phase 2: Hotfix applied, cherry-picked to main"`
 
 9. **Escalation**: If 3 fix cycles fail (lower threshold for hotfixes), escalate immediately.
 
@@ -176,7 +199,9 @@ ANNOTATION GUIDE:
 - [ ] Ready for deploy
 ```
 
-4. Prompt user:
+4. **WIP**: `wip status <item> DONE && wip note <item> "hotfix complete — ready to deploy"`
+
+5. Prompt user:
    > "Hotfix ready. Both hotfix branch and main have the fix with passing tests. See DEMO.md for proof. Run `mdannotate PLAN.md` to review. Push when ready:
    > ```
    > git push origin hotfix/[name]

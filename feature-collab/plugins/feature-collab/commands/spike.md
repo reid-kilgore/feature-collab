@@ -19,6 +19,17 @@ You are helping a developer explore a technical question, prototype an approach,
 - **Time-boxed**: Spikes have a clear question and stop when answered
 - **Showboat as deliverable**: The demo doc IS the deliverable
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting spike: [question]"
+# At phase transitions: wip note <item> "Phase N: [status]"
+# At completion: wip status <item> DONE
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -120,5 +131,7 @@ ANNOTATION GUIDE:
 3. Clean up scratch files:
    > "Spike scratch files are in `spike-scratch/`. Keep them for reference or delete with `rm -rf spike-scratch/`."
 
-4. Prompt user:
+4. **WIP**: `wip status <item> DONE && wip note <item> "spike complete"`
+
+5. Prompt user:
    > "Spike complete. See DEMO.md for executable findings and PLAN.md for recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."

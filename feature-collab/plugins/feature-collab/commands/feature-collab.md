@@ -25,6 +25,43 @@ You are helping a developer implement a new feature through a collaborative, doc
 - **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
 - **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
 - **Phase 9 is proof**: Showboat + rodney demo as proof of work
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+Track progress and branches via the `wip` CLI throughout the workflow. These are orchestration commands and run in the main thread.
+
+**At skill start** (Phase 0):
+```bash
+# Detect current wip item from branch name
+wip get "$(git branch --show-current)"
+# If found, mark active and note the start
+wip status <item> ACTIVE
+wip note <item> "Starting feature-collab: [feature name]"
+```
+
+**At every phase transition**:
+```bash
+wip note <item> "Phase N: [phase name] — [brief status]"
+```
+
+**When creating any branch** (walking skeleton, stacked PRs, etc.):
+```bash
+wip add-branch <item> <new-branch-name>
+```
+
+**At completion** (Phase 9):
+```bash
+wip status <item> DONE
+wip note <item> "feature-collab complete — ready for PR"
+```
+
+**When branches are merged**:
+```bash
+wip branch-status <item> <branch> MERGED
+```
+
+If `wip get` fails (no item found), skip wip tracking silently — the user may not be in a tracked worktree.
 
 ## Context Compaction
 
@@ -86,7 +123,12 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 
 4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
 
-5. Proceed immediately to Phase 1
+5. **WIP**: Detect and activate wip item:
+   ```bash
+   wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting feature-collab: [feature name]"
+   ```
+
+6. Proceed immediately to Phase 1
 
 ---
 
@@ -217,6 +259,7 @@ ANNOTATION GUIDE:
 
 7. When user says "lock scope":
    - Update Scope Lock Status to LOCKED with timestamp
+   - **WIP**: `wip note <item> "Phase 1: Scope locked"`
    - Proceed to Phase 2
 
 ### Context Checkpoint
@@ -320,7 +363,9 @@ function createNotificationWithDelivery(
 
 8. Update PLAN.md with Verification Plan summary and Draft Scorecard
 
-9. **CHECKPOINT**:
+9. **WIP**: `wip note <item> "Phase 2: Contracts defined, tests written (TDD RED)"`
+
+10. **CHECKPOINT**:
    > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to walking skeleton."
 
 ### Context Checkpoint
@@ -378,7 +423,9 @@ All state has been saved to disk:
 **Skeleton Verified**: YES
 ```
 
-6. Proceed automatically to Phase 4:
+6. **WIP**: `wip note <item> "Phase 3: Walking skeleton verified"`
+
+7. Proceed automatically to Phase 4:
    > "Walking skeleton verified. Target test passing. Proceeding to architecture design."
 
 ---
@@ -449,7 +496,9 @@ All state has been saved to disk:
 
 4. Update DETAILS.md with code samples
 
-5. **CHECKPOINT** (CRITICAL - do not skip):
+5. **WIP**: `wip note <item> "Phase 4: Architecture complete, awaiting user approval"`
+
+6. **CHECKPOINT** (CRITICAL - do not skip):
    > "Architecture complete. Please review [Architecture](#architecture) and [Tasks](#tasks). When satisfied, say **'implement'** to begin the dark factory — I'll implement, test, review security, and verify exit criteria autonomously, then present you with proof of work."
 
 6. **Do NOT proceed without explicit user approval.**
@@ -513,7 +562,9 @@ All state has been saved to disk:
    - Proposed next approach
    - Ask user for guidance before continuing
 
-7. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
+7. **WIP**: `wip note <item> "Phase 5: All tests green"`
+
+8. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
 
 ---
 
@@ -555,7 +606,9 @@ All state has been saved to disk:
    - **Remaining**: 0 actionable
    ```
 
-7. Proceed directly to Phase 7 (no user checkpoint).
+7. **WIP**: `wip note <item> "Phase 6: CodeRabbit review complete"`
+
+8. Proceed directly to Phase 7 (no user checkpoint).
 
 ---
 
@@ -590,7 +643,9 @@ All state has been saved to disk:
    - Re-run `code-security` to verify fixes
    - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
 
-5. Proceed directly to Phase 8 (no user checkpoint).
+5. **WIP**: `wip note <item> "Phase 7: Security review clear"`
+
+6. Proceed directly to Phase 8 (no user checkpoint).
 
 ---
 
@@ -622,7 +677,9 @@ All state has been saved to disk:
    - Launch criteria-assessor again
    - Repeat until READY (max 3 cycles, then escalate to user)
 
-5. **If READY**: Proceed to Phase 9
+5. **WIP**: `wip note <item> "Phase 8: Exit criteria READY"`
+
+6. **If READY**: Proceed to Phase 9
 
 ---
 
@@ -689,7 +746,9 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-8. **Final CHECKPOINT**:
+8. **WIP**: `wip status <item> DONE && wip note <item> "feature-collab complete — ready for PR"`
+
+9. **Final CHECKPOINT**:
    > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
    >
    > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."

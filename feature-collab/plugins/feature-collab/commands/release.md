@@ -19,6 +19,19 @@ You are helping a developer prepare a release branch by selecting commits, resol
 - **Traceability**: Every included commit is documented
 - **PLAN.md is source of truth**
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents. Exception: git workflow commands (branch, cherry-pick) are orchestration and stay in the main thread.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting release: [version]"
+# When creating release branch: wip add-branch <item> <release-branch>
+# At phase transitions: wip note <item> "Phase N: [status]"
+# At completion: wip status <item> DONE
+# When branch is merged: wip branch-status <item> <branch> MERGED
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -71,7 +84,9 @@ ANNOTATION GUIDE:
 - [ ] Release documented
 ```
 
-3. **CHECKPOINT**:
+3. **WIP**: `wip note <item> "Phase 1: Release plan ready, awaiting confirmation"`
+
+4. **CHECKPOINT**:
    > "Release plan ready. Review [Commits to Include](#commits-to-include). Say **'prepare'** to create the release branch."
 
 ---
@@ -92,6 +107,12 @@ ANNOTATION GUIDE:
 2. Create the release branch:
    ```bash
    git checkout -b [release-branch] [base]
+   ```
+
+3. **WIP**: Track the new branch:
+   ```bash
+   wip add-branch <item> [release-branch]
+   wip note <item> "Phase 2: Release branch created from [base]"
    ```
 
 3. Cherry-pick each commit in order:
@@ -154,7 +175,9 @@ ANNOTATION GUIDE:
 [Any caveats or known issues with this release]
 ```
 
-4. Prompt user:
+4. **WIP**: `wip status <item> DONE && wip note <item> "release complete — ready to push"`
+
+5. Prompt user:
    > "Release branch ready. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review. When ready, push with `git push origin [release-branch]`."
 
 ### Context Checkpoint

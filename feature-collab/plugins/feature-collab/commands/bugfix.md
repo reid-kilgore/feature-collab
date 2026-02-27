@@ -19,6 +19,18 @@ You are helping a developer fix a specific bug through a focused, reproduce-firs
 - **Proof of fix**: Showboat document proves the bug is fixed
 - **PLAN.md is source of truth**: Create/update at every phase
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting bugfix: [description]"
+# At phase transitions: wip note <item> "Phase N: [status]"
+# When creating branches: wip add-branch <item> <branch>
+# At completion: wip status <item> DONE
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -90,7 +102,9 @@ ANNOTATION GUIDE:
    - `showboat init DEMO.md "Bugfix: [bug title]"`
    - Capture the failing test output
 
-7. **CHECKPOINT**:
+7. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
+
+8. **CHECKPOINT**:
    > "Bug reproduced with failing test. Root cause identified. Review [Root Cause Analysis](#root-cause-analysis) and [Scope](#scope). Say **'lock scope'** to proceed with the fix."
 
 ---
@@ -125,7 +139,9 @@ ANNOTATION GUIDE:
 
 6. **Escalation**: If test-runner reports failures and code-architect can't fix in 5 cycles, escalate to user with full context.
 
-7. When all tests pass, proceed to Phase 3.
+7. **WIP**: `wip note <item> "Phase 2: Bug fixed, all tests green"`
+
+8. When all tests pass, proceed to Phase 3.
 
 ---
 
@@ -162,7 +178,9 @@ ANNOTATION GUIDE:
 - **Proof**: See DEMO.md
 ```
 
-5. Prompt user:
+5. **WIP**: `wip status <item> DONE && wip note <item> "bugfix complete"`
+
+6. Prompt user:
    > "Bug fixed and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
 ### Context Checkpoint

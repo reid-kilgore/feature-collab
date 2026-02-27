@@ -19,6 +19,18 @@ You are helping a developer implement a small enhancement (<200 lines of product
 - **Tests before implementation**: TDD RED-GREEN
 - **PLAN.md is source of truth**
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
+# At phase transitions: wip note <item> "Phase N: [status]"
+# When creating branches: wip add-branch <item> <branch>
+# At completion: wip status <item> DONE
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -82,8 +94,10 @@ ANNOTATION GUIDE:
 
 8. Launch `demo-builder` agent to initialize proof doc and capture failing state.
 
-9. **CHECKPOINT**:
-   > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
+9. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+
+10. **CHECKPOINT**:
+    > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
 
 ---
 
@@ -117,7 +131,9 @@ ANNOTATION GUIDE:
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
-7. Proceed to Phase 3 when all tests pass.
+7. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+
+8. Proceed to Phase 3 when all tests pass.
 
 ### Context Checkpoint
 
@@ -161,7 +177,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    - **Remaining**: 0 actionable
    ```
 
-7. Proceed to Phase 4.
+7. **WIP**: `wip note <item> "Phase 3: CodeRabbit review complete"`
+
+8. Proceed to Phase 4.
 
 ---
 
@@ -184,7 +202,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 4. If criteria-assessor returns NOT READY, fix and re-assess (up to 3 cycles).
 
-5. Proceed to Phase 5 when READY.
+5. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
+
+6. Proceed to Phase 5 when READY.
 
 ---
 
@@ -221,7 +241,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-5. Prompt user:
+5. **WIP**: `wip status <item> DONE && wip note <item> "enhance complete"`
+
+6. Prompt user:
    > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
 ### Context Checkpoint

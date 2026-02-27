@@ -19,6 +19,18 @@ You are helping a developer refactor code while proving that behavior is complet
 - **Proof via diff**: Showboat captures before/after to prove equivalence
 - **PLAN.md is source of truth**
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+## WIP Tracking
+
+```bash
+# At start: detect and activate wip item
+wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting refactor: [description]"
+# At phase transitions: wip note <item> "Phase N: [status]"
+# When creating branches: wip add-branch <item> <branch>
+# At completion: wip status <item> DONE
+# If wip get fails, skip tracking silently
+```
 
 Initial request: $ARGUMENTS
 
@@ -81,7 +93,9 @@ ANNOTATION GUIDE:
 
 4. Launch `demo-builder` agent to initialize proof doc and capture baseline test results.
 
-5. **CHECKPOINT**:
+5. **WIP**: `wip note <item> "Phase 1: Behavior characterized, baseline recorded"`
+
+6. **CHECKPOINT**:
    > "Current behavior characterized. All tests passing (N/N). Review [Refactor Goals](#refactor-goals) and [Scope](#scope). Say **'refactor'** to proceed."
 
 ---
@@ -121,7 +135,9 @@ ANNOTATION GUIDE:
    - Verify no behavior changes leaked in
    - Verify no new features were added
 
-7. When all tests pass, proceed to Phase 3.
+7. **WIP**: `wip note <item> "Phase 2: Refactor complete, all tests still green"`
+
+8. When all tests pass, proceed to Phase 3.
 
 ### Context Checkpoint
 
@@ -161,7 +177,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-4. Prompt user:
+4. **WIP**: `wip status <item> DONE && wip note <item> "refactor complete"`
+
+5. Prompt user:
    > "Refactor complete. All tests still passing. See DEMO.md for before/after proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
 ### Context Checkpoint
