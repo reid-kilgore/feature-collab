@@ -125,7 +125,47 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 ---
 
-## Phase 3: Verify (Dark Factory)
+## Phase 3: CodeRabbit Review (Dark Factory)
+
+**Goal**: Run CodeRabbit locally and incorporate its feedback. Runs autonomously.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: CodeRabbit Review
+   **Waiting For**: In progress (dark factory)
+   ```
+
+2. Launch `code-reviewer` agent to run CodeRabbit locally:
+   - Run `npx coderabbitai review` (or the project-configured CodeRabbit CLI command)
+   - Collect all findings: bugs, style issues, suggestions, security concerns
+
+3. Launch `code-architect` agent to address actionable CodeRabbit findings:
+   - Fix bugs and security issues flagged by CodeRabbit
+   - Apply style/pattern suggestions that align with project conventions
+   - Skip suggestions that conflict with the existing architecture or are out of scope
+   - Document any skipped findings with rationale in PLAN.md
+
+4. Launch `test-runner` agent to verify no regressions after fixes.
+
+5. Launch `code-reviewer` agent to re-run CodeRabbit and confirm findings are resolved.
+
+6. Update PLAN.md with CodeRabbit Review Results:
+   ```markdown
+   ## CodeRabbit Review
+   - **Findings**: [count] total
+   - **Fixed**: [count]
+   - **Skipped (with rationale)**: [count]
+   - **Remaining**: 0 actionable
+   ```
+
+7. Proceed to Phase 4.
+
+---
+
+## Phase 4: Verify (Dark Factory)
 
 **Goal**: Final verification pass. Runs autonomously.
 
@@ -144,11 +184,11 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 4. If criteria-assessor returns NOT READY, fix and re-assess (up to 3 cycles).
 
-5. Proceed to Phase 4 when READY.
+5. Proceed to Phase 5 when READY.
 
 ---
 
-## Phase 4: Demo
+## Phase 5: Demo
 
 **Goal**: Present proof of enhancement to user.
 

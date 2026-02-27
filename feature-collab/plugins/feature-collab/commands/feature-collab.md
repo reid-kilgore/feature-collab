@@ -23,8 +23,8 @@ You are helping a developer implement a new feature through a collaborative, doc
 - **Curl tests are MANDATORY**: Never skip API verification with curl commands
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
-- **Phases 5-7 are dark factory**: After user says "implement", run autonomously to completion
-- **Phase 8 is proof**: Showboat + rodney demo as proof of work
+- **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
+- **Phase 9 is proof**: Showboat + rodney demo as proof of work
 
 ## Context Compaction
 
@@ -98,7 +98,7 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create todo list with all 9 phases
+1. Create todo list with all 10 phases
 
 2. **Create or update PLAN.md** at git root with initial structure:
 
@@ -462,7 +462,7 @@ All state has been saved to disk:
 - CONTRACTS.md: Type definitions
 - TEST_SPEC.md: Test specifications
 
-**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window. The dark factory phases (5-7) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
+**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window. The dark factory phases (5-8) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
 
 ---
 
@@ -517,7 +517,49 @@ All state has been saved to disk:
 
 ---
 
-## Phase 6: Security Review (Dark Factory)
+## Phase 6: CodeRabbit Review (Dark Factory)
+
+**Goal**: Run CodeRabbit locally and incorporate its feedback.
+
+**Dark Factory**: Continues autonomously from Phase 5.
+
+**Actions**:
+
+1. Update status:
+   ```markdown
+   ## Status
+   **Current Phase**: CodeRabbit Review (Dark Factory)
+   **Waiting For**: Autonomous — CodeRabbit analysis
+   ```
+
+2. Launch `code-reviewer` agent to run CodeRabbit locally:
+   - Run `npx coderabbitai review` (or the project-configured CodeRabbit CLI command)
+   - Collect all findings: bugs, style issues, suggestions, security concerns
+
+3. Launch `code-architect` agent to address actionable CodeRabbit findings:
+   - Fix bugs and security issues flagged by CodeRabbit
+   - Apply style/pattern suggestions that align with project conventions
+   - Skip suggestions that conflict with the existing architecture or are out of scope
+   - Document any skipped findings with rationale in PLAN.md
+
+4. Launch `test-runner` agent to verify no regressions after fixes.
+
+5. Launch `code-reviewer` agent to re-run CodeRabbit and confirm findings are resolved.
+
+6. Update PLAN.md with CodeRabbit Review Results:
+   ```markdown
+   ## CodeRabbit Review
+   - **Findings**: [count] total
+   - **Fixed**: [count]
+   - **Skipped (with rationale)**: [count]
+   - **Remaining**: 0 actionable
+   ```
+
+7. Proceed directly to Phase 7 (no user checkpoint).
+
+---
+
+## Phase 7: Security Review (Dark Factory)
 
 **Goal**: Verify implementation meets security standards
 
@@ -548,15 +590,15 @@ All state has been saved to disk:
    - Re-run `code-security` to verify fixes
    - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
 
-5. Proceed directly to Phase 7 (no user checkpoint).
+5. Proceed directly to Phase 8 (no user checkpoint).
 
 ---
 
-## Phase 7: Exit Criteria Assessment (Dark Factory)
+## Phase 8: Exit Criteria Assessment (Dark Factory)
 
 **Goal**: Adversarial assessment of whether we're actually done
 
-**Dark Factory**: Continues autonomously from Phase 6.
+**Dark Factory**: Continues autonomously from Phase 7.
 
 **Actions**:
 
@@ -580,11 +622,11 @@ All state has been saved to disk:
    - Launch criteria-assessor again
    - Repeat until READY (max 3 cycles, then escalate to user)
 
-5. **If READY**: Proceed to Phase 8
+5. **If READY**: Proceed to Phase 9
 
 ---
 
-## Phase 8: Demo & Documentation
+## Phase 9: Demo & Documentation
 
 **Goal**: Build proof-of-work, finalize documents, prepare for PR
 
@@ -686,6 +728,7 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 | 3 | Interactive | None | Auto |
 | 4 | Interactive | **CRITICAL** | "implement" (starts dark factory) |
 | 5 | **Dark Factory** | None (escalate after 5 failures) | Auto |
-| 6 | **Dark Factory** | None | Auto |
-| 7 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
-| 8 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |
+| 6 | **Dark Factory** | CodeRabbit review + fix | Auto |
+| 7 | **Dark Factory** | None | Auto |
+| 8 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
+| 9 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |
