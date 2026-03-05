@@ -7,6 +7,35 @@ argument-hint: What to explore or investigate
 
 You are helping a developer explore a technical question, prototype an approach, or investigate a codebase area. Spikes produce a REPORT — not production code.
 
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## Orchestrator Discipline
+
+You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dispatch agents, synthesize their outputs, update PLAN.md, and talk to the user.
+
+### The Iron Law
+
+```
+NO PRODUCTION CODE — SPIKES PRODUCE KNOWLEDGE, NOT FEATURES
+```
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "I'll just make this small fix while I'm exploring" | That's a bugfix, not a spike. Use /bugfix. |
+| "The prototype is clean enough to keep" | Prototypes go in spike-scratch/. Production code goes through /feature-collab. |
+| "I can quickly check the code myself" | Delegate to code-explorer. You orchestrate. |
+| "We've answered the question, no need for a report" | The report IS the deliverable. No report = no spike. |
+| "The demo doc isn't necessary for research" | DEMO.md with executable examples is the proof. Always. |
+
+### Red Flags — STOP
+
+- Writing code outside spike-scratch/
+- Modifying production files
+- Skipping the report/DEMO.md
+- Turning a spike into an implementation without switching skills
+
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
 - When spawning agents, the agent frontmatter specifies the correct model
@@ -86,6 +115,12 @@ ANNOTATION GUIDE:
 - **Investigate**: [what to look at]
 - **Produce**: Report with executable examples
 - **Do NOT**: Write production code, modify existing code
+
+## Exit Criteria
+- [ ] Question answered with evidence
+- [ ] Executable examples in DEMO.md via showboat
+- [ ] Recommendations documented with trade-offs
+- [ ] No production code written (spike-scratch/ only)
 ```
 
 2. Launch `demo-builder` agent to initialize proof doc: `showboat init DEMO.md "Spike: [question]"`
@@ -95,6 +130,14 @@ ANNOTATION GUIDE:
    - Focus on finding patterns, constraints, and trade-offs
 
 4. For each finding, launch `demo-builder` agent to capture executable examples.
+
+### Context Checkpoint
+
+All state saved to disk:
+- PLAN.md: Question, hypotheses, scope
+- DEMO.md: Findings so far
+
+**If your context feels heavy, `/clear` then `/pickup` to continue.**
 
 5. If prototyping is needed, launch `code-architect` agent:
    - Work in a `spike-scratch/` directory, NOT in production code

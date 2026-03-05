@@ -7,6 +7,35 @@ argument-hint: Bug description, issue link, or error message
 
 You are helping a developer fix a specific bug through a focused, reproduce-first process.
 
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## Orchestrator Discipline
+
+You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dispatch agents, synthesize their outputs, update PLAN.md, and talk to the user.
+
+### The Iron Law
+
+```
+FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
+```
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "I can quickly check the code myself" | Delegate to code-explorer. You orchestrate. |
+| "While fixing this I noticed another issue" | Separate ticket. Not this PR. |
+| "This refactor would prevent the bug class entirely" | That's an enhance or refactor, not a bugfix. |
+| "The surrounding code is messy, let me clean it up" | Scope creep. Fix the bug only. |
+| "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
+
+### Red Flags — STOP
+
+- Reading code directly instead of delegating
+- Fixing more than the reported bug
+- Skipping the reproduction test (TDD RED)
+- Claiming fix works without test-runner verification
+
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
 - When spawning agents, the agent frontmatter specifies the correct model
@@ -123,6 +152,14 @@ ANNOTATION GUIDE:
 
 7. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
 
+### Context Checkpoint
+
+All state saved to disk:
+- PLAN.md: Bug description, root cause, scope
+- DEMO.md: Failing test capture
+
+**If your context feels heavy, `/clear` then `/pickup` to continue.**
+
 8. **CHECKPOINT**:
    > "Bug reproduced with failing test. Root cause identified. Review [Root Cause Analysis](#root-cause-analysis) and [Scope](#scope). Say **'lock scope'** to proceed with the fix."
 
@@ -160,7 +197,12 @@ ANNOTATION GUIDE:
 
 7. **WIP**: `wip note <item> "Phase 2: Bug fixed, all tests green"`
 
-8. When all tests pass, proceed to Phase 3.
+8. Launch `criteria-assessor` agent (lightweight):
+   - Verify exit criteria from Phase 1 are met
+   - Confirm reproduction test passes, all other tests pass, no regressions
+   - If NOT READY, fix and re-assess (max 3 cycles)
+
+9. When all tests pass and criteria met, proceed to Phase 3.
 
 ---
 

@@ -7,6 +7,35 @@ argument-hint: Production issue description or error
 
 You are helping a developer fix an urgent production issue with minimal risk and maximum speed.
 
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## Orchestrator Discipline
+
+You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dispatch agents, synthesize their outputs, update PLAN.md, and talk to the user. Exception: git workflow commands (branch, cherry-pick) are orchestration.
+
+### The Iron Law
+
+```
+MINIMAL CHANGE ONLY — URGENCY IS NOT AN EXCUSE TO SKIP VERIFICATION
+```
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "Production is down, skip the test" | Write the reproduction test. It takes minutes and prevents regressions. |
+| "I can see the fix is obvious, just deploy" | Obvious fixes still need test-runner verification. |
+| "We'll add tests later" | Later means never. TDD RED-GREEN now. |
+| "This related issue should be fixed too" | One fix per hotfix. Other issues get their own tickets. |
+| "Cherry-pick conflicts can be resolved later" | Escalate conflicts immediately. Don't let them linger. |
+
+### Red Flags — STOP
+
+- Deploying without test-runner verification
+- Fixing more than the production issue
+- Skipping the reproduction test because "it's urgent"
+- Resolving cherry-pick conflicts without user input
+
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
 - When spawning agents, the agent frontmatter specifies the correct model
@@ -134,6 +163,14 @@ ANNOTATION GUIDE:
 
 9. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
 
+### Context Checkpoint
+
+All state saved to disk:
+- PLAN.md: Issue, root cause, hotfix plan, scope
+- DEMO.md: Failing test capture
+
+**If your context feels heavy, `/clear` then `/pickup` to continue.**
+
 10. **CHECKPOINT**:
     > "Issue triaged, failing test written on hotfix branch. Review [Root Cause](#root-cause) and [Hotfix Plan](#hotfix-plan). Say **'fix'** to proceed."
 
@@ -175,9 +212,14 @@ ANNOTATION GUIDE:
 
 7. Launch `scope-guardian` agent to verify minimal change.
 
-8. **WIP**: `wip note <item> "Phase 2: Hotfix applied, cherry-picked to main"`
+8. Launch `criteria-assessor` agent (lightweight):
+   - Verify exit criteria from Phase 1 are met
+   - Confirm fix works on both branches, all tests pass
+   - If NOT READY, fix and re-assess (max 2 cycles — hotfixes have lower threshold)
 
-9. **Escalation**: If 3 fix cycles fail (lower threshold for hotfixes), escalate immediately.
+9. **WIP**: `wip note <item> "Phase 2: Hotfix applied, cherry-picked to main"`
+
+10. **Escalation**: If 3 fix cycles fail (lower threshold for hotfixes), escalate immediately.
 
 ---
 

@@ -7,6 +7,35 @@ argument-hint: What to refactor and refactor goals
 
 You are helping a developer refactor code while proving that behavior is completely unchanged.
 
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## Orchestrator Discipline
+
+You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dispatch agents, synthesize their outputs, update PLAN.md, and talk to the user.
+
+### The Iron Law
+
+```
+ZERO BEHAVIOR CHANGES — IF A TEST FAILS, THE REFACTOR IS WRONG, NOT THE TEST
+```
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "This test was wrong anyway" | You're refactoring, not fixing tests. If a test fails, revert your change. |
+| "This small behavior change makes the API better" | That's an enhancement, not a refactor. Use /enhance. |
+| "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
+| "The before/after tests match, good enough" | Run test-runner for full verification. Don't eyeball it. |
+| "While refactoring I found a bug" | Log it as a separate bugfix. Don't fix it here. |
+
+### Red Flags — STOP
+
+- Modifying test expectations to match refactored code
+- Adding new features during a refactor
+- Fixing bugs found during refactoring (separate ticket)
+- Claiming behavior equivalence without before/after test proof
+
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
 - When spawning agents, the agent frontmatter specifies the correct model
@@ -154,9 +183,13 @@ ANNOTATION GUIDE:
    - Verify no behavior changes leaked in
    - Verify no new features were added
 
-7. **WIP**: `wip note <item> "Phase 2: Refactor complete, all tests still green"`
+7. Launch `criteria-assessor` agent (lightweight):
+   - Verify exit criteria: all tests pass, refactor goals achieved, no behavior changes
+   - If NOT READY, fix and re-assess (max 3 cycles)
 
-8. When all tests pass, proceed to Phase 3.
+8. **WIP**: `wip note <item> "Phase 2: Refactor complete, all tests still green"`
+
+9. When all tests pass and criteria met, proceed to Phase 3.
 
 ### Context Checkpoint
 

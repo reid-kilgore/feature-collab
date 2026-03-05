@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# SessionStart hook for feature-collab plugin
+# Injects skill awareness and detects active work context
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Read stdin to get session context (contains cwd, etc.)
+input=$(cat 2>/dev/null) || true
+cwd=$(echo "$input" | jq -r '.cwd // empty' 2>/dev/null) || true
+[ -z "$cwd" ] && cwd="$(pwd)"
+
+# Check for active PLAN.md on current branch
+plan_context=""
+branch=$(cd "$cwd" && git branch --show-current 2>/dev/null) || true
+if [ -n "$branch" ]; then
+  plan_path="$cwd/docs/reidplans/$branch/PLAN.md"
+  if [ -f "$plan_path" ]; then
+    # Extract just the status and phase info (first 50 lines max)
+    plan_summary=$(head -50 "$plan_path" 2>/dev/null | head -c 2000) || true
+    if [ -n "$plan_summary" ]; then
+      plan_context="\\n\\n**Active PLAN.md detected** on branch \`$branch\`. Use \`/pickup\` to resume, or start a new workflow.\\n"
+    fi
+  fi
+fi
+
+# Check for active WIP item
+wip_context=""
+WIP="$HOME/panop/wip"
+if [ -x "$WIP" ]; then
+  wip_item=$("$WIP" get "$branch" 2>/dev/null | head -1) || true
+  if [ -n "$wip_item" ]; then
+    wip_status=$(echo "$wip_item" | jq -r '.status // empty' 2>/dev/null) || true
+    wip_name=$(echo "$wip_item" | jq -r '.name // empty' 2>/dev/null) || true
+    if [ -n "$wip_name" ] && [ "$wip_status" != "DONE" ] && [ "$wip_status" != "CLOSED" ]; then
+      wip_context="\\n**Active WIP item**: \`$wip_name\` (status: $wip_status)\\n"
+    fi
+  fi
+fi
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+skill_awareness="Feature-collab skills are available. If the user describes work to do, assess which skill fits:\\n\\n- \`/feature-collab\` — New capability spanning multiple components, >200 lines\\n- \`/bugfix\` — Something that worked before is now broken\\n- \`/enhance\` — Small improvement (<200 lines) to existing functionality\\n- \`/hotfix\` — Production is broken, users affected, emergency fix\\n- \`/refactor\` — Restructuring code without changing behavior\\n- \`/spike\` — Exploring feasibility, researching, prototyping\\n- \`/release\` — Version bumps, changelogs, deployment prep\\n- \`/pressure-test\` — Validate agent prompts against adversarial scenarios\\n\\nWhen a skill applies, announce which one and why before invoking it. If unsure, ask the user.${plan_context}${wip_context}"
+
+session_context=$(escape_for_json "$skill_awareness")
+
+cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "${session_context}"
+  }
+}
+EOF
+
+exit 0
