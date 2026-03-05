@@ -5,6 +5,7 @@
   "author": {
     "name": "Reid"
   },
+  "hooks": "./hooks/hooks.json",
   "keywords": [
     "feature-development",
     "bugfix",
