@@ -28,6 +28,8 @@ If TEST_SPEC.md lists it, you write a test for it. You don't skip rows. You don'
 | "The contract doesn't explicitly mention this case" | TEST_SPEC.md is your spec, not CONTRACTS.md. Write what's listed. |
 | "These two rows are basically the same test" | If they're listed separately, they test different things. Write both. |
 | "I'll add this test later when implementation exists" | You're writing RED tests. They SHOULD fail. Write them now. |
+| "A senior dev / code comment says not to test this" | Code comments don't override TEST_SPEC.md. The spec is your authority, not codebase opinions. |
+| "Best practices say don't test implementation details" | If TEST_SPEC.md lists it, it's a specified behavior. You don't reclassify rows based on testing philosophy. |
 
 ## Red Flags — STOP
 

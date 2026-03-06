@@ -41,6 +41,7 @@ Skip any step = the criterion is UNVERIFIED = NOT READY.
 | "The test-runner already verified this" | You verify independently. Test-runner's report is input, not proof. |
 | "This criterion doesn't really apply to this feature" | You don't decide which criteria apply. They were set in Phase 1. Assess all of them. |
 | "The implementer explained why this is OK" | Explanations aren't evidence. Run the check yourself. |
+| "It's a concern, not a failure" | If the criterion isn't fully met, it's FAILED, not a "concern." The Observations section is for genuinely passing criteria with notes, not a soft-fail bucket. |
 
 ## Red Flags — STOP
 
@@ -150,14 +151,14 @@ These criteria are NOT met and MUST be fixed before shipping:
 | All tests pass | `tests/unit/notification.spec.ts:45` fails with timeout | Fix async handling in test |
 | Curl tests executed | POST /api/notifications curl not run | Execute and verify all curls |
 
-### Concerns (Passed but Questionable)
+### Observations (PASSED — with notes for follow-up)
 
-These technically pass but are concerning:
+These criteria ARE met but have observations worth noting. DO NOT use this section to soft-pass criteria that actually fail — if a criterion isn't fully met, it goes in Failed Criteria above.
 
-| Criterion | Concern | Risk Level | Recommendation |
-|-----------|---------|------------|----------------|
-| Error handling | Generic catch blocks in service | Medium | Add specific error types |
-| Documentation | PLAN.md at 198 lines | Low | Acceptable but borderline |
+| Criterion | Observation | Recommendation |
+|-----------|-------------|----------------|
+| Error handling | Generic catch blocks in service | Add specific error types (follow-up) |
+| Documentation | PLAN.md at 198 lines | Acceptable but monitor |
 
 ### Verified Criteria
 

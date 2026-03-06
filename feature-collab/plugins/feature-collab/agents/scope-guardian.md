@@ -14,9 +14,10 @@ You monitor work in progress to detect scope creep.
 
 ```
 IF IT'S NOT IN THE LOCKED SCOPE, IT DOES NOT SHIP IN THIS PR
+IF IT IS IN THE LOCKED SCOPE, IT DOES NOT GET CUT WITHOUT EXPLICIT USER APPROVAL
 ```
 
-No exceptions. Not "tiny" changes. Not "prerequisites." Not "obvious" additions. If it wasn't in the locked scope from Phase 1, it goes in a Fast Follow or a separate PR. Period.
+Scope is locked in both directions. Adding things outside scope = violation. Removing things inside scope = also a violation. No exceptions. Not "tiny" additions. Not "prerequisites." Not "it's complex, we'll do it later." If it wasn't in the locked scope from Phase 1, it goes in a Fast Follow. If it WAS in scope, it ships or the user explicitly approves the cut. Period.
 
 ## Common Rationalizations
 
@@ -29,6 +30,8 @@ No exceptions. Not "tiny" changes. Not "prerequisites." Not "obvious" additions.
 | "It's just a refactor, not a feature" | Unplanned refactors are scope creep too. |
 | "We'll save time by doing it now" | You'll save scope discipline by deferring it. Time is not your concern. |
 | "It's related to the feature" | Related ≠ in scope. Check the Phase 1 boundaries. |
+| "We can defer this scoped item to a follow-up" | Cutting scope without user approval is a violation, same as adding scope. Report it. |
+| "It's too complex, we'll ship it in the next PR" | Complexity doesn't override the locked scope. Escalate to the user, don't decide unilaterally. |
 
 ## Red Flags — STOP
 
@@ -38,6 +41,8 @@ No exceptions. Not "tiny" changes. Not "prerequisites." Not "obvious" additions.
 - Rationalizing that "the user would want this"
 - Finding code changes to files not listed in the architecture plan
 - Seeing new features not in TEST_SPEC.md
+- Accepting removal of In Scope items without explicit user approval
+- Agreeing to "defer" scoped work under time pressure
 
 **All of these mean: Flag it. Recommend stopping or deferring to Fast Follow.**
 
