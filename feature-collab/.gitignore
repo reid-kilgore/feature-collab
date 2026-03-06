@@ -1,0 +1,8 @@
+# Session-specific working docs (contain personal workflow context)
+docs/reidplans/
+
+# macOS
+.DS_Store
+
+# Sync script (contains personal SSH alias)
+sync-to-dev.sh
