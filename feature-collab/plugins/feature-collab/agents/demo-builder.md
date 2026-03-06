@@ -37,6 +37,8 @@ If no Demo Scenarios section exists, capture: test results, curl outputs, and ke
 | "Showboat isn't working so I'll write it manually" | Fix showboat or escalate. Manual transcription defeats the purpose. |
 | "This is too trivial to capture" | If it proves the feature works, capture it. Trivial proofs are still proofs. |
 | "I'll add this capture later" | Capture now while the state is correct. "Later" means "never." |
+| "I'll capture the test suite output for the demo" | Test output is NOT demo material. The scorecard already has test results. Demos show the feature working via curls, screenshots, and code walkthroughs. |
+| "There's no server to curl against" | Start the server or escalate. No curls = no demo. |
 
 ## Red Flags — STOP
 
@@ -105,37 +107,60 @@ uvx showboat note WALKTHROUGH.md "The middleware calls `validateToken()` from th
 uvx showboat exec WALKTHROUGH.md bash "grep -A 15 'function validateToken' src/auth/service.ts"
 ```
 
-## Workflow Patterns
+## What Goes in a Demo (and What Doesn't)
 
-### Proof of Work (Default)
+### DO capture — these are the demo:
+- **Curl requests against localhost** — the gold standard. Show real HTTP requests and responses. Pipe through `jq` for readability. These prove the feature works end-to-end.
+- **Screenshots** — embed with `showboat image`. UI changes, browser output, terminal state. Visual proof.
+- **Code walkthroughs** — use `showboat exec` with sed/grep/cat to show key implementation. Narrate with `showboat note`. Follow the data flow.
+- **Before/after comparisons** — show what changed. Especially valuable for refactors and bugfixes.
 
-Capture test runs, API outputs, and key behaviors:
+### DO NOT capture — these are noise:
+- **Unit test output** (`npm test`, `pytest`, etc.) — we already have test results in the verification scorecard. Dumping test runner output into the demo adds nothing. The demo proves the FEATURE works, not that tests pass.
+- **Lint/format output** — not demo material.
+- **Build output** — not demo material.
+
+### Demo Structure
+
+A good demo reads like a story:
+1. **What was built** (1-2 sentence note)
+2. **Show it working** (curls against localhost, screenshots)
+3. **Walk through key code** (sed/grep from source files, narrated)
+4. **Edge cases** (error responses, validation, boundary behavior — via curls)
 
 ```bash
 uvx showboat init DEMO.md "Feature: [name]"
-uvx showboat note DEMO.md "## Test Results"
-uvx showboat exec DEMO.md bash "npm test"
-uvx showboat note DEMO.md "## API Verification"
-uvx showboat exec DEMO.md bash "curl -s http://localhost:3000/api/endpoint | jq ."
+
+# 1. Context
+uvx showboat note DEMO.md "## What Was Built\n\n[Brief description of the feature]"
+
+# 2. Show it working — curls against localhost
+uvx showboat note DEMO.md "## Live API Demonstration"
+uvx showboat exec DEMO.md bash "curl -s -X POST http://localhost:3000/api/notifications -H 'Content-Type: application/json' -d '{\"title\":\"test\"}' | jq ."
+uvx showboat exec DEMO.md bash "curl -s http://localhost:3000/api/notifications | jq ."
+
+# 3. Code walkthrough
+uvx showboat note DEMO.md "## Implementation Walkthrough\n\nRequests flow through the controller to the service layer:"
+uvx showboat exec DEMO.md bash "sed -n '10,30p' src/api/notifications/controller.ts"
+
+# 4. Edge cases
+uvx showboat note DEMO.md "## Error Handling"
+uvx showboat exec DEMO.md bash "curl -s -X POST http://localhost:3000/api/notifications -H 'Content-Type: application/json' -d '{}' | jq ."
+
+# 5. Screenshots (if UI)
+# uvx showboat image DEMO.md screenshots/feature.png "Feature in action"
+
 uvx showboat verify DEMO.md
 ```
 
-### Before/After (Refactors)
+### Before/After (Refactors/Bugfixes)
 
 ```bash
-uvx showboat note DEMO.md "## Before Refactor"
-uvx showboat exec DEMO.md bash "npm test -- --reporter=json"
-# ... refactor happens ...
-uvx showboat note DEMO.md "## After Refactor"
-uvx showboat exec DEMO.md bash "npm test -- --reporter=json"
-```
-
-### Code Walkthrough
-
-```bash
-uvx showboat init WALKTHROUGH.md "Walkthrough: [system name]"
-# Plan structure, then alternate note (narrative) and exec (real code snippets)
-uvx showboat verify WALKTHROUGH.md
+uvx showboat note DEMO.md "## Before Fix"
+uvx showboat exec DEMO.md bash "curl -s http://localhost:3000/api/broken-endpoint | jq ."
+# ... fix applied ...
+uvx showboat note DEMO.md "## After Fix"
+uvx showboat exec DEMO.md bash "curl -s http://localhost:3000/api/fixed-endpoint | jq ."
 ```
 
 ## Core Principles

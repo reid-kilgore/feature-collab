@@ -42,6 +42,8 @@ BEFORE transitioning between any phases:
 | "CodeRabbit review isn't necessary for this change" | The workflow says it runs. Don't skip phases. |
 | "I'll combine these phases to save time" | Phases have different quality gates. Don't merge them. |
 | "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
+| "I'll capture demos at the end, after everything works" | Capture during implementation, not after. Deferred demos become fabricated demos. |
+| "Test-runner already captured showboat output" | Test-runner captures test results. Demo-builder captures the full proof-of-work with walkthroughs. Both are needed. |
 
 ### Red Flags — STOP
 
@@ -304,13 +306,32 @@ ANNOTATION GUIDE:
 |------|-------|------------|----------|
 ```
 
-3. Launch 2 `code-explorer` agents in parallel (delegate exploration):
-   - "Find features similar to [feature] and trace implementation"
-   - "Map architecture and testing patterns for [area]"
+3. **Concept Extraction**: Before touching code, decompose the feature request into every concept, assumption, and unspoken dependency it implies. List them explicitly:
+   ```markdown
+   ## Concepts to Trace
+   - [Concept 1]: [why it matters to this feature]
+   - [Concept 2]: [why it matters]
+   - [Assumption 1]: [what we're assuming is true]
+   - [Unspoken dependency 1]: [what must exist for this to work]
+   ```
+   Be thorough — missed concepts become surprises during implementation. Include domain concepts, architectural assumptions, existing patterns this must follow, and integration points.
 
-4. Review agent findings, update PLAN.md with Codebase Context
+4. **Launch concept-tracing agent team**: Spawn one `code-explorer` agent per concept (or group tightly related concepts). Each agent's job:
+   - Trace their assigned concept(s) through the codebase — find every file, pattern, and constraint related to it
+   - Report: what exists, what patterns to follow, what might break, what's missing
+   - Agents work in parallel. If web research is needed (external APIs, library docs, etc.), use agents with WebFetch/WebSearch.
 
-5. Define **Exit Criteria** (what does "done" mean?):
+   Protect the orchestrator's context window — delegate ALL code reading to agents. The orchestrator synthesizes findings, it doesn't read code.
+
+5. **Synthesize findings** into PLAN.md's Codebase Context section. The synthesis must answer:
+   - **Impact map**: Every file that will be touched and why
+   - **Pattern catalog**: Existing patterns this feature must follow (with file path examples)
+   - **Risk register**: What might break, what's fragile, what has no test coverage
+   - **3-sentence direction**: Explain the change's approach and impact as if telling a coworker quickly what you plan to do
+
+   **Research exit gate**: Phase 1 exploration is complete when you can name every file that will be touched, explain why, and identify what might break. If you can't, launch more agents.
+
+6. Define **Exit Criteria** (what does "done" mean?):
 
 ```markdown
 ## Exit Criteria
@@ -626,28 +647,35 @@ All state has been saved to disk:
 5. **Scorecard-driven iteration**:
    ```
    Loop until scorecard all green:
-     1. test-runner reports status
+     1. test-runner reports status (captures to DEMO.md via showboat)
      2. Identify failing tests
      3. Delegate fix to code-architect
-     4. test-runner verifies
+     4. test-runner verifies (captures to DEMO.md via showboat)
      5. scope-guardian checks for drift (every 2-3 cycles)
    ```
 
-5. **CRITICAL: Test-Runner Authority**
+6. **MANDATORY demo capture during dark factory**: After the FIRST green test run and after the FINAL green test run, launch `demo-builder` agent to capture proof-of-work:
+   - Test suite output (via `showboat exec`)
+   - Curl test results (via `showboat exec`)
+   - Key code walkthroughs showing implementation (via `showboat exec` with sed/grep)
+
+   Do NOT defer all demo work to Phase 9. Captures during implementation are more valuable than reconstructed captures after the fact. Phase 9 adds final polish and verification, it should not be building the demo from scratch.
+
+7. **CRITICAL: Test-Runner Authority**
    - Main thread MUST NOT claim tests pass without test-runner verification
    - Main thread MUST NOT skip curl tests
    - Main thread MUST NOT override test-runner findings
    - If test-runner says it fails, it fails. Period.
 
-6. **Escalation (5 failure cycles)**: If test-runner reports failures and code-architect can't fix them in 5 cycles, **escalate to user** with:
+8. **Escalation (5 failure cycles)**: If test-runner reports failures and code-architect can't fix them in 5 cycles, **escalate to user** with:
    - What was tried (all 5 attempts summarized)
    - Current error state
    - Proposed next approach
    - Ask user for guidance before continuing
 
-7. **WIP**: `wip note <item> "Phase 5: All tests green"`
+9. **WIP**: `wip note <item> "Phase 5: All tests green"`
 
-8. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
+10. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
 
 ---
 

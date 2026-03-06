@@ -130,23 +130,35 @@ ANNOTATION GUIDE:
 - [ ] < 200 lines of production code added
 ```
 
-2. Launch `code-explorer` agent to understand the area being enhanced.
+2. **Concept Extraction**: Before touching code, decompose the enhancement into every concept, assumption, and unspoken dependency it implies. List them in PLAN.md:
+   ```markdown
+   ## Concepts to Trace
+   - [Concept 1]: [why it matters]
+   - [Assumption 1]: [what we're assuming]
+   ```
+   Even small enhancements have implicit assumptions about existing code. Surface them.
 
-3. Create CONTRACTS.md with types, routes, and function signatures.
+3. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
 
-4. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+   Protect the orchestrator's context window — delegate ALL code reading to agents.
 
-5. Launch `test-gap-finder` agent to review TEST_SPEC.md adversarially.
+4. **Synthesize findings** into PLAN.md. Must answer: what files will be touched, what patterns to follow, what might break. Enhancement research is complete when you can name every file that will change and why.
 
-6. Launch `test-implementer` agent to write failing tests.
+5. Create CONTRACTS.md with types, routes, and function signatures.
 
-7. Launch `test-runner` agent to confirm RED state (tests should fail).
+6. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
 
-8. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+7. Launch `test-gap-finder` agent to review TEST_SPEC.md adversarially.
 
-9. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+8. Launch `test-implementer` agent to write failing tests.
 
-10. **CHECKPOINT**:
+9. Launch `test-runner` agent to confirm RED state (tests should fail).
+
+10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+
+11. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+
+12. **CHECKPOINT**:
     > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
 
 ---
@@ -177,7 +189,7 @@ ANNOTATION GUIDE:
    - Verify implementation stays within scope
    - Flag if approaching 200-line limit
 
-5. test-runner captures results to DEMO.md via showboat integration.
+5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 

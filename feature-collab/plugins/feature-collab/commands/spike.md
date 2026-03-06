@@ -197,3 +197,22 @@ All state saved to disk:
 
 5. Prompt user:
    > "Spike complete. See DEMO.md for executable findings and PLAN.md for recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+
+## Transitioning to Implementation
+
+Spikes often lead to implementation. When the user wants to act on spike findings:
+
+1. **The spike's PLAN.md, DEMO.md, and findings become Phase 1 context** for `/feature-collab` or `/enhance`. The concept extraction and codebase research is already done — the next skill should consume it, not redo it.
+
+2. Suggest the right next skill:
+   > "This spike answered [question]. To implement, I'd suggest:
+   > - `/enhance` if it's <200 lines and straightforward
+   > - `/feature-collab` if it spans multiple components or is >200 lines
+   >
+   > The spike findings (PLAN.md, DEMO.md) will carry forward as Phase 1 context — no research duplication."
+
+3. When `/feature-collab` or `/enhance` starts after a spike, Phase 1 should:
+   - Read the spike's PLAN.md findings, DEMO.md evidence, and recommendations
+   - Skip redundant exploration — the spike already traced concepts through the codebase
+   - Focus Phase 1 on scope locking and contracts, not re-exploration
+   - Reference spike findings in the new PLAN.md's Codebase Context section
