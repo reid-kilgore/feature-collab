@@ -1,5 +1,6 @@
 ---
-description: Targeted bug fix with reproduce-first TDD approach
+name: bugfix
+description: "Use when something that previously worked is now broken — a regression, a failing test, or a user-reported defect"
 argument-hint: Bug description, issue link, or error message
 ---
 
@@ -24,10 +25,13 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 | Excuse | Reality |
 |--------|---------|
 | "I can quickly check the code myself" | Delegate to code-explorer. You orchestrate. |
-| "While fixing this I noticed another issue" | Separate ticket. Not this PR. |
+| "While fixing this I noticed another issue" | Separate ticket. File it with `linear-issues` agent. Not this PR. |
 | "This refactor would prevent the bug class entirely" | That's an enhance or refactor, not a bugfix. |
 | "The surrounding code is messy, let me clean it up" | Scope creep. Fix the bug only. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
+| "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
+| "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
+| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 
 ### Red Flags — STOP
 
@@ -35,6 +39,7 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 - Fixing more than the reported bug
 - Skipping the reproduction test (TDD RED)
 - Claiming fix works without test-runner verification
+- Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -86,7 +91,7 @@ Initial request: $ARGUMENTS
 
 ## Phase 1: Reproduce & Scope
 
-**Goal**: Identify the bug, reproduce it with a failing test, lock scope to just the fix.
+**Goal**: Identify the bug, reproduce it with failing tests, lock scope to just the fix.
 
 **Actions**:
 
@@ -127,16 +132,18 @@ ANNOTATION GUIDE:
 - Any "while we're here" improvements
 
 ## Exit Criteria
-- [ ] Failing test reproduces the bug
+- [ ] Failing tests reproduce the bug
 - [ ] Fix makes the test pass
 - [ ] All existing tests still pass
 - [ ] No regressions introduced
 ```
 
-2. Launch `code-explorer` agent to investigate:
-   - Trace the code path that causes the bug
-   - Identify root cause
-   - Find existing tests in the area
+2. Launch `code-explorer` agent to investigate using the **systematic debugging methodology** (see `/feature-collab:systematic-debug`):
+   - **Phase 1 — Root Cause Investigation**: Read error carefully, reproduce consistently, review recent changes, gather diagnostic evidence across system boundaries
+   - **Phase 2 — Pattern Analysis**: Find working examples, compare working vs broken, identify violated assumptions
+   - Agent MUST return: the specific mechanism causing the failure, the specific condition triggering it, and a hypothesis log
+
+   If the first investigation is inconclusive, launch `systematic-debug` agent for deeper analysis before proceeding.
 
 3. Update PLAN.md with Root Cause Analysis
 
@@ -193,7 +200,7 @@ All state saved to disk:
    - Verify the fix didn't change anything outside scope
    - Flag any scope creep
 
-6. **Escalation**: If test-runner reports failures and code-architect can't fix in 5 cycles, escalate to user with full context.
+6. **Escalation**: If test-runner reports failures and code-architect can't fix in 3 cycles, launch `systematic-debug` agent to apply the full 4-phase methodology before trying more fixes. If still failing after systematic debug + 2 more cycles, escalate to user with full context including the hypothesis log.
 
 7. **WIP**: `wip note <item> "Phase 2: Bug fixed, all tests green"`
 

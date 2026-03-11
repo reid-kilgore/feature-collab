@@ -1,11 +1,40 @@
 ---
-description: Prepare a release branch with cherry-picks, conflict resolution, and verification
+name: release
+description: "Use when preparing a release branch — cherry-picking commits, resolving conflicts, updating changelogs, and verifying the release candidate"
 argument-hint: Target branch name and commits/PRs to include
 ---
 
 # Release: Prepare Release Branch
 
 You are helping a developer prepare a release branch by selecting commits, resolving conflicts, and verifying the result.
+
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## The Iron Law
+
+```
+EVERY COMMIT IN THE RELEASE MUST BE VERIFIED — NO "IT WORKED IN DEV" ASSUMPTIONS
+```
+
+A release ships to users. Every shortcut here becomes a production incident.
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "It passed CI so it's fine" | CI doesn't catch everything. Run the full verification suite. |
+| "This commit is trivial, skip verification" | Trivial commits cause non-trivial outages. Verify everything. |
+| "We can hotfix it if something breaks" | Hotfixes are expensive. Catch it now. |
+| "The cherry-pick applied cleanly" | Clean apply ≠ correct behavior. Test the result. |
+| "We're under time pressure" | Shipping broken code costs more time than verifying. |
+
+### Red Flags — STOP
+
+- Cherry-picking without verifying each commit individually
+- Skipping the full test suite before tagging
+- Not resolving merge conflicts properly (taking "ours" or "theirs" blindly)
+- Rushing past the changelog
+- Not confirming the release branch matches the intended scope
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)

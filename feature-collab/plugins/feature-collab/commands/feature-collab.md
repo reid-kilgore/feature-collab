@@ -1,5 +1,6 @@
 ---
-description: Collaborative feature development with contract-first TDD, scope locking, and adversarial verification
+name: feature-collab
+description: "Use when building a new capability that spans multiple components or requires >200 lines of changes, deep codebase research, and multi-phase planning"
 argument-hint: Optional feature description or local PLAN.md file
 ---
 
@@ -44,6 +45,9 @@ BEFORE transitioning between any phases:
 | "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
 | "I'll capture demos at the end, after everything works" | Capture during implementation, not after. Deferred demos become fabricated demos. |
 | "Test-runner already captured showboat output" | Test-runner captures test results. Demo-builder captures the full proof-of-work with walkthroughs. Both are needed. |
+| "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
+| "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
+| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 
 ### Red Flags — STOP
 
@@ -54,6 +58,7 @@ BEFORE transitioning between any phases:
 - Merging dark factory phases together
 - Expressing satisfaction about implementation quality (that's criteria-assessor's job)
 - Thinking "I know enough to skip exploration"
+- Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -306,7 +311,7 @@ ANNOTATION GUIDE:
 |------|-------|------------|----------|
 ```
 
-3. **Concept Extraction**: Before touching code, decompose the feature request into every concept, assumption, and unspoken dependency it implies. List them explicitly:
+3. **Concept Extraction & Work Graph**: Before touching code, decompose the feature request into every concept, assumption, and unspoken dependency it implies. List them explicitly:
    ```markdown
    ## Concepts to Trace
    - [Concept 1]: [why it matters to this feature]
@@ -316,7 +321,21 @@ ANNOTATION GUIDE:
    ```
    Be thorough — missed concepts become surprises during implementation. Include domain concepts, architectural assumptions, existing patterns this must follow, and integration points.
 
-4. **Launch concept-tracing agent team**: Spawn one `code-explorer` agent per concept (or group tightly related concepts). Each agent's job:
+   Then build a **research dependency graph** using DOT notation (see `/feature-collab:work-graph` skill). Group independent concepts for parallel exploration:
+
+   ```dot
+   digraph research {
+       rankdir=LR;
+       node [shape=box, color=blue];
+       // Independent concepts → parallel agents
+       "trace auth flow";
+       "trace notification patterns";
+       "investigate external API";
+       // No edges between these = fully parallel
+   }
+   ```
+
+4. **Launch concept-tracing agent team**: Use the work graph to dispatch agents in parallel waves. Spawn one `code-explorer` agent per concept (or group tightly related concepts). Each agent's job:
    - Trace their assigned concept(s) through the codebase — find every file, pattern, and constraint related to it
    - Report: what exists, what patterns to follow, what might break, what's missing
    - Agents work in parallel. If web research is needed (external APIs, library docs, etc.), use agents with WebFetch/WebSearch.
@@ -582,17 +601,32 @@ All state has been saved to disk:
 
 ## Tasks
 
-### Phase 1: Repository Layer
-- [ ] Create notification.repository.ts
-- [ ] Add CRUD methods
+### Work Graph
 
-### Phase 2: Service Layer
-- [ ] Implement createNotificationWithDelivery
-- [ ] Add error handling
+\`\`\`dot
+digraph tasks {
+    rankdir=LR;
+    node [shape=box];
+    "implement repository" [color=green];
+    "implement service" [color=green];
+    "implement routes" [color=green];
+    "write integration tests" [color=red];
+    "implement repository" -> "implement service" [label="imports types"];
+    "implement routes" -> "write integration tests";
+    "implement service" -> "write integration tests";
+}
+\`\`\`
 
-### Phase 3: Integration
-- [ ] Wire up routes
-- [ ] Add middleware
+### Dispatch Waves
+1. **Wave 1 (parallel)**: implement repository, implement routes
+2. **Wave 2**: implement service (needs repository types)
+3. **Wave 3**: write integration tests (needs service + routes)
+
+### Task List
+- [ ] Create notification.repository.ts + CRUD methods
+- [ ] Wire up routes + middleware
+- [ ] Implement createNotificationWithDelivery + error handling
+- [ ] Integration tests
 ```
 
 4. Update DETAILS.md with code samples
@@ -633,8 +667,20 @@ All state has been saved to disk:
    **Waiting For**: Autonomous — will report when complete
    ```
 
-2. For each task group, delegate to `code-architect` agent:
+2. **Execute the work graph wave by wave** (see Tasks section in PLAN.md). For each wave, dispatch agents in parallel. For each task, delegate to `code-architect` agent:
    > "Implement [component] following DETAILS.md section X. Make tests [list] pass."
+
+   Independent tasks within a wave run as parallel agents. Wait for all agents in a wave to complete before advancing to the next wave. See `/feature-collab:work-graph` for the dispatch pattern.
+
+### Agent Timeout Guidance
+
+| Agent Type | Expected Duration | Timeout Action |
+|-----------|------------------|----------------|
+| code-explorer | 2-5 min | If >5 min, agent may be stuck in a loop. Kill and re-dispatch with narrower scope. |
+| code-architect | 3-8 min | If >8 min, check if scope is too broad. Split into smaller tasks. |
+| test-runner | 1-3 min | If >3 min, tests may be hanging. Kill and check for infinite loops or missing test teardown. |
+| test-implementer | 2-5 min | If >5 min, spec may be ambiguous. Clarify contracts and re-dispatch. |
+| scope-guardian | 1-2 min | If >2 min, diff may be too large. Run on smaller changesets. |
 
 3. After each implementation batch, run `test-runner` agent:
    - Updates scorecard
@@ -642,7 +688,7 @@ All state has been saved to disk:
    - Captures results with showboat: `uvx showboat exec DEMO.md bash "npm test"`
    - **Test-runner is authoritative** - do not dispute its findings
 
-4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift.
+4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. When scope-guardian identifies out-of-scope items, file them as Linear issues using the `linear-issues` agent (if PLAN.md has Linear project context).
 
 5. **Scorecard-driven iteration**:
    ```

@@ -1,11 +1,40 @@
 ---
-description: Save all context needed to resume this feature in a new conversation
+name: handoff
+description: "Use when a conversation is hitting context limits, needs to be paused, or the user explicitly asks to save progress for a new session"
 argument-hint: Optional reason for handoff (e.g., "context limit", "end of day")
 ---
 
 # Handoff: Persist Context for Session Transfer
 
 You are preparing a complete handoff so that a **new conversation** can pick up this feature exactly where you left off. The new session will have zero memory of this conversation — everything it needs must be written to files.
+
+**Violating the letter of the rules is violating the spirit of the rules.**
+
+## The Iron Law
+
+```
+EVERY FACT THE NEXT SESSION NEEDS MUST BE WRITTEN TO DISK — NOT REMEMBERED, NOT ASSUMED, NOT "OBVIOUS"
+```
+
+If it's not in HANDOFF.md or PLAN.md, it doesn't exist for the next session. Period.
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "PLAN.md already covers this" | PLAN.md tracks scope and status. HANDOFF.md tracks session-specific context, learnings, and next steps. Both are needed. |
+| "The next agent can figure it out" | The next agent has ZERO context. Write it down or it's lost. |
+| "This is obvious from the code" | Nothing is obvious to a blank context window. Be explicit. |
+| "I'll just write a quick summary" | Quick summaries miss critical details. Follow the full template. |
+| "The handoff is just a formality" | Handoff is the ONLY bridge between sessions. Treat it as critical. |
+
+### Red Flags — STOP
+
+- Writing a handoff without reading ALL project documents first
+- Skipping sections of the HANDOFF.md template
+- Writing vague next steps ("continue implementation") instead of specific ones
+- Not capturing verbal agreements or learnings from the session
+- Not updating SESSION_STATE.md
 
 ## Document Paths
 

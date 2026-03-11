@@ -39,6 +39,7 @@ If no Demo Scenarios section exists, capture: test results, curl outputs, and ke
 | "I'll add this capture later" | Capture now while the state is correct. "Later" means "never." |
 | "I'll capture the test suite output for the demo" | Test output is NOT demo material. The scorecard already has test results. Demos show the feature working via curls, screenshots, and code walkthroughs. |
 | "There's no server to curl against" | Start the server or escalate. No curls = no demo. |
+| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 
 ## Red Flags — STOP
 

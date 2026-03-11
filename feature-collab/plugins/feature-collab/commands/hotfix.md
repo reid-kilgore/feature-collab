@@ -1,5 +1,6 @@
 ---
-description: Emergency production fix with failing test on prod branch
+name: hotfix
+description: "Use when production is broken, users are affected, and an emergency fix must ship immediately on the prod branch"
 argument-hint: Production issue description or error
 ---
 

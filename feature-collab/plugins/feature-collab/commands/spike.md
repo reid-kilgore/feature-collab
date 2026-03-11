@@ -1,5 +1,6 @@
 ---
-description: Exploration / prototype / research spike with executable findings
+name: spike
+description: "Use when you genuinely do not know what to build yet — pure research, prototyping, or exploration whose findings feed into feature-collab or enhance"
 argument-hint: What to explore or investigate
 ---
 

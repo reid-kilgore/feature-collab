@@ -1,5 +1,6 @@
 ---
-description: Teleport current session to hourly-dev EC2 box — handoff, sync, and start remote claude
+name: teleport
+description: "Use when the user needs to transfer the current session to the hourly-dev EC2 box — for GPU access, remote development, or switching environments"
 argument-hint: Optional reason for teleport (e.g., "need GPU", "switching to EC2")
 ---
 

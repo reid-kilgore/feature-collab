@@ -1,5 +1,6 @@
 ---
-description: Small enhancement (<200 lines) with contract-first TDD
+name: enhance
+description: "Use when adding a small improvement (<200 lines) to existing functionality — a new option, a UI tweak, or a minor behavior change"
 argument-hint: Enhancement description
 ---
 
@@ -28,6 +29,9 @@ STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
+| "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
+| "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
+| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 
 ### Red Flags — STOP
 
@@ -35,6 +39,7 @@ STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 - Approaching 200 lines without flagging it
 - Skipping contract definition because "it's small"
 - Claiming completion without test-runner verification
+- Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)

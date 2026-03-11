@@ -1,5 +1,6 @@
 ---
-description: Restructure code without changing behavior, verified by existing tests
+name: refactor
+description: "Use when restructuring code without changing behavior — extracting modules, renaming, reorganizing — where existing tests verify correctness"
 argument-hint: What to refactor and refactor goals
 ---
 

@@ -1,5 +1,6 @@
 ---
-description: Pick up a feature-collab workflow from a previous session's handoff
+name: pickup
+description: "Use when resuming a feature-collab workflow from a previous session — reads HANDOFF.md and PLAN.md to restore context"
 argument-hint: Optional path to PLAN.md (defaults to doc directory for current branch)
 ---
 

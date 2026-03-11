@@ -1,5 +1,6 @@
 ---
-description: Pressure-test an agent prompt against adversarial scenarios to validate and harden anti-rationalization content
+name: pressure-test
+description: "Use when you need to validate that an agent prompt resists rationalization, scope creep, and adversarial edge cases before deploying it"
 argument-hint: Agent name to test (e.g., code-architect, test-runner) or "all" for full suite
 ---
 
