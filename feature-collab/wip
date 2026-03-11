@@ -1,0 +1,1049 @@
+#!/usr/bin/env bash
+# wip - work-in-progress tracker
+set -euo pipefail
+
+PANOP_DIR="$HOME/panop"
+REMOTES_FILE="$PANOP_DIR/.wip-remotes"
+LINEAR_TOKEN_FILE="$HOME/.config/linear/token"
+LINEAR_CACHE="$PANOP_DIR/.wip-linear"
+LINEAR_HOURLY_DIR="$HOME/dev/passcom/hourly"
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+_find_workfiles() {
+  find "$PANOP_DIR" -name work.txt 2>/dev/null
+}
+
+_is_remote_item() {
+  local json="$1"
+  local src
+  src=$(echo "$json" | jq -r '.source // empty')
+  [[ -n "$src" ]]
+}
+
+_guard_remote() {
+  if _is_remote_item "$_item"; then
+    local src
+    src=$(echo "$_item" | jq -r '.source')
+    echo "Error: '$(echo "$_item" | jq -r .name)' is a remote item (source: $src). Modify it on the remote host." >&2
+    return 1
+  fi
+}
+
+# Normalize branches from old string format to object format
+# "branches": ["a","b"] → "branches": [{"name":"a","status":"ACTIVE"},...]
+# "branches": [{"name":"a",...}] → unchanged
+# missing branches → [{"name": .name, "status": "ACTIVE"}]
+_normalize_branches='
+  .branches = (
+    if .branches == null then
+      [{"name": .name, "status": "ACTIVE"}]
+    elif (.branches | length > 0) and (.branches[0] | type == "string") then
+      [.branches[] | {"name": ., "status": "ACTIVE"}]
+    else
+      .branches
+    end
+  )
+'
+
+# Find the workfile and line number for a given item name OR branch name.
+# Sets: _wf (workfile path), _ln (line number), _item (json line)
+_resolve_item() {
+  local target="$1"
+  # First pass: match by item name
+  while IFS= read -r workfile; do
+    local n=0
+    while IFS= read -r line; do
+      n=$((n + 1))
+      [[ -z "$line" ]] && continue
+      local name
+      name=$(echo "$line" | jq -r '.name // empty')
+      if [[ "$name" == "$target" ]]; then
+        _wf="$workfile"; _ln="$n"; _item=$(echo "$line" | jq "$_normalize_branches")
+        return 0
+      fi
+    done < "$workfile"
+  done < <(_find_workfiles)
+  # Second pass: match by branch name
+  while IFS= read -r workfile; do
+    local n=0
+    while IFS= read -r line; do
+      n=$((n + 1))
+      [[ -z "$line" ]] && continue
+      local normalized
+      normalized=$(echo "$line" | jq "$_normalize_branches")
+      local has_branch
+      has_branch=$(echo "$normalized" | jq --arg t "$target" '[.branches[] | .name] | index($t) != null')
+      if [[ "$has_branch" == "true" ]]; then
+        _wf="$workfile"; _ln="$n"; _item="$normalized"
+        return 0
+      fi
+    done < "$workfile"
+  done < <(_find_workfiles)
+  echo "Error: '$target' not found (searched item names and branch names)" >&2
+  return 1
+}
+
+# Replace a line in-place in the workfile
+_update_line() {
+  local workfile="$1" linenum="$2" newjson="$3"
+  newjson=$(echo "$newjson" | jq -c .)
+  local tmp
+  tmp=$(mktemp)
+  WIP_LINE="$newjson" awk -v ln="$linenum" 'NR==ln{print ENVIRON["WIP_LINE"];next}{print}' "$workfile" > "$tmp"
+  mv "$tmp" "$workfile"
+}
+
+# Resolve git branch status
+_git_branch_status() {
+  local loc="$1" branch="$2"
+  if [[ ! -d "$loc/.git" && ! -f "$loc/.git" ]]; then
+    echo "NO_REPO"; return
+  fi
+  if ! git -C "$loc" rev-parse --verify "origin/$branch" &>/dev/null; then
+    echo "NOT_PUSHED"; return
+  fi
+  local pr_json
+  pr_json=$(gh pr list --repo "$(git -C "$loc" remote get-url origin 2>/dev/null)" \
+    --head "$branch" --json state,statusCheckRollup --limit 1 2>/dev/null) || true
+  if [[ -z "$pr_json" || "$pr_json" == "[]" ]]; then
+    echo "PUSHED"; return
+  fi
+  local state
+  state=$(echo "$pr_json" | jq -r '.[0].state')
+  case "$state" in
+    MERGED) echo "MERGED" ;;
+    CLOSED) echo "CLOSED" ;;
+    OPEN)
+      local ci
+      ci=$(echo "$pr_json" | jq -r '.[0].statusCheckRollup // [] | map(.status) | if length == 0 then "none" elif all(. == "COMPLETED") then "done" else "pending" end')
+      if [[ "$ci" == "pending" ]]; then echo "WAITING_CI"; else echo "IN_PR"; fi
+      ;;
+    *) echo "PUSHED" ;;
+  esac
+}
+
+# ── subcommands ──────────────────────────────────────────────────────────────
+
+cmd_help() {
+  cat <<'EOF'
+wip - work-in-progress tracker
+
+  Items track a unit of work. Each item has one or more branches.
+  Wherever <item> appears below, you can pass an item name OR a branch
+  name — if a branch name is given, the owning item is resolved automatically.
+
+USAGE
+  wip                                         Interactive browser (fzf)
+  wip list [--json] [--all]                   List active items
+  wip get <item>                              Show item as JSON
+  wip status <item> <status>                  Set item status
+  wip add-branch <item> <branch>              Add a branch (starts ACTIVE)
+  wip branch-status <item> <branch> <status>  Set a branch's status
+  wip set <item> <key> <value>                Set an arbitrary field
+  wip note <item> <text>                      Append a timestamped note
+  wip notify <item> [text]                    Send alert for item (uses branch name + optional text)
+  wip pull [alias]                             Sync items from remote hosts
+  wip pull-linear                             Sync Linear issues assigned to you
+  wip help                                    Show this message
+
+ITEM STATUSES
+  NEW       Just created
+  ACTIVE    Being worked on
+  BLOCKED   Waiting on something
+  WAITING   Claude finished, needs user input
+  DONE      Finished
+  CLOSED    Abandoned / not needed
+
+BRANCH STATUSES
+  ACTIVE    In development
+  MERGED    Merged into target
+  CLOSED    Abandoned / superseded
+
+EXAMPLES
+  wip get rk-0228-auth-fix              # lookup by branch name
+  wip status rk-0227-auth ACTIVE        # set item status
+  wip add-branch rk-0227-auth rk-0228-auth-fix
+  wip branch-status rk-0227-auth rk-0228-auth-fix CLOSED
+  wip note rk-0227-auth "Switched to JWT approach"
+  wip set rk-0227-auth priority high
+  wip list --json | jq '.[] | select(.status=="BLOCKED")'
+  wip pull                                    # sync all remotes
+  wip pull hourly-dev                         # sync one remote
+
+REMOTES
+  Configure at ~/panop/.wip-remotes (one per line):
+    hourly-dev:/home/ssm-user/panop
+  Remote items show [R] prefix and are read-only locally.
+EOF
+}
+
+cmd_list() {
+  local show_all=false use_json=false
+  for arg in "$@"; do
+    case "$arg" in
+      --all) show_all=true ;;
+      --json) use_json=true ;;
+    esac
+  done
+
+  local results="[]"
+  while IFS= read -r workfile; do
+    local repo
+    repo=$(basename "$(dirname "$workfile")")
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local loc
+      loc=$(echo "$line" | jq -r '.loc // empty')
+      local status
+      if [[ -z "$loc" ]]; then
+        status="BROKEN"
+      else
+        status=$(echo "$line" | jq -r '.status // "UNKNOWN"')
+      fi
+      if [[ "$show_all" == false ]] && [[ "$status" == "CLOSED" || "$status" == "DONE" ]]; then
+        continue
+      fi
+      local normalized
+      normalized=$(echo "$line" | jq "$_normalize_branches" | jq --arg repo "$repo" --arg st "$status" '. + {repo: (.remote_repo // $repo), status: $st}')
+      results=$(echo "$results" | jq --argjson item "$normalized" '. + [$item]')
+    done < "$workfile"
+  done < <(_find_workfiles)
+
+  if [[ "$use_json" == true ]]; then
+    echo "$results" | jq .
+    return
+  fi
+
+  if [[ $(echo "$results" | jq 'length') -eq 0 ]]; then
+    echo "No active work items."
+    return
+  fi
+
+  printf '%-12s %-20s %-30s %s\n' "STATUS" "REPO" "NAME" "BRANCHES"
+  printf '%-12s %-20s %-30s %s\n' "------" "----" "----" "--------"
+  echo "$results" | jq -r '.[] | [
+    (if .source then "[R] " + (.status // "UNKNOWN") else .status // "UNKNOWN" end),
+    (if .source then .source + "/" + .repo else .repo end),
+    .name,
+    ([.branches[] | "\(.name)(\(.status))"] | join(", "))
+  ] | @tsv' | while IFS=$'\t' read -r status repo name branches; do
+    printf '%-12s %-20s %-30s %s\n' "$status" "$repo" "$name" "$branches"
+  done
+}
+
+cmd_get() {
+  local target="${1:?Usage: wip get <name>}"
+  _resolve_item "$target"
+  local repo
+  repo=$(basename "$(dirname "$_wf")")
+  echo "$_item" | jq --arg repo "$repo" '. + {repo: $repo}'
+}
+
+cmd_status() {
+  local target="${1:?Usage: wip status <name> <status>}"
+  local new_status="${2:?Usage: wip status <name> <status>}"
+  local valid="NEW ACTIVE BLOCKED WAITING DONE CLOSED"
+  if [[ ! " $valid " =~ " $new_status " ]]; then
+    echo "Error: status must be one of: $valid" >&2; return 1
+  fi
+  _resolve_item "$target"
+  # Remote items: DONE/CLOSED dismisses by deleting the local copy
+  if _is_remote_item "$_item"; then
+    if [[ "$new_status" == "DONE" || "$new_status" == "CLOSED" ]]; then
+      local tmp
+      tmp=$(mktemp)
+      awk -v ln="$_ln" 'NR!=ln' "$_wf" > "$tmp"
+      mv "$tmp" "$_wf"
+      echo "Dismissed remote item $target"
+      return
+    fi
+    local src
+    src=$(echo "$_item" | jq -r '.source')
+    echo "Error: '$(echo "$_item" | jq -r .name)' is a remote item (source: $src). Only DONE/CLOSED allowed locally." >&2
+    return 1
+  fi
+  local loc
+  loc=$(echo "$_item" | jq -r '.loc // empty')
+  if [[ -z "$loc" ]] && [[ "$new_status" == "DONE" || "$new_status" == "CLOSED" ]]; then
+    local tmp
+    tmp=$(mktemp)
+    awk -v ln="$_ln" 'NR!=ln' "$_wf" > "$tmp"
+    mv "$tmp" "$_wf"
+    echo "Deleted broken item $target"
+    return
+  fi
+  local updated
+  updated=$(echo "$_item" | jq --arg s "$new_status" '.status = $s')
+  _update_line "$_wf" "$_ln" "$updated"
+  echo "Updated $target status → $new_status"
+}
+
+cmd_add_branch() {
+  local target="${1:?Usage: wip add-branch <name> <branch>}"
+  local branch="${2:?Usage: wip add-branch <name> <branch>}"
+  _resolve_item "$target"
+  _guard_remote || return 1
+  local updated
+  updated=$(echo "$_item" | jq --arg b "$branch" '
+    if [.branches[] | .name] | index($b) then .
+    else .branches += [{"name": $b, "status": "ACTIVE"}]
+    end
+  ')
+  _update_line "$_wf" "$_ln" "$updated"
+  echo "Added branch '$branch' to $target"
+}
+
+cmd_branch_status() {
+  local target="${1:?Usage: wip branch-status <name> <branch> <status>}"
+  local branch="${2:?Usage: wip branch-status <name> <branch> <status>}"
+  local new_status="${3:?Usage: wip branch-status <name> <branch> <status>}"
+  local valid="ACTIVE MERGED CLOSED"
+  if [[ ! " $valid " =~ " $new_status " ]]; then
+    echo "Error: branch status must be one of: $valid" >&2; return 1
+  fi
+  _resolve_item "$target"
+  _guard_remote || return 1
+  local has_branch
+  has_branch=$(echo "$_item" | jq --arg b "$branch" '[.branches[] | .name] | index($b) != null')
+  if [[ "$has_branch" != "true" ]]; then
+    echo "Error: branch '$branch' not found on item '$(echo "$_item" | jq -r .name)'" >&2; return 1
+  fi
+  local updated
+  updated=$(echo "$_item" | jq --arg b "$branch" --arg s "$new_status" '
+    .branches = [.branches[] | if .name == $b then .status = $s else . end]
+  ')
+  _update_line "$_wf" "$_ln" "$updated"
+  echo "Updated branch $branch → $new_status"
+}
+
+cmd_set() {
+  local target="${1:?Usage: wip set <name> <key> <value>}"
+  local key="${2:?Usage: wip set <name> <key> <value>}"
+  local value="${3:?Usage: wip set <name> <key> <value>}"
+  _resolve_item "$target"
+  _guard_remote || return 1
+  local updated
+  if echo "$value" | jq . &>/dev/null; then
+    updated=$(echo "$_item" | jq --argjson v "$value" --arg k "$key" '.[$k] = $v')
+  else
+    updated=$(echo "$_item" | jq --arg v "$value" --arg k "$key" '.[$k] = $v')
+  fi
+  _update_line "$_wf" "$_ln" "$updated"
+  echo "Set $(echo "$_item" | jq -r .name).$key → $value"
+}
+
+cmd_note() {
+  local target="${1:?Usage: wip note <name> <text>}"
+  shift
+  local text="$*"
+  [[ -z "$text" ]] && { echo "Usage: wip note <name> <text>" >&2; return 1; }
+  _resolve_item "$target"
+  _guard_remote || return 1
+  local ts
+  ts=$(date +%Y-%m-%dT%H:%M:%S)
+  local updated
+  local note_text="[$ts] $text"
+  updated=$(echo "$_item" | NOTE="$note_text" jq '.notes = ((.notes // []) + [env.NOTE])')
+  _update_line "$_wf" "$_ln" "$updated"
+  echo "Added note to $(echo "$_item" | jq -r .name)"
+}
+
+cmd_notify() {
+  local target="${1:?Usage: wip notify <name> [text]}"
+  shift
+  local text="$*"
+  _resolve_item "$target"
+  local branch
+  branch=$(echo "$_item" | jq -r '[.branches[] | select(.status == "ACTIVE") | .name] | first // .name')
+  local msg="$branch${text:+: $text}"
+  alert "$msg" info &
+  echo "Notified: $msg"
+}
+
+# rk-0228-pipeline-der-audit → Pipeline Der Audit
+# falls back to the raw name if pattern doesn't match
+_friendly_name() {
+  local raw="$1"
+  # Strip rk-XXYY- prefix if present (XX and YY are digits)
+  local rest
+  if [[ "$raw" =~ ^rk-[0-9]{4}- ]]; then
+    rest="${raw#rk-????-}"
+  else
+    rest="$raw"
+  fi
+  # Split by - and join with spaces
+  echo "$rest" | tr '-' ' '
+}
+
+# Status sort order
+_status_rank() {
+  case "$1" in
+    ACTIVE)  echo 1 ;; BLOCKED) echo 2 ;; WAITING) echo 3 ;;
+    NEW)     echo 4 ;; BROKEN)  echo 5 ;; *)       echo 9 ;;
+  esac
+}
+
+# Helper for fzf reload — outputs display lines to stdout, fast (no git calls)
+# Pass "sorted" as $1 to sort by status
+cmd__reload() {
+  local sort_mode="${1:-}"
+  local pinned="" normal=""
+  local now
+  now=$(date +%s)
+  # Process each workfile with a single jq call to extract all fields at once
+  while IFS= read -r workfile; do
+    while IFS='|' read -r status name loc source stored_name is_priority linear_id branches pulled_at; do
+      [[ -z "$name" ]] && continue
+      [[ "$status" == "CLOSED" || "$status" == "DONE" ]] && continue
+      # Sentinels: "_" means empty
+      [[ "$source" == "_" ]] && source=""
+      [[ "$stored_name" == "_" ]] && stored_name=""
+      [[ "$linear_id" == "_" ]] && linear_id=""
+      [[ "$branches" == "_" ]] && branches=""
+      if [[ -n "$pulled_at" ]] && (( now - pulled_at > 86400 )); then continue; fi
+      local friendly
+      if [[ -n "$stored_name" ]]; then
+        friendly="$stored_name"
+      else
+        friendly=$(_friendly_name "$name")
+      fi
+      [[ -n "$source" ]] && friendly="[R] $friendly"
+      [[ -n "$linear_id" ]] && friendly="[$linear_id] $friendly"
+      [[ -z "$branches" ]] && branches="(all closed)"
+      local row sort_key
+      row=$(printf '%-10s\t%-22s\t%s\t%s\t%s' "$status" "$friendly" "$name" "${loc:-(no loc)}" "$branches")
+      sort_key="$(_status_rank "$status")"
+      if [[ "$is_priority" == "true" ]]; then
+        pinned+="${sort_key}"$'\x1f'"${row}"$'\n'
+      else
+        if [[ -n "$sort_mode" ]]; then
+          case "$sort_mode" in
+            sorted)    sort_key="$(_status_rank "$status")" ;;
+            by_repo)   sort_key="${loc:-(no loc)}" ;;
+          esac
+        fi
+        normal+="${sort_key}"$'\x1f'"${row}"$'\n'
+      fi
+    done < <(jq -r '
+      .branches = (
+        if .branches == null then [{"name": .name, "status": "ACTIVE"}]
+        elif (.branches | length > 0) and (.branches[0] | type == "string") then [.branches[] | {"name": ., "status": "ACTIVE"}]
+        else .branches end
+      )
+      | (if .loc == null or .loc == "" then "BROKEN" elif .status == null then "UNKNOWN" else .status end) as $status
+      | [
+          $status,
+          (.name // ""),
+          (.loc // ""),
+          (.source // "_"),
+          (.friendly_name // "_"),
+          ((.priority // false) | tostring),
+          (.linear_id // "_"),
+          (([.branches[] | select(.status == "CLOSED" | not) | .name] | join(",")) // "_"),
+          ((.pulled_at // "") | tostring)
+        ]
+      | join("|")
+    ' "$workfile" 2>/dev/null)
+  done < <(_find_workfiles)
+  # Output pinned items (sorted by status), then separator, then rest
+  if [[ -n "$pinned" ]]; then
+    printf '%s' "$pinned" | sort -t$'\x1f' -k1,1 | cut -d$'\x1f' -f2-
+    echo ""
+  fi
+  if [[ -n "$sort_mode" || -n "$pinned" ]]; then
+    printf '%s' "$normal" | sort -t$'\x1f' -k1,1 | cut -d$'\x1f' -f2-
+  else
+    printf '%s' "$normal" | cut -d$'\x1f' -f2-
+  fi
+}
+
+# Helper for fzf preview — takes name, loc, branches, [mode] as args
+_WIP_MODE_FILE="/tmp/wip-preview-mode"
+cmd__preview() {
+  local name="$1" loc="$2" branches="$3"
+  local mode
+  mode=$(cat "$_WIP_MODE_FILE" 2>/dev/null || echo "default")
+
+  if [ "$loc" = "linear" ]; then
+    _preview_linear "$name"
+    return
+  fi
+
+  if [ "$mode" = "claude" ]; then
+    _preview_claude "$loc"
+    return
+  fi
+
+  # Show linked Linear issue info if present
+  local linear_id
+  linear_id=$("$PANOP_DIR/wip" get "$name" 2>/dev/null | jq -r '.linear_id // empty')
+  if [[ -n "$linear_id" ]]; then
+    local li_issue
+    li_issue=$(grep "\"identifier\":\"$linear_id\"" "$LINEAR_CACHE" 2>/dev/null | head -1)
+    if [[ -n "$li_issue" ]]; then
+      local li_status li_url li_labels
+      li_status=$(echo "$li_issue" | jq -r '.status')
+      li_url=$(echo "$li_issue" | jq -r '.url')
+      li_labels=$(echo "$li_issue" | jq -r '.labels | join(", ")')
+      echo "═══ $linear_id ═══"
+      echo ""
+      echo "  Status:   $li_status"
+      [[ -n "$li_labels" ]] && echo "  Labels:   $li_labels"
+      echo "  URL:      $li_url"
+      echo ""
+    fi
+  fi
+
+  echo "═══ BRANCHES ═══"
+  echo ""
+  echo "$branches" | tr "," "\n" | while read -r b; do
+    [ -z "$b" ] && continue
+    if [ "$b" = "(all closed)" ]; then
+      echo "  (all branches closed)"
+    elif [ -d "$loc/.git" ] || [ -f "$loc/.git" ]; then
+      if ! git -C "$loc" rev-parse --verify "origin/$b" >/dev/null 2>&1; then
+        gs="NOT_PUSHED"
+      else
+        gs="PUSHED+"
+      fi
+    else
+      gs="NO_REPO"
+    fi
+    printf "  %-40s %s\n" "$b" "$gs"
+  done
+  echo ""
+
+  # notes (show most recent 8)
+  local notes total
+  total=$("$PANOP_DIR/wip" get "$name" 2>/dev/null | jq '(.notes // []) | length')
+  notes=$("$PANOP_DIR/wip" get "$name" 2>/dev/null | jq -r '(.notes // []) | .[-8:] | if length > 0 then .[] else empty end')
+  if [ -n "$notes" ]; then
+    echo "═══ NOTES ═══"
+    echo ""
+    if [ "$total" -gt 8 ] 2>/dev/null; then
+      echo "  ... $(( total - 8 )) older notes hidden"
+    fi
+    echo "$notes"
+    echo ""
+  fi
+
+  local planfile="$loc/docs/reidplans/$name/PLAN.md"
+  echo "═══ PLAN ═══"
+  echo ""
+  if [ -f "$planfile" ]; then
+    sed '/<!--/,/-->/d' "$planfile" | sed '/./,$!d'
+  else
+    echo "(no PLAN.md at $planfile)"
+    if [ -d "$loc" ]; then
+      echo ""
+      echo "═══ WORKTREE ═══"
+      ls -lt "$loc" 2>/dev/null | head -10
+    else
+      echo "(worktree directory missing)"
+    fi
+  fi
+}
+
+_preview_claude() {
+  local loc="$1"
+  local claude_pane=""
+  while IFS=' ' read -r ppath pcmd pid; do
+    case "$ppath" in "$loc"*) ;; *) continue ;; esac
+    case "$pcmd" in [0-9]*) claude_pane="$pid"; break ;; esac
+  done < <(tmux list-panes -a -F '#{pane_current_path} #{pane_current_command} #{pane_id}' 2>/dev/null)
+  if [ -z "$claude_pane" ]; then
+    echo "(no Claude session at this loc)"
+    echo "(press c to toggle back)"
+  else
+    # Grab bottom of claude output, sized to fit the preview window
+    # fzf header takes ~3 lines, so available height is terminal rows minus chrome
+    local lines=$(( $(tput lines 2>/dev/null || echo 40) - 4 ))
+    tmux capture-pane -p -t "$claude_pane" -S -200 2>/dev/null | awk 'NF{p=NR} {a[NR]=$0} END{for(i=1;i<=p;i++) print a[i]}' | tail -"$lines"
+  fi
+}
+
+_preview_linear() {
+  local identifier="$1"
+  [[ "$identifier" == "---" ]] && return
+  local issue
+  issue=$(grep "\"identifier\":\"$identifier\"" "$LINEAR_CACHE" 2>/dev/null | head -1)
+  [[ -z "$issue" ]] && { echo "(issue not in cache)"; return; }
+  local title status priority url description labels
+  title=$(echo "$issue" | jq -r '.title')
+  status=$(echo "$issue" | jq -r '.status')
+  priority=$(echo "$issue" | jq -r '.priority // "—"')
+  url=$(echo "$issue" | jq -r '.url')
+  description=$(echo "$issue" | jq -r '.description // "(no description)"')
+  labels=$(echo "$issue" | jq -r '.labels | join(", ")')
+  echo "═══ $identifier ═══"
+  echo ""
+  echo "  Title:    $title"
+  echo "  Status:   $status"
+  echo "  Priority: $priority"
+  echo "  Labels:   $labels"
+  echo "  URL:      $url"
+  echo ""
+  echo "═══ DESCRIPTION ═══"
+  echo ""
+  echo "$description"
+}
+
+# Toggle priority on an item
+cmd__toggle_priority() {
+  local target="${1:?}"
+  _resolve_item "$target" 2>/dev/null || return 0
+  local current
+  current=$(echo "$_item" | jq -r '.priority // false')
+  local updated
+  if [[ "$current" == "true" ]]; then
+    updated=$(echo "$_item" | jq '.priority = false')
+  else
+    updated=$(echo "$_item" | jq '.priority = true')
+  fi
+  _update_line "$_wf" "$_ln" "$updated"
+}
+
+# Command palette — context-aware actions
+cmd__palette() {
+  local name="$1" loc="$2"
+  # Build action list based on context
+  local actions=""
+  actions="blocked       Mark as BLOCKED
+done          Mark as DONE
+pin           Toggle priority pin
+note          Add a note
+edit-plan     Edit PLAN.md in nvim
+claude        Toggle Claude preview
+rename        Rename item
+sort-status   Sort by status
+sort-repo     Sort by repo
+linear        Open Linear picker
+refresh       Refresh list"
+  # Write palette script
+  cat > /tmp/wip-palette.sh <<'PALEOF'
+#!/bin/bash
+name="$1"; loc="$2"; wip="$3"
+action=$(echo "$4" | fzf --prompt="action> " --no-info --with-nth=1.. --delimiter=$'\n')
+[[ -z "$action" ]] && exit 0
+cmd=$(echo "$action" | awk '{print $1}')
+echo "$cmd" > /tmp/wip-palette-result
+PALEOF
+  chmod +x /tmp/wip-palette.sh
+  printf '%s\n' "$actions" > /tmp/wip-palette-options
+  tmux display-popup -h 16 -w 50 -E "cat /tmp/wip-palette-options | fzf --prompt='action> ' --no-info > /tmp/wip-palette-result"
+  local result
+  result=$(cat /tmp/wip-palette-result 2>/dev/null)
+  rm -f /tmp/wip-palette-result /tmp/wip-palette-options /tmp/wip-palette.sh
+  [[ -z "$result" ]] && return 0
+  local cmd
+  cmd=$(echo "$result" | awk '{print $1}')
+  case "$cmd" in
+    blocked)      "$PANOP_DIR/wip" status "$name" BLOCKED ;;
+    done)         "$PANOP_DIR/wip" status "$name" DONE ;;
+    pin)          "$PANOP_DIR/wip" _toggle_priority "$name" ;;
+    note)
+      tmux display-popup -h 5 -w 80% -E "bash -c 'echo \"note for $name:\" && echo && read -e note && $PANOP_DIR/wip note $name \"\$note\"'"
+      ;;
+    edit-plan)    tmux split-window -h "nvim $loc/docs/reidplans/$name/PLAN.md" ;;
+    claude)       "$PANOP_DIR/wip" _toggle_claude ;;
+    rename)
+      tmux display-popup -h 5 -w 80% -E "bash -c 'echo \"rename $name:\" && echo && read -e newname && $PANOP_DIR/wip set $name friendly_name \"\$newname\"'"
+      ;;
+    sort-status)  "$PANOP_DIR/wip" _reload sorted > /tmp/wip-rl ;;
+    sort-repo)    "$PANOP_DIR/wip" _reload by_repo > /tmp/wip-rl ;;
+    linear)       "$PANOP_DIR/wip" _linear_picker ;;
+    refresh)
+      if [[ -f "$LINEAR_TOKEN_FILE" ]]; then
+        "$PANOP_DIR/wip" pull-linear >/dev/null 2>&1
+      fi
+      ;;
+  esac
+}
+
+# Toggle preview mode file
+cmd__toggle_claude() {
+  local current
+  current=$(cat "$_WIP_MODE_FILE" 2>/dev/null || echo "default")
+  if [ "$current" = "claude" ]; then
+    echo "default" > "$_WIP_MODE_FILE"
+  else
+    echo "claude" > "$_WIP_MODE_FILE"
+  fi
+}
+
+cmd_interactive() {
+  local initial
+  initial=$(cmd__reload)
+
+  if [[ -z "$initial" ]]; then
+    echo "No active work items."
+    read -rp "Press enter to exit..."
+    return
+  fi
+
+  if ! command -v fzf &>/dev/null || [[ ! -t 1 ]]; then
+    cmd_list "$@"
+    return
+  fi
+
+  # clean mode file on exit
+  rm -f "$_WIP_MODE_FILE" /tmp/wip-linear-sort
+  trap 'rm -f "$_WIP_MODE_FILE" /tmp/wip-linear-sort' EXIT
+
+  echo "$initial" | \
+    fzf \
+      --delimiter='\t' \
+      --with-nth=1,2,5 \
+      --header=$'enter: go │ x: block │ d: done │ p: pin │ n: note │ e: plan │ c: claude │ r: refresh │ s/b: sort │ L: linear │ j/k 1-9: nav\nSTATUS     NAME                   BRANCHES' \
+      --preview="$PANOP_DIR/wip _preview {3} {4} {5}" \
+      --preview-window=right:60%:wrap \
+      --no-input \
+      --no-sort \
+      --bind="enter:execute-silent(loc={4} && if [ -n \"\$TMUX\" ] && [ -n \"\$loc\" ]; then win=\$(tmux list-panes -a -F '#{pane_current_path} #{window_id}' | grep \"^\$loc \" | head -1 | awk '{print \$2}') && [ -n \"\$win\" ] && tmux select-window -t \"\$win\"; fi)" \
+      --bind="r:transform:$PANOP_DIR/wip _reload > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="s:transform:$PANOP_DIR/wip _reload sorted > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="b:transform:$PANOP_DIR/wip _reload by_repo > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="c:execute-silent($PANOP_DIR/wip _toggle_claude)+refresh-preview" \
+      --bind="x:execute-silent($PANOP_DIR/wip status {3} BLOCKED)+transform:$PANOP_DIR/wip _reload > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="d:execute-silent($PANOP_DIR/wip status {3} DONE)+transform:$PANOP_DIR/wip _reload > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="p:execute-silent($PANOP_DIR/wip _toggle_priority {3})+transform:$PANOP_DIR/wip _reload > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="n:execute-silent(tmux display-popup -h 5 -w 80% -E \"bash -c 'echo \\\"note for {3}:\\\" && echo && read -e note && $PANOP_DIR/wip note {3} \\\"\\\$note\\\"'\")+refresh-preview" \
+      --bind="e:execute-silent(tmux split-window -h \"nvim {4}/docs/reidplans/{3}/PLAN.md\")+refresh-preview" \
+      --bind="ctrl-n:execute-silent(tmux display-popup -h 5 -w 80% -E \"bash -c 'echo \\\"rename {3} (currently: {2}):\\\" && echo && read -e newname && $PANOP_DIR/wip set {3} friendly_name \\\"\\\$newname\\\"'\")+transform:$PANOP_DIR/wip _reload > /tmp/wip-rl; pos=\$(grep -n {3} /tmp/wip-rl | head -1 | cut -d: -f1); echo \"reload(cat /tmp/wip-rl)+pos(\${pos:-1})\"" \
+      --bind="L:execute-silent(tmux display-popup -w 90% -h 80% -E \"$PANOP_DIR/wip _linear_picker\")" \
+      --bind="j:down" --bind="k:up" \
+      --bind="1:pos(1)" --bind="2:pos(2)" --bind="3:pos(3)" \
+      --bind="4:pos(4)" --bind="5:pos(5)" --bind="6:pos(6)" \
+      --bind="7:pos(7)" --bind="8:pos(8)" --bind="9:pos(9)" \
+      --no-info \
+      --pointer=' ' \
+      --marker=' ' \
+      --color='gutter:-1'
+}
+
+cmd_pull() {
+  local filter="${1:-}"
+  if [[ ! -f "$REMOTES_FILE" ]]; then
+    echo "No remotes configured. Create $REMOTES_FILE with lines like:" >&2
+    echo "  hourly-dev:/home/ssm-user/panop" >&2
+    return 1
+  fi
+  local count=0
+  while IFS=: read -r alias remote_panop; do
+    [[ -z "$alias" || "$alias" =~ ^# ]] && continue
+    if [[ -n "$filter" && "$alias" != "$filter" ]]; then continue; fi
+    echo "Pulling from $alias ($remote_panop)..."
+    local local_dir="$PANOP_DIR/remote-$alias"
+    mkdir -p "$local_dir"
+    # Find all work.txt files on the remote
+    local remote_files
+    remote_files=$(ssh "$alias" "find '$remote_panop' -name work.txt 2>/dev/null" 2>/dev/null) || {
+      echo "  Error: SSH to $alias failed" >&2; continue
+    }
+    # Clear old remote data
+    rm -f "$local_dir/work.txt"
+    if [[ -z "$remote_files" ]]; then
+      echo "  No work.txt files found on $alias"
+      continue
+    fi
+    local total=0
+    while IFS= read -r rf; do
+      [[ -z "$rf" ]] && continue
+      local remote_repo
+      remote_repo=$(basename "$(dirname "$rf")")
+      local content
+      content=$(ssh "$alias" "cat '$rf'" 2>/dev/null) || continue
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        # Validate JSON and inject source/remote_repo, skip DONE/CLOSED
+        local status
+        status=$(echo "$line" | jq -r '.status // "UNKNOWN"' 2>/dev/null) || continue
+        [[ "$status" == "DONE" || "$status" == "CLOSED" ]] && continue
+        echo "$line" | jq -c --arg src "$alias" --arg rr "$remote_repo" --arg pa "$(date +%s)" '. + {source: $src, remote_repo: $rr, pulled_at: ($pa | tonumber)}' >> "$local_dir/work.txt" 2>/dev/null || continue
+        total=$((total + 1))
+      done <<< "$content"
+    done <<< "$remote_files"
+    echo "  Pulled $total active items from $alias"
+    count=$((count + total))
+  done < "$REMOTES_FILE"
+  echo "Total: $count remote items synced"
+}
+
+# ── linear ───────────────────────────────────────────────────────────────────
+
+cmd_pull_linear() {
+  if [[ ! -f "$LINEAR_TOKEN_FILE" ]]; then
+    echo "No Linear token. Create $LINEAR_TOKEN_FILE with your API key." >&2
+    return 1
+  fi
+  local token
+  token=$(cat "$LINEAR_TOKEN_FILE")
+  echo "Pulling Linear issues..."
+  # Fetch assigned-to-me issues
+  local query='{"query":"{ issues(filter: { assignee: { isMe: { eq: true } }, state: { type: { nin: [\"completed\", \"canceled\"] } } }, orderBy: updatedAt, first: 100) { nodes { id identifier title description priority url dueDate state { name type } assignee { name } project { name } parent { identifier title } labels { nodes { name } } updatedAt createdAt } } }"}'
+  local response
+  response=$(curl -s -X POST https://api.linear.app/graphql \
+    -H "Content-Type: application/json" \
+    -H "Authorization: $token" \
+    -d "$query") || { echo "Error: Linear API request failed" >&2; return 1; }
+  # Transform to cache format
+  echo "$response" | jq -c '.data.issues.nodes[] | {
+    id: .id,
+    identifier: .identifier,
+    title: .title,
+    description: .description,
+    priority: .priority,
+    url: .url,
+    dueDate: .dueDate,
+    status: .state.name,
+    state_type: .state.type,
+    assignee: (.assignee.name // null),
+    project: (.project.name // null),
+    parent: (if .parent then {identifier: .parent.identifier, title: .parent.title} else null end),
+    labels: [.labels.nodes[].name],
+    updatedAt: .updatedAt,
+    createdAt: .createdAt
+  }' > "$LINEAR_CACHE"
+  local count
+  count=$(wc -l < "$LINEAR_CACHE" | tr -d ' ')
+  echo "Pulled $count assigned Linear issues"
+  # Also fetch all recent issues (team-wide) for "recent overall" sort
+  local query_all='{"query":"{ issues(filter: { state: { type: { nin: [\"completed\", \"canceled\"] } } }, orderBy: updatedAt, first: 100) { nodes { id identifier title description priority url dueDate state { name type } assignee { name } project { name } parent { identifier title } labels { nodes { name } } updatedAt createdAt } } }"}'
+  local response_all
+  response_all=$(curl -s -X POST https://api.linear.app/graphql \
+    -H "Content-Type: application/json" \
+    -H "Authorization: $token" \
+    -d "$query_all") || { echo "Warning: failed to fetch all issues" >&2; return 0; }
+  echo "$response_all" | jq -c '.data.issues.nodes[] | {
+    id: .id,
+    identifier: .identifier,
+    title: .title,
+    description: .description,
+    priority: .priority,
+    url: .url,
+    dueDate: .dueDate,
+    status: .state.name,
+    state_type: .state.type,
+    assignee: (.assignee.name // null),
+    project: (.project.name // null),
+    parent: (if .parent then {identifier: .parent.identifier, title: .parent.title} else null end),
+    labels: [.labels.nodes[].name],
+    updatedAt: .updatedAt,
+    createdAt: .createdAt
+  }' > "${LINEAR_CACHE}-all"
+  local count_all
+  count_all=$(wc -l < "${LINEAR_CACHE}-all" | tr -d ' ')
+  echo "Pulled $count_all total Linear issues"
+}
+
+_LINEAR_MODES=("recent-mine" "urgent-mine" "due-mine" "recent-all")
+_LINEAR_MODE_FILE="/tmp/wip-linear-mode"
+
+_linear_header() {
+  local current="$1"
+  local labels=("Recent (mine)" "Urgent (mine)" "Due soon" "Recent (all)")
+  local header=""
+  for i in 0 1 2 3; do
+    if [[ "${_LINEAR_MODES[$i]}" == "$current" ]]; then
+      header+="[${labels[$i]}]"
+    else
+      header+=" ${labels[$i]} "
+    fi
+    [[ $i -lt 3 ]] && header+=" │ "
+  done
+  echo "$header"
+}
+
+# Output sorted Linear issues as tab-delimited lines
+cmd__linear_reload() {
+  local mode="${1:-recent-mine}"
+  local source="$LINEAR_CACHE"
+  [[ "$mode" == "recent-all" ]] && source="${LINEAR_CACHE}-all"
+  [[ ! -f "$source" ]] && return 0
+  case "$mode" in
+    recent-mine|recent-all)
+      jq -c '.' "$source" | sort -t'"' -k2 -r ;;
+    urgent-mine)
+      jq -s -c 'sort_by(.priority) | .[]' "$source" ;;
+    due-mine)
+      jq -s -c '[.[] | select(.dueDate != null)] | sort_by(.dueDate) | .[]' "$source" ;;
+  esac | while IFS= read -r issue; do
+    local li_id li_title li_status
+    li_id=$(echo "$issue" | jq -r '.identifier')
+    li_title=$(echo "$issue" | jq -r '.title')
+    li_status=$(echo "$issue" | jq -r '.status')
+    printf '%s\t%s\t%s\n' "$li_status" "$li_title" "$li_id"
+  done
+}
+
+# Linear issue picker — standalone overlay
+cmd__linear_picker() {
+  # Auto-refresh if cache missing or older than 1 hour
+  if [[ ! -f "$LINEAR_CACHE" ]] || [[ ! -s "$LINEAR_CACHE" ]] || \
+     [[ $(( $(date +%s) - $(stat -f%m "$LINEAR_CACHE") )) -gt 120 ]]; then
+    cmd_pull_linear
+  fi
+  if [[ ! -f "$LINEAR_CACHE" ]] || [[ ! -s "$LINEAR_CACHE" ]]; then
+    echo "No Linear issues. Check your token at $LINEAR_TOKEN_FILE" >&2
+    return 1
+  fi
+  echo "recent-mine" > "$_LINEAR_MODE_FILE"
+  local initial
+  initial=$(cmd__linear_reload recent-mine)
+  local selected
+  selected=$(printf '%s' "$initial" | fzf \
+    --delimiter='\t' \
+    --with-nth=1,2 \
+    --preview="$PANOP_DIR/wip _preview_linear {3}" \
+    --preview-window=right:50%:wrap \
+    --border=rounded \
+    --border-label=" $(_linear_header recent-mine) " \
+    --header=$'enter: start │ ←/→: switch view │ type to filter' \
+    --prompt='Linear> ' \
+    --no-sort \
+    --bind="right:transform:m=\$(cat $_LINEAR_MODE_FILE); case \$m in recent-mine) n=urgent-mine;; urgent-mine) n=due-mine;; due-mine) n=recent-all;; *) n=recent-mine;; esac; echo \$n > $_LINEAR_MODE_FILE; $PANOP_DIR/wip _linear_reload \$n > /tmp/wip-lr; echo \"reload(cat /tmp/wip-lr)+change-border-label( \$($PANOP_DIR/wip _linear_header \$n) )\"" \
+    --bind="left:transform:m=\$(cat $_LINEAR_MODE_FILE); case \$m in recent-all) n=due-mine;; due-mine) n=urgent-mine;; urgent-mine) n=recent-mine;; *) n=recent-all;; esac; echo \$n > $_LINEAR_MODE_FILE; $PANOP_DIR/wip _linear_reload \$n > /tmp/wip-lr; echo \"reload(cat /tmp/wip-lr)+change-border-label( \$($PANOP_DIR/wip _linear_header \$n) )\"" \
+  )
+  rm -f "$_LINEAR_MODE_FILE"
+  [[ -z "$selected" ]] && return 0
+  local chosen_id
+  chosen_id=$(echo "$selected" | awk -F'\t' '{print $3}')
+  [[ -z "$chosen_id" ]] && return 0
+  # Prompt for branch name, then start
+  local issue
+  issue=$(grep "\"identifier\":\"$chosen_id\"" "$LINEAR_CACHE" "${LINEAR_CACHE}-all" 2>/dev/null | head -1)
+  local title
+  title=$(echo "$issue" | jq -r '.title')
+  local default_slug
+  default_slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-40)
+  echo ""
+  echo "Starting: $chosen_id — $title"
+  printf "Branch name [%s]: " "$default_slug"
+  read -e branch
+  [[ -z "$branch" ]] && branch="$default_slug"
+  "$PANOP_DIR/wip" _start_linear "$chosen_id" "$branch"
+}
+
+# Start work on a Linear issue: prompt for branch, gwt in new tmux window, patch PLAN.md
+cmd__prompt_linear() {
+  local identifier="$1"
+  [[ -z "$identifier" ]] && return 1
+  local issue
+  issue=$(grep "\"identifier\":\"$identifier\"" "$LINEAR_CACHE" 2>/dev/null | head -1)
+  [[ -z "$issue" ]] && return 1
+  local title
+  title=$(echo "$issue" | jq -r '.title')
+  local default_slug
+  default_slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-40)
+  # This runs inside fzf execute() which provides a terminal
+  echo "Linear: $identifier — $title"
+  echo ""
+  printf "Branch name: "
+  read -e -i "$default_slug" branch
+  [ -n "$branch" ] && "$PANOP_DIR/wip" _start_linear "$identifier" "$branch"
+}
+
+cmd__start_linear() {
+  local identifier="$1"
+  local branch_slug="$2"
+  [[ -z "$identifier" ]] && return 1
+  local issue
+  issue=$(grep "\"identifier\":\"$identifier\"" "$LINEAR_CACHE" 2>/dev/null | head -1)
+  [[ -z "$issue" ]] && { echo "Issue $identifier not found in cache" >&2; return 1; }
+  local title url description project labels parent_info
+  title=$(echo "$issue" | jq -r '.title')
+  url=$(echo "$issue" | jq -r '.url')
+  description=$(echo "$issue" | jq -r '.description // ""')
+  project=$(echo "$issue" | jq -r '.project // empty')
+  labels=$(echo "$issue" | jq -r '.labels | join(", ")')
+  parent_info=$(echo "$issue" | jq -r 'if .parent then "\(.parent.identifier): \(.parent.title)" else empty end')
+  [[ -z "$branch_slug" ]] && {
+    # Generate default slug from title
+    branch_slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-40)
+  }
+  local full_branch="rk-$(date +%m%d)-$branch_slug"
+  local hourly_dir="$LINEAR_HOURLY_DIR"
+  if [[ ! -d "$hourly_dir" ]]; then
+    echo "Error: $hourly_dir not found" >&2; return 1
+  fi
+  # New tmux window: cd to hourly, run gwt, land in worktree
+  local worktree_dir="$hourly_dir/../$full_branch"
+  # Write a small launcher so we avoid quoting hell
+  cat > /tmp/wip-gwt-launch.sh <<GWTEOF
+#!/bin/zsh
+cd "$hourly_dir" && gwt "$branch_slug"
+cd "$worktree_dir" 2>/dev/null
+exec zsh
+GWTEOF
+  chmod +x /tmp/wip-gwt-launch.sh
+  tmux new-window -n "$branch_slug" "zsh /tmp/wip-gwt-launch.sh"
+  # Wait for gwt to create the PLAN.md, then patch it with Linear content
+  local planfile="$worktree_dir/docs/reidplans/$full_branch/PLAN.md"
+  local tries=0
+  while [[ ! -f "$planfile" ]] && (( tries < 30 )); do
+    sleep 1
+    tries=$((tries + 1))
+  done
+  if [[ ! -f "$planfile" ]]; then
+    echo "Warning: PLAN.md not created after 30s" >&2
+    return 0
+  fi
+  # Build metadata block
+  local meta=""
+  [[ -n "$project" ]] && meta+="Project: $project"$'\n'
+  [[ -n "$labels" ]] && meta+="Labels: $labels"$'\n'
+  [[ -n "$parent_info" ]] && meta+="Parent: $parent_info"$'\n'
+  # Overwrite with Linear issue content
+  cat > "$planfile" <<PLANEOF
+# $full_branch
+
+> $identifier: $title
+> $url
+${meta:+
+$meta}
+## Goal
+
+$title
+
+## Context
+
+$description
+
+## Progress
+
+PLANEOF
+  echo "Wrote Linear issue to $planfile"
+  # Link the wip item to the Linear issue
+  "$PANOP_DIR/wip" set "$full_branch" linear_id "\"$identifier\"" 2>/dev/null || true
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  help|--help|-h)     cmd_help ;;
+  list)               shift; cmd_list "$@" ;;
+  get)                shift; cmd_get "$@" ;;
+  status)             shift; cmd_status "$@" ;;
+  add-branch)         shift; cmd_add_branch "$@" ;;
+  branch-status)      shift; cmd_branch_status "$@" ;;
+  set)                shift; cmd_set "$@" ;;
+  note)               shift; cmd_note "$@" ;;
+  notify)             shift; cmd_notify "$@" ;;
+  pull)               shift; cmd_pull "$@" ;;
+  pull-linear)        cmd_pull_linear ;;
+  _prompt_linear)     shift; cmd__prompt_linear "$@" ;;
+  _start_linear)      shift; cmd__start_linear "$@" ;;
+  _reload)            shift; cmd__reload "$@" ;;
+  _preview)           shift; cmd__preview "$@" ;;
+  _palette)           shift; cmd__palette "$@" ;;
+  _linear_picker)     cmd__linear_picker ;;
+  _linear_reload)     shift; cmd__linear_reload "$@" ;;
+  _linear_header)     shift; _linear_header "$@" ;;
+  _preview_linear)    shift; _preview_linear "$@" ;;
+  linear)             cmd__linear_picker ;;
+  _toggle_claude)     cmd__toggle_claude ;;
+  _toggle_priority)   shift; cmd__toggle_priority "$@" ;;
+  "")                 cmd_interactive ;;
+  *)                  echo "Unknown command: $1" >&2; echo "Run 'wip help' for usage." >&2; exit 1 ;;
+esac
