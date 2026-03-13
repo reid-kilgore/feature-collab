@@ -1028,6 +1028,11 @@ _autopilot_log()  { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] autopilot: $*" >&2; }
 _autopilot_warn() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] autopilot WARN: $*" >&2; }
 _autopilot_err()  { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] autopilot ERROR: $*" >&2; }
 
+# Strip markdown code fences from Claude output (```json\n{...}\n```)
+_autopilot_strip_fences() {
+  sed 's/^```json//; s/^```//; /^$/d'
+}
+
 # ── Linear API helpers ────────────────────────────────────────────────────────
 
 # _autopilot_linear_query <json-payload>
@@ -1105,7 +1110,7 @@ _autopilot_update_status() {
   local state_name="$2"
 
   local state_id
-  state_id=$(grep -F "^${state_name}	" "$AP_STATE_IDS_FILE" 2>/dev/null | tail -1 | cut -f2)
+  state_id=$(grep "^${state_name}	" "$AP_STATE_IDS_FILE" 2>/dev/null | tail -1 | cut -f2)
   if [[ -z "$state_id" ]]; then
     _autopilot_warn "No state ID found for '$state_name' — skipping status update"
     return 0
@@ -1192,8 +1197,7 @@ _autopilot_remove_label() {
   local fetch_payload
   fetch_payload=$(jq -n \
     --arg issueId "$issue_id" \
-    --arg labelName "$label_name" \
-    '{"query":"query($issueId: String!, $labelName: String!) { issue(id: $issueId) { labels { nodes { id name } } } }","variables":{"issueId":$issueId,"labelName":$labelName}}')
+    '{"query":"query($issueId: String!) { issue(id: $issueId) { labels { nodes { id name } } } }","variables":{"issueId":$issueId}}')
 
   local fetch_response
   fetch_response=$(_autopilot_linear_query "$fetch_payload") || {
@@ -1313,7 +1317,7 @@ _autopilot_find_tickets() {
   local payload
   payload=$(jq -n \
     --arg label "$label" \
-    '{"query":"{ issues(filter: { assignee: { isMe: { eq: true } }, creator: { isMe: { eq: true } }, labels: { name: { in: [$label] } }, state: { type: { nin: [\"completed\",\"canceled\"] } } }, orderBy: updatedAt, first: 50) { nodes { id identifier title description priority url state { name type } labels { nodes { id name } } team { id } updatedAt createdAt } } }","variables":{"label":$label}}')
+    '{"query":"query($label: String!) { issues(filter: { creator: { isMe: { eq: true } }, labels: { name: { in: [$label] } }, state: { type: { nin: [\"completed\",\"canceled\"] } } }, orderBy: updatedAt, first: 50) { nodes { id identifier title description priority url state { name type } labels { nodes { id name } } team { id } updatedAt createdAt } } }","variables":{"label":$label}}')
 
   local response
   response=$(_autopilot_linear_query "$payload") || {
@@ -1382,12 +1386,12 @@ _autopilot_find_or_create_worktree() {
     return 0
   fi
 
-  # Pull latest main first
-  (cd "$hourly_repo" && git pull origin main --quiet 2>/dev/null) \
-    || _autopilot_warn "git pull origin main failed — proceeding anyway"
+  # Fetch latest main (no merge, no checkout — safe regardless of current branch)
+  (cd "$hourly_repo" && git fetch origin main --quiet >&2 2>&1) \
+    || _autopilot_warn "git fetch origin main failed — proceeding anyway"
 
-  # Create the worktree (branch from HEAD)
-  (cd "$hourly_repo" && git worktree add "$abs_dir" -b "$branch") \
+  # Create the worktree from origin/main (redirect output to stderr)
+  (cd "$hourly_repo" && git worktree add "$abs_dir" -b "$branch" origin/main >&2 2>&1) \
     || { _autopilot_err "git worktree add failed for $branch"; return 1; }
 
   # Record the Linear ticket link in wip
@@ -1457,7 +1461,7 @@ EOF
 
   # claude -p --output-format json wraps the model response in {"result":"..."}
   local raw_result
-  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null)
+  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null | _autopilot_strip_fences)
 
   # The model is asked to output JSON; extract the classification field
   local classification
@@ -1570,7 +1574,7 @@ Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" || true
 
   # Parse Claude's structured output
   local raw_result execute_status pr_url reason
-  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null)
+  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null | _autopilot_strip_fences)
   execute_status=$(echo "$raw_result" | jq -r '.status // "BLOCKED"' 2>/dev/null)
   pr_url=$(echo "$raw_result"         | jq -r '.pr_url // ""' 2>/dev/null)
   reason=$(echo "$raw_result"         | jq -r '.reason // ""' 2>/dev/null)
@@ -1686,7 +1690,7 @@ Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" || true
   fi
 
   local raw_result decompose_status
-  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null)
+  raw_result=$(echo "$claude_output" | jq -r '.result // ""' 2>/dev/null | _autopilot_strip_fences)
   decompose_status=$(echo "$raw_result" | jq -r '.status // "NEEDS_HUMAN"' 2>/dev/null)
 
   if [[ "$decompose_status" == "NEEDS_HUMAN" ]]; then
