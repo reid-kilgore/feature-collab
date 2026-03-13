@@ -114,9 +114,9 @@ echo "   Tmux window created"
 # Step 6: Start claude in the tmux window
 echo ">> Starting claude..."
 if "$DRY_RUN"; then
-  echo "[dry-run] ssh $REMOTE_HOST \"tmux send-keys -t '0:$SAFE_DIRNAME' 'cd ~/$SAFE_DIRNAME && claude' Enter\""
+  echo "[dry-run] ssh $REMOTE_HOST \"tmux send-keys -t '0:$SAFE_DIRNAME' 'cd ~/$SAFE_DIRNAME && claude --dangerously-skip-permissions' Enter\""
 else
-  ssh -- "$REMOTE_HOST" "tmux send-keys -t '0:$SAFE_DIRNAME' 'cd ~/$SAFE_DIRNAME && claude' Enter"
+  ssh -- "$REMOTE_HOST" "tmux send-keys -t '0:$SAFE_DIRNAME' 'cd ~/$SAFE_DIRNAME && claude --dangerously-skip-permissions' Enter"
 fi
 echo "   Claude starting in tmux window '$DIRNAME'"
 
