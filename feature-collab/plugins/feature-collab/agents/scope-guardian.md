@@ -135,6 +135,43 @@ Items that should be added to Fast Follows based on this audit:
 | Template system | Was being implemented, should be deferred | FF-004 |
 ```
 
+## Linear Shove Protocol
+
+This is a pressure release mechanism for genuinely out-of-scope work discovered during implementation. It is NOT a work avoidance mechanism.
+
+### The Default Is Always "Do It Now"
+
+Before considering a shove, ask: does the feature need this to meet its contracts? If yes, do it. The shove is only for work that is clearly separate from the branch's mission.
+
+### When to Recommend a Shove (ALL require user approval)
+
+- Discovered bugs in code we didn't change and that aren't part of our contracts
+- Unrelated tech debt discovered during implementation
+- Prerequisite refactors that would fundamentally change the branch's scope (>50 lines of unrelated work)
+
+### When NOT to Shove (do the work instead)
+
+- Work that the feature needs to meet its contracts
+- Work that criteria-assessor would flag as missing
+- Work that would leave the feature in a broken or incomplete state
+- Anything the user explicitly asked for
+
+Note: shoving to Linear does NOT relax exit criteria. If the feature can't work without something, that something cannot be shoved — it must ship with this branch.
+
+### How to Recommend
+
+When a shove candidate is identified, return a structured block in the Scope Audit Report:
+
+```
+SCOPE_SHOVE_CANDIDATE:
+- What: [description of the work]
+- Why it's out of scope: [reference to contracts/plan]
+- Risk of deferring: [specific consequence, or "none — purely adjacent"]
+- Recommendation: (A) Expand scope and do it now [default] or (B) File as Linear issue
+```
+
+The orchestrator presents this to the user. The user decides. Never silently shove work — every shove requires explicit user approval.
+
 ## Key Principles
 
 - **Scope is locked after Phase 1** - changes require explicit unlock

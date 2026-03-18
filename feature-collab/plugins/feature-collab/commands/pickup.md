@@ -44,6 +44,7 @@ Read these files in order (skip any that don't exist, but PLAN.md is required):
 2. **HANDOFF.md** — session-specific context from the previous agent
    - Pay special attention to: Current State, What Needs to Happen Next, Key Learnings, Warnings
 3. **SESSION_STATE.md** — session metadata
+4. **RISK_LEDGER.md** — read `Current Risk` at the top. If it exists and is >20%, surface this to the user immediately before resuming the dark factory. The previous session was in a high-risk state.
 
 If HANDOFF.md doesn't exist, fall back to SESSION_STATE.md and PLAN.md alone. The workflow can still resume — you'll just need to infer state from PLAN.md.
 
@@ -57,8 +58,8 @@ Based on the current phase from PLAN.md Status, read the relevant supporting doc
 | 2 (Contracts) | CONTRACTS.md, TEST_SPEC.md |
 | 3 (Walking Skeleton) | CONTRACTS.md, TEST_SPEC.md |
 | 4 (Architecture) | CONTRACTS.md, TEST_SPEC.md, DETAILS.md |
-| 5 (Implementation) | CONTRACTS.md, TEST_SPEC.md, DETAILS.md |
-| 6 (Security) | DETAILS.md |
+| 5 (Implementation) | CONTRACTS.md, TEST_SPEC.md, DETAILS.md, RISK_LEDGER.md |
+| 6 (Security) | DETAILS.md, RISK_LEDGER.md |
 | 7 (Exit Criteria) | TEST_SPEC.md, DETAILS.md |
 | 8 (Documentation) | DECISIONS.md |
 

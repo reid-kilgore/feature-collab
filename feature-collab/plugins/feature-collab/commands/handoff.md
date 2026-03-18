@@ -66,6 +66,7 @@ Read ALL of these files from `$DOCS_DIR/` (skip any that don't exist):
 4. **TEST_SPEC.md** — test specifications
 5. **DETAILS.md** — implementation details
 6. **DECISIONS.md** — architectural decisions
+7. **RISK_LEDGER.md** — cumulative autonomous risk (Current Risk value and event history)
 
 Also read the current todo list using TaskList.
 
@@ -134,7 +135,8 @@ Priority-ordered list of files the next session should read:
 
 1. PLAN.md (always first — single source of truth)
 2. HANDOFF.md (this file — session-specific context)
-3. [other files relevant to current phase]
+3. RISK_LEDGER.md (current risk total — must read before dispatching any code-architect in dark factory)
+4. [other files relevant to current phase]
 
 ## Open Questions
 

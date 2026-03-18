@@ -136,6 +136,7 @@ docs/reidplans/$(git branch --show-current)/
   DECISIONS.md
   SESSION_STATE.md
   CHANGELOG.md
+  RISK_LEDGER.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -247,12 +248,22 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 
 4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
 
-5. **WIP**: Detect and activate wip item:
+5. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
+   ```markdown
+   # Risk Ledger
+   Current Risk: 0%
+
+   ## Events
+   | Timestamp | Agent | Event | Delta | Running Total | Description |
+   |-----------|-------|-------|-------|---------------|-------------|
+   ```
+
+6. **WIP**: Detect and activate wip item:
    ```bash
    wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting feature-collab: [feature name]"
    ```
 
-6. Proceed immediately to Phase 1
+7. Proceed immediately to Phase 1
 
 ---
 
@@ -743,16 +754,17 @@ All state has been saved to disk:
    - Captures results with showboat: `uvx showboat exec DEMO.md bash "npm test"`
    - **Test-runner is authoritative** - do not dispute its findings
 
-4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. When scope-guardian identifies out-of-scope items, file them as Linear issues using the `linear-issues` agent (if PLAN.md has Linear project context).
+4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
 5. **Scorecard-driven iteration**:
    ```
    Loop until scorecard all green:
      1. test-runner reports status (captures to DEMO.md via showboat)
      2. Identify failing tests
-     3. Delegate fix to code-architect
-     4. test-runner verifies (captures to DEMO.md via showboat)
-     5. scope-guardian checks for drift (every 2-3 cycles)
+     3. Check $DOCS_DIR/RISK_LEDGER.md — if Current Risk >20%, STOP and escalate to user
+     4. Delegate fix to code-architect (code-architect reads Risk Ledger before each fix)
+     5. test-runner verifies (captures to DEMO.md via showboat)
+     6. scope-guardian checks for drift (every 2-3 cycles)
    ```
 
 6. **MANDATORY demo capture during dark factory**: After the FIRST green test run and after the FINAL green test run, launch `demo-builder` agent to capture proof-of-work:
@@ -878,7 +890,7 @@ All state has been saved to disk:
 
 2. Compile exit criteria from Phase 1 and all subsequent phases
 
-3. Launch `scope-guardian` agent for final scope audit (was implementation in scope?)
+3. Launch `scope-guardian` agent for final scope audit (was implementation in scope?). If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks at this stage, surface each one to the user with the A/B choice before proceeding to criteria-assessor.
 
 4. Launch `criteria-assessor` agent (adversarial):
    - Independently verifies each criterion using the Verification Gate
@@ -892,9 +904,31 @@ All state has been saved to disk:
    - Launch criteria-assessor again
    - Repeat until READY (max 3 cycles, then escalate to user)
 
-5. **WIP**: `wip note <item> "Phase 8: Exit criteria READY"`
+5. **User override handling**: If the user explicitly overrides a NOT_READY finding from criteria-assessor, code-reviewer, or code-security (e.g., "that's not an issue", "ignore that", "proceed anyway"):
+   - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
+   - Ask: "Should I suppress this finding for future sessions? (y/n)"
+   - If yes, ask for a brief reason, then write the suppression:
 
-6. **If READY**: Proceed to Phase 9
+   ```bash
+   SLUG=$(git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//' || basename $(git rev-parse --show-toplevel))
+   mkdir -p "$HOME/.claude/feature-collab/suppressions"
+   SUPPRESSION_FILE="$HOME/.claude/feature-collab/suppressions/${SLUG}.json"
+   # Read existing entries (or start with []), append new entry, write back
+   # Entry schema: {"finding_type": "...", "pattern": "...", "reason": "...", "agent": "...", "date": "YYYY-MM-DD", "expires": "YYYY-MM-DD"}
+   # Set expires = today + 90 days
+   ```
+
+   Only the orchestrator writes suppressions. Never suppress broad categories — the `pattern` must be specific enough to identify the particular finding.
+
+6. **Suppression summary**: At the end of Phase 8, before proceeding to Phase 9, report:
+   > "Suppressions active for this project: N total, M applied this session"
+   > List each active (non-expired) suppression: `- [finding_type] / [pattern] (expires: [date], reason: [reason])`
+
+   If no suppressions file exists for this project, skip this summary.
+
+7. **WIP**: `wip note <item> "Phase 8: Exit criteria READY"`
+
+8. **If READY**: Proceed to Phase 9
 
 ---
 
@@ -961,18 +995,131 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-8. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
+8. **Bisectable Commit Splitting**
 
-9. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR ready for human review"`
+   Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
+
+   **Pre-flight check**: Count lines in `git diff main...HEAD`. If fewer than 50 lines, skip splitting entirely — one commit is fine. Otherwise proceed.
+
+   **Stash guard**: Run `git stash` if there are uncommitted changes (restore with `git stash pop` at the end).
+
+   **Classify changed files** from `git diff main...HEAD --name-only` into layers:
+   - Layer 1 (Infrastructure): config files, package.json, tsconfig, CI, Dockerfiles
+   - Layer 2 (Types & Interfaces): type definition files, shared interfaces, schemas
+   - Layer 3 (Core Logic): models, services, utilities + their tests
+   - Layer 4 (Integration): controllers, handlers, API routes + their tests
+   - Layer 5 (Presentation): UI components, views, styles + their tests
+   - Layer 6 (Documentation): PLAN.md, DEMO.md, CHANGELOG, README, docs/
+
+   **Soft-reset to main**:
+   ```bash
+   git reset --soft $(git merge-base HEAD main)
+   ```
+
+   **Commit each layer separately** (skip layers with no files). Commit message format:
+   ```
+   <layer-type>: <descriptive summary>
+
+   Extracted from: <original commit messages, one per line>
+   ```
+
+   **Typecheck after each commit** (TypeScript projects only):
+   ```bash
+   npx tsc --noEmit
+   ```
+   If typecheck fails on any layer commit, abort: hard-reset to the pre-split state (`git reset --hard <pre-split-sha>`), squash everything into one commit with the original messages preserved, and report the failure in the agent output so the orchestrator can surface it to the user.
+
+   **File classification edge cases**: If a file has circular dependencies across layers (e.g., a service file that also defines types), assign it to its primary dependency layer (the lowest-numbered layer it belongs to).
+
+   The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
+
+9. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
+
+10. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-10. **Final CHECKPOINT**:
+11. **Final CHECKPOINT**:
     > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
     >
     > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."
 
-11. Offer retrospective:
+12. Offer retrospective:
     > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
+
+---
+
+## Metrics Tracking
+
+The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
+
+**Schema** — maintain this object in working memory throughout the session:
+
+```json
+{
+  "workflow_type": "feature-collab",
+  "started_at": "<ISO timestamp — set at Phase 0>",
+  "phases_executed": 0,
+  "user_interventions": 0,
+  "agent_dispatches": 0,
+  "dark_factory_escalations": 0,
+  "scope_guardian_flags": 0,
+  "criteria_not_ready_count": 0,
+  "completed_at": null
+}
+```
+
+**Increment rules**:
+- `phases_executed` — increment at each phase boundary (0→1, 1→2, etc.)
+- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input (checkpoints count; follow-up clarifications count; "say X to continue" prompts count)
+- `agent_dispatches` — increment each time an agent is launched (parallel wave of N agents = N increments)
+- `dark_factory_escalations` — increment when the 5-failure escalation in Phase 5 or 3-cycle escalation in Phase 8 is triggered and the user is interrupted
+- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not just each dispatch — only dispatches that produce actionable flags)
+- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
+
+**Write metrics at workflow completion** (Phase 9, before PR handoff):
+
+```bash
+mkdir -p ~/.claude/feature-collab/metrics
+BRANCH=$(git branch --show-current)
+DATE=$(date +%Y-%m-%d)
+cat > ~/.claude/feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
+{ <metrics object with completed_at set to current ISO timestamp> }
+EOF
+```
+
+Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
+
+---
+
+## Risk Ledger
+
+**File**: `$DOCS_DIR/RISK_LEDGER.md`
+
+The Risk Ledger tracks cumulative agent risk across the dark factory phases. It survives `/clear` and `/pickup` because it lives on disk alongside PLAN.md.
+
+**Format**:
+```markdown
+# Risk Ledger
+Current Risk: 0%
+
+## Events
+| Timestamp | Agent | Event | Delta | Running Total | Description |
+|-----------|-------|-------|-------|---------------|-------------|
+```
+
+**Risk events**:
+
+| Event | Delta | When |
+|-------|-------|------|
+| Revert | +15% | Agent reverted a previous change |
+| Wide fix (>3 files) | +5% | Single fix touched more than 3 files |
+| Out-of-scope touch | +20% | Fix touched files outside declared scope |
+| Fix spiral (after 15th fix) | +1% per fix | Diminishing returns / possible thrashing |
+| Test failure after green | +10% | Tests that were passing started failing |
+
+**Threshold**: If `Current Risk > 20%`, the orchestrator MUST stop the dark factory and escalate to the user before dispatching further code-architect agents.
+
+**Updates**: `code-architect` agents append events to the ledger after any revert, wide fix, or out-of-scope touch. The orchestrator reads Current Risk before each fix cycle.
 
 ---
 

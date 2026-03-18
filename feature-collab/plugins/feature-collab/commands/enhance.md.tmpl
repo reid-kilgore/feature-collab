@@ -8,7 +8,7 @@ argument-hint: Enhancement description
 
 You are helping a developer implement a small enhancement (<200 lines of production code) through a contract-first TDD process.
 
-**Violating the letter of the rules is violating the spirit of the rules.**
+{{SPIRIT_AND_LETTER}}
 
 ## Orchestrator Discipline
 
@@ -58,19 +58,7 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 - Claiming completion without test-runner verification
 - Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 
-## Model Usage
-- Use Opus for the main thread (planning, user interaction, synthesis)
-- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
-- Never use Opus for agents that just run commands or read files
-
-**Agent model table** — match the task, not the agent name:
-
-| Task | Model | Examples |
-|------|-------|----------|
-| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
-| Implement/refactor/debug | Sonnet | code-architect, test-implementer |
-| Plan/synthesize/assess | Opus | criteria-assessor, architecture selection |
-| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
+{{MODEL_TIERING}}
 
 ## Core Principles
 
@@ -81,83 +69,15 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
-## Document Paths
+{{DOCS_DIR}}
 
-All project documents live in a branch-specific directory:
-
-```
-docs/reidplans/$(git branch --show-current)/
-  PLAN.md
-  DEMO.md
-  CONTRACTS.md
-  TEST_SPEC.md
-  RISK_LEDGER.md
-```
-
-**At skill start**, resolve the doc directory:
-```bash
-DOCS_DIR="docs/reidplans/$(git branch --show-current)"
-mkdir -p "$DOCS_DIR"
-```
-
-All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/<file>`.
-
-## WIP Tracking
-
-```bash
-# At start: detect and activate wip item
-wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
-# At phase transitions: wip note <item> "Phase N: [status]"
-# When creating branches: wip add-branch <item> <branch>
-# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
-# DONE status is set only after branch is merged (not by this skill)
-# If wip get fails, skip tracking silently
-```
+{{WIP_TRACKING}}
 
 Initial request: $ARGUMENTS
 
 ---
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "enhance",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'implement' to begin" counts; follow-up clarifications count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — increment when the 5-failure escalation in Phase 2 is triggered and the user is interrupted
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 5, before PR handoff):
-
-```bash
-mkdir -p ~/.claude/feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.claude/feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
+{{METRICS_TRACKING}}
 
 ---
 
@@ -170,11 +90,7 @@ Individual agents do not need to know about metrics — this is orchestrator-onl
 1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
 
 ```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
+{{PLAN_ANNOTATION_GUIDE}}
 
 # Enhancement: [Title]
 
@@ -231,19 +147,9 @@ ANNOTATION GUIDE:
 
 10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
 
-11. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
-    ```markdown
-    # Risk Ledger
-    Current Risk: 0%
+11. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
 
-    ## Events
-    | Timestamp | Agent | Event | Delta | Running Total | Description |
-    |-----------|-------|-------|-------|---------------|-------------|
-    ```
-
-12. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
-
-13. **CHECKPOINT**:
+12. **CHECKPOINT**:
     > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
 
 ---
@@ -273,17 +179,14 @@ ANNOTATION GUIDE:
 4. Launch `scope-guardian` agent:
    - Verify implementation stays within scope
    - Flag if approaching 200-line limit
-   - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
 5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
 
-6. **Risk check**: Before each fix cycle, read `$DOCS_DIR/RISK_LEDGER.md`. If `Current Risk > 20%`, STOP and escalate to user immediately — do not dispatch another code-architect.
+6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
-7. **Escalation**: If 5 fix cycles fail, escalate to user.
+7. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
 
-8. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
-
-9. Proceed to Phase 3 when all tests pass.
+8. Proceed to Phase 3 when all tests pass.
 
 ### Commit Planning Artifacts
 
@@ -361,31 +264,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 4. If criteria-assessor returns NOT READY, fix and re-assess (up to 3 cycles).
 
-5. **User override handling**: If the user explicitly overrides a NOT_READY finding from criteria-assessor, code-reviewer, or code-security (e.g., "that's not an issue", "ignore that", "proceed anyway"):
-   - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
-   - Ask: "Should I suppress this finding for future sessions? (y/n)"
-   - If yes, ask for a brief reason, then write the suppression:
+5. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
 
-   ```bash
-   SLUG=$(git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//' || basename $(git rev-parse --show-toplevel))
-   mkdir -p "$HOME/.claude/feature-collab/suppressions"
-   SUPPRESSION_FILE="$HOME/.claude/feature-collab/suppressions/${SLUG}.json"
-   # Read existing entries (or start with []), append new entry, write back
-   # Entry schema: {"finding_type": "...", "pattern": "...", "reason": "...", "agent": "...", "date": "YYYY-MM-DD", "expires": "YYYY-MM-DD"}
-   # Set expires = today + 90 days
-   ```
-
-   Only the orchestrator writes suppressions. Never suppress broad categories — the `pattern` must be specific enough to identify the particular finding.
-
-6. **Suppression summary**: At the end of Phase 4, before proceeding to Phase 5, report:
-   > "Suppressions active for this project: N total, M applied this session"
-   > List each active (non-expired) suppression: `- [finding_type] / [pattern] (expires: [date], reason: [reason])`
-
-   If no suppressions file exists for this project, skip this summary.
-
-7. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
-
-8. Proceed to Phase 5 when READY.
+6. Proceed to Phase 5 when READY.
 
 ---
 
@@ -422,49 +303,15 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-5. **Bisectable Commit Splitting**
+5. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
 
-   Dispatch a single haiku agent to split commits into clean layers before the PR goes up.
-
-   **Pre-flight check**: Count lines in `git diff main...HEAD`. If fewer than 50 lines, skip splitting entirely — one commit is fine. Otherwise proceed.
-
-   **Stash guard**: Run `git stash` if there are uncommitted changes (restore with `git stash pop` at the end).
-
-   **3-layer split** (enhance-sized changes don't warrant more than 3 commits):
-   - Layer 1 (Infrastructure): config files, package.json, tsconfig, CI, Dockerfiles
-   - Layer 2 (Implementation + Tests): all production code and its tests
-   - Layer 3 (Documentation): PLAN.md, DEMO.md, CHANGELOG, README, docs/
-
-   **Soft-reset to main**:
-   ```bash
-   git reset --soft $(git merge-base HEAD main)
-   ```
-
-   **Commit each layer separately** (skip layers with no files). Commit message format:
-   ```
-   <layer-type>: <descriptive summary>
-
-   Extracted from: <original commit messages, one per line>
-   ```
-
-   **Typecheck after each commit** (TypeScript projects only):
-   ```bash
-   npx tsc --noEmit
-   ```
-   If typecheck fails, abort: hard-reset to the pre-split state, squash everything into one commit with original messages preserved, and report the failure.
-
-   The agent reports back: how many commits were created and whether typecheck passed.
-
-6. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
-
-7. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
+6. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-9. Prompt user:
+7. Prompt user:
    > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-10. Offer retrospective:
-    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
+8. {{RETRO_OFFER}}
 
 ### Context Checkpoint
 
