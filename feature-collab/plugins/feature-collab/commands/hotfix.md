@@ -39,8 +39,17 @@ MINIMAL CHANGE ONLY — URGENCY IS NOT AN EXCUSE TO SKIP VERIFICATION
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
+- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
 - Never use Opus for agents that just run commands or read files
+
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, test-implementer |
+| Plan/synthesize/assess | Opus | criteria-assessor |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
 
 ## Core Principles
 
@@ -77,7 +86,7 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting hotfix: [issue]"
 # When creating hotfix branch: wip add-branch <item> hotfix/[name]
 # At phase transitions: wip note <item> "Phase N: [status]"
-# At completion: wip note <item> "hotfix complete — ready to deploy/merge"
+# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
 # When branch is merged: wip branch-status <item> <branch> MERGED && wip status <item> DONE
 # If wip get fails, skip tracking silently
@@ -163,6 +172,15 @@ ANNOTATION GUIDE:
 7. Launch `demo-builder` agent to initialize proof doc and capture failing state.
 
 9. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
+
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
 
 ### Context Checkpoint
 
@@ -261,7 +279,8 @@ All state saved to disk:
 - [ ] Ready for deploy
 ```
 
-4. **WIP**: `wip note <item> "hotfix complete — ready to deploy/merge"`
+4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "hotfix complete — ready to deploy/merge"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
 5. Prompt user:
    > "Hotfix ready. Both hotfix branch and main have the fix with passing tests. See DEMO.md for proof. Run `mdannotate PLAN.md` to review. Push when ready:
@@ -269,6 +288,9 @@ All state saved to disk:
    > git push origin hotfix/[name]
    > git push origin main
    > ```"
+
+6. Offer retrospective:
+   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 

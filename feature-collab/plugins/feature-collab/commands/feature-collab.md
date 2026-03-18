@@ -22,6 +22,20 @@ NEVER CLAIM PROGRESS WITHOUT AGENT-VERIFIED EVIDENCE
 
 If an agent hasn't verified it, it didn't happen. If test-runner hasn't confirmed green, tests aren't green. If criteria-assessor hasn't said READY, it's not ready.
 
+### The Iron Law (Part 2): Orchestrator Never Edits Source
+
+```
+THE ORCHESTRATOR NEVER USES Edit OR Write ON SOURCE FILES
+```
+
+The orchestrator dispatches agents. It does not implement. If a quick fix is needed post-review, dispatch a targeted `code-architect` agent. If a commit agent is in-flight, treat it as a file-system lock — queue fixes until after it completes. Directly editing source files from the main thread is a process violation regardless of how small the change is.
+
+### Transparency Rules
+
+1. **Never silently override criteria-assessor.** If you judge that criteria-assessor's NOT READY verdict is wrong, you MUST tell the user in one sentence: "criteria-assessor flagged X, but I'm proceeding because Y." Silent overrides are violations.
+2. **Never silently drop user-requested phases.** If the user's invocation includes phases or activities the skill doesn't cover (e.g., mutation testing, demo capture), say so explicitly: "enhance doesn't include mutation testing — should I add it?" Do not silently skip.
+3. **Lock interfaces before test-implementer.** Do not dispatch test-implementer until repository/service method signatures are finalized by an architecture step. Writing test stubs against an unstable API surface causes fix loops when the interface changes.
+
 ### Verification Gate (Phase Transitions)
 
 BEFORE transitioning between any phases:
@@ -36,6 +50,9 @@ BEFORE transitioning between any phases:
 | Excuse | Reality |
 |--------|---------|
 | "I can quickly read this file myself" | Delegate to an agent. You orchestrate, you don't execute. |
+| "I'll just make this one-line edit myself, it's faster" | Orchestrator never edits source. Dispatch code-architect. |
+| "Criteria-assessor is being too strict, I'll just proceed" | Tell the user why you disagree. Silent overrides are violations. |
+| "The user asked for mutation testing but enhance doesn't have it" | Tell the user the skill doesn't cover it. Ask if they want to add it. |
 | "The agent probably found X" | "Probably" isn't evidence. Read the agent's actual output. |
 | "Tests should be green by now" | "Should" isn't verified. Launch test-runner. |
 | "This phase is just a formality" | Every phase exists for a reason. Run it fully. |
@@ -53,17 +70,29 @@ BEFORE transitioning between any phases:
 
 - Reading code directly instead of delegating to an agent
 - Running tests or commands directly instead of via test-runner
+- **Using Edit or Write on source files** — that's code-architect's job
 - Claiming a phase is complete without citing agent evidence
 - Skipping a phase because "it's obvious"
 - Merging dark factory phases together
 - Expressing satisfaction about implementation quality (that's criteria-assessor's job)
 - Thinking "I know enough to skip exploration"
+- Silently overriding criteria-assessor or skipping user-requested phases
 - Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
+- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
 - Never use Opus for agents that just run commands or read files
+- **During orchestrator-tier outages**, do NOT pre-emptively upgrade agent models. Agent model availability is independent of orchestrator availability. Only retry a specific agent with a fallback if *that agent* fails.
+
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, test-implementer, systematic-debug |
+| Plan/synthesize/assess | Opus | criteria-assessor, retro-synthesizer, architecture selection |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
 
 ## Core Principles
 
@@ -129,8 +158,10 @@ wip add-branch <item> <new-branch-name>
 
 **At completion** (Phase 9):
 ```bash
-wip note <item> "feature-collab complete — ready for PR/merge"
+wip status <item> IN_REVIEW
+wip note <item> "feature-collab complete — PR ready for human review"
 ```
+> `IN_REVIEW` is an agent-managed status — hooks will NOT overwrite it with ACTIVE or WAITING.
 
 **DONE status is set only after the branch is actually merged** (not by this skill):
 ```bash
@@ -382,6 +413,15 @@ What should the proof-of-work demonstrate? Define these NOW — they become the 
    - **WIP**: `wip note <item> "Phase 1: Scope locked"`
    - Proceed to Phase 2
 
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md $DOCS_DIR/SESSION_STATE.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
+
 ### Context Checkpoint
 
 All state has been saved to disk:
@@ -474,7 +514,9 @@ function createNotificationWithDelivery(
 
 5. Update TEST_SPEC.md with gap findings
 
-6. **Launch test-implementer agent**:
+6. **GATE: Verify interface stability before writing tests.** Review CONTRACTS.md method signatures against architecture decisions. If any repo/service method signatures are still TBD or might change during implementation, resolve them NOW. Test stubs written against unstable interfaces cause expensive fix loops.
+
+7. **Launch test-implementer agent**:
    - Reads CONTRACTS.md and TEST_SPEC.md
    - Writes actual test files
    - Tests will FAIL (TDD RED state) - this is correct
@@ -784,7 +826,7 @@ All state has been saved to disk:
    **Waiting For**: Autonomous — security analysis
    ```
 
-2. Launch `code-security` agent to check:
+2. Launch `code-security` agent to check (include project-specific security invariants from CLAUDE.md in the prompt — generic scanners miss domain rules):
    - Input validation
    - Authentication enforcement
    - Authorization/permission checks
@@ -906,12 +948,18 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-8. **WIP**: `wip note <item> "feature-collab complete — ready for PR/merge"`
+8. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
 
-9. **Final CHECKPOINT**:
-   > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
-   >
-   > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."
+9. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR ready for human review"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+
+10. **Final CHECKPOINT**:
+    > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
+    >
+    > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."
+
+11. Offer retrospective:
+    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ---
 

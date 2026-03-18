@@ -20,12 +20,24 @@ You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dis
 STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 ```
 
+### Orchestrator Never Edits Source
+
+The orchestrator dispatches agents. It does not use `Edit` or `Write` on source files. If a quick fix is needed, dispatch a targeted `code-architect` agent. This is not negotiable regardless of how small the change is.
+
+### Transparency Rules
+
+1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
+2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
+3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
+
 ### Common Rationalizations
 
 | Excuse | Reality |
 |--------|---------|
 | "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
 | "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
+| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
+| "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
@@ -43,8 +55,17 @@ STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
+- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
 - Never use Opus for agents that just run commands or read files
+
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, test-implementer |
+| Plan/synthesize/assess | Opus | criteria-assessor, architecture selection |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
 
 ## Core Principles
 
@@ -82,7 +103,7 @@ All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/<
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip note <item> "enhance complete — ready for PR/merge"
+# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
@@ -202,6 +223,15 @@ ANNOTATION GUIDE:
 
 8. Proceed to Phase 3 when all tests pass.
 
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
+
 ### Context Checkpoint
 
 All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to continue.**
@@ -308,10 +338,16 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip note <item> "enhance complete — ready for PR/merge"`
+5. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
 
-6. Prompt user:
+6. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+
+7. Prompt user:
    > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+
+8. Offer retrospective:
+   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 

@@ -210,3 +210,7 @@ If the implementer marked something PASS but I found it FAIL:
 - **Prioritize correctly** - Failed = blocking, Concern = warning
 - **Default to NOT READY** - if unsure, it's not ready
 - **Check curls** - skipped curl tests are an automatic FAIL
+
+## Note to Orchestrators
+
+If you (the orchestrator) disagree with this agent's NOT READY verdict, you MUST tell the user in one sentence: "criteria-assessor flagged X, but I'm proceeding because Y." Silent overrides of this agent's findings are a process violation. The criteria-assessor exists to catch what the orchestrator is biased to overlook.

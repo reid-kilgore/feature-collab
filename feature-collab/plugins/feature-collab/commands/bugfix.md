@@ -25,6 +25,7 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 | Excuse | Reality |
 |--------|---------|
 | "I can quickly check the code myself" | Delegate to code-explorer. You orchestrate. |
+| "I understand the domain from reading the code" | Check existing tests first. Code tells you what it does; tests tell you what it's supposed to do. A prior session designed a fix that reversed guard logic because it skipped this step. |
 | "While fixing this I noticed another issue" | Separate ticket. File it with `linear-issues` agent. Not this PR. |
 | "This refactor would prevent the bug class entirely" | That's an enhance or refactor, not a bugfix. |
 | "The surrounding code is messy, let me clean it up" | Scope creep. Fix the bug only. |
@@ -43,8 +44,17 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
+- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
 - Never use Opus for agents that just run commands or read files
+
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, test-implementer, systematic-debug |
+| Plan/synthesize/assess | Opus | criteria-assessor |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
 
 ## Core Principles
 
@@ -80,7 +90,7 @@ All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting bugfix: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip note <item> "bugfix complete — ready for PR/merge"
+# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
@@ -138,7 +148,9 @@ ANNOTATION GUIDE:
 - [ ] No regressions introduced
 ```
 
-2. Launch `code-explorer` agent to investigate using the **systematic debugging methodology** (see `/feature-collab:systematic-debug`):
+2. **Before designing any fix**, launch a `code-explorer` agent to find existing tests for the affected code path. A single grep for test assertions on the affected function/model reveals what the expected behavior IS before you decide what it SHOULD be. Skipping this step caused a guard logic reversal in a prior session — the fix contradicted the existing test expectations.
+
+3. Launch `code-explorer` agent to investigate using the **systematic debugging methodology** (see `/feature-collab:systematic-debug`):
    - **Phase 1 — Root Cause Investigation**: Read error carefully, reproduce consistently, review recent changes, gather diagnostic evidence across system boundaries
    - **Phase 2 — Pattern Analysis**: Find working examples, compare working vs broken, identify violated assumptions
    - Agent MUST return: the specific mechanism causing the failure, the specific condition triggering it, and a hypothesis log
@@ -158,6 +170,15 @@ ANNOTATION GUIDE:
    - Capture the failing test output
 
 7. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
+
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
 
 ### Context Checkpoint
 
@@ -246,10 +267,14 @@ All state saved to disk:
 - **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip note <item> "bugfix complete — ready for PR/merge"`
+5. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
 6. Prompt user:
    > "Bug fixed and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+
+7. Offer retrospective:
+   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
