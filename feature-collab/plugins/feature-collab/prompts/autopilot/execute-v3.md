@@ -202,14 +202,15 @@ feat/fix([TICKET_ID]): [brief description of implementation]
 1. Run `npx tsc --noEmit` from the relevant package directory. Fix any type errors in your changed files.
 2. Run `npx eslint --no-fix` on your changed files. Fix any lint errors.
 3. Ensure all changes are committed with clear messages referencing the ticket ID
-4. Push the branch: `git push -u origin HEAD`
-5. Create a PR:
+4. **Pre-push divergence check**: Run `git diff --stat origin/main...HEAD` and verify the file count matches your expected scope. If the branch has diverged from main (picking up others' commits), rebase first. A bloated diff obscures review.
+5. Push the branch: `git push -u origin HEAD` (NEVER force-push — a clean PR means a clean diff, not a clean commit history)
+6. Create a PR:
    - Title: `[TICKET_ID] brief description`
    - Body: what changed, why, test coverage summary, how to verify
    - If you noticed pre-existing bugs or flaky tests, mention them in a "Notes" section
    - Do NOT merge the PR — it needs human review
-6. **Do NOT poll CI or wait for checks.** After creating the PR, output the final JSON result immediately. The harness has a bash-level CI/CodeRabbit polling loop that will re-engage you in Fix Mode if issues are found. Burning turns in `sleep 120 && gh pr checks` loops wastes budget.
-7. Output the final JSON result
+7. **Do NOT poll CI or wait for checks.** After creating the PR, output the final JSON result immediately. The harness has a bash-level CI/CodeRabbit polling loop that will re-engage you in Fix Mode if issues are found. Burning turns in `sleep 120 && gh pr checks` loops wastes budget.
+8. Output the final JSON result
 
 ## Output
 

@@ -29,6 +29,11 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
 3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
+4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
+
+### Pre-PR Divergence Check
+
+Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the file count matches expected scope. Rebase first if diverged.
 
 ### Common Rationalizations
 

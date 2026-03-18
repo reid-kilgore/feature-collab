@@ -35,6 +35,19 @@ The orchestrator dispatches agents. It does not implement. If a quick fix is nee
 1. **Never silently override criteria-assessor.** If you judge that criteria-assessor's NOT READY verdict is wrong, you MUST tell the user in one sentence: "criteria-assessor flagged X, but I'm proceeding because Y." Silent overrides are violations.
 2. **Never silently drop user-requested phases.** If the user's invocation includes phases or activities the skill doesn't cover (e.g., mutation testing, demo capture), say so explicitly: "enhance doesn't include mutation testing — should I add it?" Do not silently skip.
 3. **Lock interfaces before test-implementer.** Do not dispatch test-implementer until repository/service method signatures are finalized by an architecture step. Writing test stubs against an unstable API surface causes fix loops when the interface changes.
+4. **Persist user decisions to PLAN.md immediately.** When the user makes a scoping decision, design choice, or any directive, write it to PLAN.md in that same turn. Do not rely on conversation context surviving compactions or interruptions.
+
+### Pre-PR Divergence Check
+
+Before pushing for a PR or signaling merge-readiness, run:
+```bash
+git diff --stat origin/main...HEAD
+```
+Verify the file count matches expected scope. If the branch has diverged significantly (e.g., 48-file diff when you changed 8 files), **rebase first**. A bloated diff obscures review and risks merge conflicts.
+
+### File Scoping for Sequential Agents
+
+When dispatching agents sequentially on the same codebase (e.g., a fix-review agent after an implementer), **explicitly scope which files each agent may modify.** Without scoping, a review agent can clobber work the implementer already completed. Tell the agent: "You may only modify files X, Y, Z. All other files are read-only for this task."
 
 ### Verification Gate (Phase Transitions)
 
