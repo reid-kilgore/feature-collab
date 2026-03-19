@@ -68,6 +68,7 @@ BEFORE transitioning between any phases:
 | "The user asked for mutation testing but enhance doesn't have it" | Tell the user the skill doesn't cover it. Ask if they want to add it. |
 | "The agent probably found X" | "Probably" isn't evidence. Read the agent's actual output. |
 | "Tests should be green by now" | "Should" isn't verified. Launch test-runner. |
+| "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md, CONTRACTS.md, or TEST_SPEC.md by section link. Don't reproduce tables the user can already read. |
 | "This phase is just a formality" | Every phase exists for a reason. Run it fully. |
 | "I'll skip scope-guardian, scope looks clean" | You can't assess scope drift without checking. Launch the agent. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque", "never know about") | These are abstraction-boundary signals, not naming signals. Propose a separate encapsulating entity. Confirm: "So X should only interact with [outer] and never reference [inner]?" |
@@ -1034,18 +1035,37 @@ See DEMO.md for re-executable proof that the feature works.
 
    The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
 
-9. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
+9. **Push and create PR**:
 
-10. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR ready for human review"`
-   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+   Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
 
-11. **Final CHECKPOINT**:
-    > "Feature complete. PLAN.md finalized. DEMO.md contains proof of work. Ready for PR. See [Final Summary](#final-summary).
-    >
-    > Run `mdannotate PLAN.md` to annotate and review in your browser, or review PLAN.md directly."
+   ```bash
+   git push -u origin $(git branch --show-current)
+   gh pr create --title "<concise title>" --body "$(cat <<'EOF'
+   ## Summary
+   <bullet points from PLAN.md Final Summary>
 
-12. Offer retrospective:
-    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
+   ## Test plan
+   - [ ] All tests passing (verified by test-runner)
+   - [ ] DEMO.md proof-of-work attached
+   - [ ] Exit criteria met (verified by criteria-assessor)
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+   EOF
+   )"
+   ```
+
+   If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
+
+10. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+
+11. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
+
+11. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR up for review"`
+    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+
+12. Present the PR URL to the user and offer retrospective:
+    > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ---
 

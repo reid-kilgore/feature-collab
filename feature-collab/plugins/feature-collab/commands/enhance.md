@@ -45,6 +45,7 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
+| "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md or CONTRACTS.md by section link. Don't reproduce tables the user can already read. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
@@ -220,11 +221,13 @@ ANNOTATION GUIDE:
 
 4. **Synthesize findings** into PLAN.md. Must answer: what files will be touched, what patterns to follow, what might break. Enhancement research is complete when you can name every file that will change and why.
 
-5. Create CONTRACTS.md with types, routes, and function signatures.
+5. Launch `test-gap-finder` agent to audit EXISTING test coverage for the code being changed. This runs BEFORE contracts — gaps in existing coverage inform what contracts need to specify. The gap-finder reviews current tests against current code and reports: what's untested, what's fragile, what assumptions are baked in.
 
-6. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+6. Create CONTRACTS.md with types, routes, and function signatures. Incorporate gap-finder's findings — if existing tests are missing edge cases, the contracts should specify them.
 
-7. Launch `test-gap-finder` agent to review TEST_SPEC.md adversarially.
+7. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+
+8. Launch `test-gap-finder` agent again to review TEST_SPEC.md adversarially (different pass — this time checking the NEW spec, not existing coverage).
 
 8. Launch `test-implementer` agent to write failing tests.
 
@@ -456,16 +459,36 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
    The agent reports back: how many commits were created and whether typecheck passed.
 
-6. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
+6. **Push and create PR**:
 
-7. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
+   Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
+
+   ```bash
+   git push -u origin $(git branch --show-current)
+   gh pr create --title "<concise title>" --body "$(cat <<'EOF'
+   ## Summary
+   <1-3 bullet points from PLAN.md>
+
+   ## Test plan
+   - [ ] All tests passing (verified by test-runner)
+   - [ ] DEMO.md proof-of-work attached
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+   EOF
+   )"
+   ```
+
+   If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
+
+7. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+
+8. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
+
+8. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR up for review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-9. Prompt user:
-   > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
-
-10. Offer retrospective:
-    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
+9. Present the PR URL to the user and offer retrospective:
+   > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 

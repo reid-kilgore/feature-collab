@@ -14,11 +14,11 @@ You are running an unbiased retrospective on a Claude Code session. You dispatch
 
 Three agents analyze the same session from different angles:
 
-1. **retro-compliance** — Knows how skills/workflows SHOULD work. Checks adherence to plans, skill boundaries, agent dispatch patterns, anti-rationalization rules, and process discipline.
+1. **feature-collab:retro-compliance** — Knows how skills/workflows SHOULD work. Checks adherence to plans, skill boundaries, agent dispatch patterns, anti-rationalization rules, and process discipline.
 
-2. **retro-experience** — Knows NOTHING about expected workflows. Reads the raw transcript and assesses: Was this a good session? Did the human get what they wanted? Was time well-spent? Were there frustrating loops, wasted effort, or missed opportunities?
+2. **feature-collab:retro-experience** — Knows NOTHING about expected workflows. Reads the raw transcript and assesses: Was this a good session? Did the human get what they wanted? Was time well-spent? Were there frustrating loops, wasted effort, or missed opportunities?
 
-3. **retro-technical** — Reviews the actual CODE produced during the session. Checks architecture decisions, pattern adherence, test meaningfulness, scope/churn, and whether simpler approaches were missed. Has full repo access.
+3. **feature-collab:retro-technical** — Reviews the actual CODE produced during the session. Checks architecture decisions, pattern adherence, test meaningfulness, scope/churn, and whether simpler approaches were missed. Has full repo access.
 
 No agent sees the others' output. You synthesize after all three return.
 
@@ -63,7 +63,7 @@ wip get "$(git branch --show-current)" && wip status <item> RETRO && wip note <i
 Launch all three agents simultaneously. Each gets ONLY:
 - The transcript file path
 - Their specific analysis brief (from their agent definition)
-- (retro-technical only) The repository path, so it can read actual code
+- (feature-collab:retro-technical only) The repository path, so it can read actual code
 
 **Explicit prohibition — the following MUST NOT appear in the agent dispatch prompts:**
 - Session topic or purpose (e.g., "auth module", "payment integration")
@@ -76,7 +76,7 @@ If you are tempted to add "just one line of context" to help the agents focus �
 
 ### Agent prompts
 
-**To `retro-compliance`:**
+**To `feature-collab:retro-compliance`:**
 ```
 Analyze this Claude Code session transcript for workflow and process compliance.
 Transcript: {path}
@@ -85,7 +85,7 @@ Line count: {lines}
 Read the transcript and produce your assessment. Do NOT ask for additional context — everything you need is in the file.
 ```
 
-**To `retro-experience`:**
+**To `feature-collab:retro-experience`:**
 ```
 Analyze this Claude Code session transcript for overall quality and user experience.
 Transcript: {path}
@@ -94,7 +94,7 @@ Line count: {lines}
 Read the transcript and produce your assessment. Do NOT ask for additional context — everything you need is in the file.
 ```
 
-**To `retro-technical`:**
+**To `feature-collab:retro-technical`:**
 ```
 Analyze the code produced during this Claude Code session for technical quality.
 Transcript: {path}
@@ -114,9 +114,9 @@ If any agent returns an error or no response:
 
 ## Phase 2: Synthesize with Opus
 
-After all three agents return, dispatch the `retro-synthesizer` agent (opus model) with all reports. Do NOT synthesize yourself — the synthesizer has the reasoning depth to find non-obvious root causes and cross-reference the three independent assessments.
+After all three agents return, dispatch the `feature-collab:retro-synthesizer` agent (opus model) with all reports. Do NOT synthesize yourself — the synthesizer has the reasoning depth to find non-obvious root causes and cross-reference the three independent assessments.
 
-**To `retro-synthesizer`:**
+**To `feature-collab:retro-synthesizer`:**
 ```
 Here are three independent assessments of the same Claude Code session. Produce a unified retro with root cause analysis and prioritized recommendations.
 
@@ -162,7 +162,7 @@ Present the encoding suggestions as a concrete list the user can approve or reje
 ## Rules
 
 1. **You are a dispatcher, not an analyst.** Do not read the transcript yourself. Do not form opinions. Do not synthesize — that's the synthesizer's job.
-2. **No context leakage.** The analysis agents must work from the transcript alone (plus repo access for retro-technical). Do not tell them what skills were used, what the session was about, or what went wrong.
+2. **No context leakage.** The analysis agents must work from the transcript alone (plus repo access for feature-collab:retro-technical). Do not tell them what skills were used, what the session was about, or what went wrong.
 3. **All three agents must complete.** Do not produce the report from partial outputs.
 4. **Disagreements are gold.** When compliance says "process was followed" but technical says "wrong pattern was used" — that tension reveals the most useful insights. The synthesizer knows this.
 5. **Be honest in presentation.** Do not soften the synthesizer's findings. The user wants to improve — give them the truth.
