@@ -199,6 +199,12 @@ JSON schema:
     "dark_factory_escalations": null,
     "scope_guardian_flags": null,
     "criteria_not_ready_count": null
+  },
+  "encoding_scores": {
+    "triggered": 0,
+    "triggered_violated": 0,
+    "not_applicable": 0,
+    "unclear": 0
   }
 }
 ```
@@ -231,6 +237,46 @@ Insert this block into the markdown output between the Metrics table and the Enc
 ```
 
 If there are no prior retros, omit the Trends section entirely — do not add a placeholder or "no prior data" note.
+
+## Encoding Effectiveness Scorecard
+
+Score each encoding below against the session transcript. This is a static, curated list — updated each time we encode new findings or remove dead ones.
+
+**Scoring key:**
+- **TRIGGERED** — situation arose, rule was followed
+- **TRIGGERED-VIOLATED** — situation arose, rule was ignored
+- **NOT APPLICABLE** — situation didn't arise in this session
+- **UNCLEAR** — can't determine from the transcript
+
+Include this table in the retro output between Trends and Encoding Recommendations:
+
+```markdown
+## Encoding Effectiveness
+
+| # | Encoding | Source Retro | File | Score |
+|---|----------|-------------|------|-------|
+| E1 | Spike-to-implement hard gate | spike-autopilot | spike.md | {score} |
+| E2 | Compaction requires /pickup re-invocation | spike-autopilot | feature-collab.md, enhance.md, bugfix.md, refactor.md, hotfix.md, release.md | {score} |
+| E3 | Ban `as` casts on repository return types | PAS-1151 | enhance.md | {score} |
+| E4 | CI flaky-test re-trigger policy | PAS-1151 | enhance.md | {score} |
+| E5 | Pre-commit typecheck gate | PAS-1151 | enhance.md | {score} |
+| E6 | Data pipeline trace for field-swap features | PAS-1151 | enhance.md | {score} |
+| E7 | Pass discovered commands to subsequent agents | PAS-1151 | enhance.md | {score} |
+| E8 | Mocks-too-generous warning | PAS-1151 | enhance.md | {score} |
+| E9 | Phase skips require user permission | permission-set-schema | enhance.md | {score} |
+| E10 | Metrics write mandatory even when phases skipped | permission-set-schema | enhance.md | {score} |
+| E11 | Deferred CONTRACTS items must be stubs | permission-set-schema | enhance.md | {score} |
+| E12 | Check branch state before rebasing | permission-set-schema | enhance.md | {score} |
+| E13 | Review-feedback fix: verify behavior matches intent | per-scope-workflow | enhance.md | {score} |
+| E14 | "I still see X" = re-read original feedback | per-scope-workflow | enhance.md | {score} |
+| E15 | Post-PR plan sync on design changes | per-scope-workflow | enhance.md | {score} |
+| E16 | TDD RED+GREEN commit together (hooks block RED) | per-scope-workflow | enhance.md | {score} |
+| E17 | Demo phase conditional on API changes (Bruno) | demo-overhaul | enhance.md | {score} |
+
+**Summary:** {N} TRIGGERED, {N} TRIGGERED-VIOLATED, {N} NOT APPLICABLE, {N} UNCLEAR
+```
+
+**How to score:** Read the compliance report for process violations and the technical report for code issues. Cross-reference each encoding against what happened. Be honest — NOT APPLICABLE is fine and expected for most encodings in any given session. TRIGGERED-VIOLATED is the most important signal.
 
 ## Encoding Recommendations
 
