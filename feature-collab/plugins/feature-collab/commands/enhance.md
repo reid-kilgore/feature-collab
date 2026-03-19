@@ -28,9 +28,9 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 
 1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
-3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
+3. **Execute mandatory skill phases even when trivial.** Don't skip phases because the feature is "too simple." If you believe a phase is genuinely inapplicable, see rule 5.
 4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
-5. **Never silently skip phases.** If a phase is inapplicable (e.g., test-gap-finder for a schema-only change), announce it: "Skipping [phase] because [reason]. Say 'run it' if you want it anyway." Silent phase-skipping is the #1 compliance violation across retros.
+5. **Never skip phases without user permission.** If a phase seems inapplicable (e.g., test-gap-finder for a schema-only change), ask: "Phase [X] seems inapplicable because [reason] — skip it? (y/n)". Do not proceed past the phase until the user confirms. Silent phase-skipping is the #1 compliance violation across retros.
 
 ### Pre-PR Divergence Check
 
@@ -241,7 +241,7 @@ ANNOTATION GUIDE:
 
 9. Launch `test-runner` agent to confirm RED state (tests should fail).
 
-10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+10. If APIs are being changed, initialize `$DOCS_DIR/DEMO.md` with endpoint inventory and `$DOCS_DIR/bruno/` directory for API collection files.
 
 11. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
     ```markdown
@@ -287,7 +287,7 @@ ANNOTATION GUIDE:
    - Flag if approaching 200-line limit
    - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
+5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 5.
 
 6. **Risk check**: Before each fix cycle, read `$DOCS_DIR/RISK_LEDGER.md`. If `Current Risk > 20%`, STOP and escalate to user immediately — do not dispatch another code-architect.
 
@@ -430,13 +430,16 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Add final captures
+2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch a `code-architect` agent to produce:
+   - **Bruno-compatible API collection** (YAML files) covering all changed/new endpoints, with example requests targeting **staging**
+   - **Walkthrough** in DEMO.md: step-by-step instructions for interacting with the changed APIs on staging, including expected responses
+   - **Diagrams** (Mermaid sequence diagrams or flowcharts) showing the request flow through changed components — highly encouraged, especially for multi-service or async flows
 
-3. If web enhancement, launch `browser-verifier` agent.
+   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
 
-4. Update PLAN.md:
+   If no API endpoints were changed (e.g., schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per rule 5.
+
+3. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -447,7 +450,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **What was added**: [description]
 - **Tests**: All passing (N/N)
 - **Lines added**: [count] (within 200-line limit)
-- **Proof**: See DEMO.md
+- **Proof**: See DEMO.md (if API changes) or test output
 ```
 
 5. **Bisectable Commit Splitting**
@@ -495,7 +498,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
    ## Test plan
    - [ ] All tests passing (verified by test-runner)
-   - [ ] DEMO.md proof-of-work attached
+   - [ ] DEMO.md with Bruno API collection (if API changes)
 
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
    EOF
@@ -521,6 +524,6 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 All state has been saved to disk:
 - PLAN.md: Final status
 - CONTRACTS.md: Type definitions
-- DEMO.md: Proof of work
+- DEMO.md: API walkthrough + Bruno collection (if API changes)
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
