@@ -298,6 +298,18 @@ git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
+## Context Compaction
+
+When conversation is compacted, **the current skill must be fully re-invoked** — do not continue from the compressed summary alone.
+
+Your compaction summary **must** include:
+
+1. **Current phase** from PLAN.md Status section
+2. **What you were waiting for** (user input, agent results, etc.)
+3. **Instruction to re-invoke** `/pickup` to continue with full prompt reload
+
+**Why**: After compaction, the iron law, 200-line limit awareness, and delegation rules are no longer in context. PLAN.md is the recovery artifact — without it, re-invocation has nothing to restore from.
+
 ### Context Checkpoint
 
 All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to continue.**

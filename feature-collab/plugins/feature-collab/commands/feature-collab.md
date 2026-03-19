@@ -188,14 +188,18 @@ If `wip get` fails (no item found), skip wip tracking silently — the user may 
 
 ## Context Compaction
 
-When conversation is compacted, your summary **must** include:
+When conversation is compacted, **the current skill must be fully re-invoked** — do not continue from the compressed summary alone. The summary is lossy; the skill prompt is not.
+
+Your compaction summary **must** include:
 
 1. **Current phase** from PLAN.md Status section
 2. **What you were waiting for** (user input, agent results, etc.)
-3. **Instruction to re-invoke** `/feature-collab` to continue
+3. **Instruction to re-invoke** `/pickup` to continue with full prompt reload
 
 Example:
-> "Feature development at Phase 5 (Implementation), 7/15 tests passing. On resume: re-read PLAN.md and SESSION_STATE.md, invoke `/feature-collab` to continue."
+> "Feature development at Phase 5 (Implementation), 7/15 tests passing. On resume: invoke `/pickup` to continue — this reloads the full skill prompt and reads PLAN.md for state."
+
+**Why this matters**: After compaction, the iron law, delegation rules, and plan discipline are no longer in context. Without re-invocation, the orchestrator degrades — it starts reading code directly, skipping delegation, and losing process guardrails. PLAN.md is the critical recovery artifact; without it, re-invocation has nothing to restore from.
 
 ## CriticMarkup Format
 

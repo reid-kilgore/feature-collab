@@ -96,6 +96,10 @@ Initial request: $ARGUMENTS
 
 ---
 
+## Context Compaction
+
+When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
+
 ## Phase 1: Triage
 
 **Goal**: Identify the issue, create hotfix branch, write failing test on prod branch.

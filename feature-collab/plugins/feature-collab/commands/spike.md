@@ -263,6 +263,17 @@ All state saved to disk:
 6. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
+### Hard Gate: Implementation Requires Skill Transition
+
+If the user asks to implement findings mid-spike ("build it", "go implement", "kick it off", etc.), you MUST:
+
+1. **Stop the spike.** Do not write production code under the spike skill.
+2. **Commit spike artifacts** (PLAN.md, DEMO.md, any spike-scratch/ files).
+3. **Invoke the appropriate implementation skill**: `/feature-collab` for multi-component work (>200 lines), `/enhance` for small additions (<200 lines).
+4. The spike's PLAN.md and DEMO.md carry forward as Phase 1 context — no research duplication.
+
+This is not optional. "The user told me to" does not override the spike's iron law (no production code). The correct response to "build it" is to transition skills, not to start editing source files.
+
 ## Transitioning to Implementation
 
 Spikes often lead to implementation. When the user wants to act on spike findings:

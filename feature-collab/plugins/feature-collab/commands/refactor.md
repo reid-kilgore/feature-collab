@@ -94,6 +94,10 @@ Initial request: $ARGUMENTS
 
 ---
 
+## Context Compaction
+
+When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
+
 ## Metrics Tracking
 
 The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
