@@ -30,10 +30,11 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
 3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
 4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
+5. **Never silently skip phases.** If a phase is inapplicable (e.g., test-gap-finder for a schema-only change), announce it: "Skipping [phase] because [reason]. Say 'run it' if you want it anyway." Silent phase-skipping is the #1 compliance violation across retros.
 
 ### Pre-PR Divergence Check
 
-Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the file count matches expected scope. Rebase first if diverged.
+Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the file count matches expected scope. Rebase first if diverged. Before rebasing, check if there's actually anything to rebase: `git log --oneline HEAD..origin/main`. If empty, skip the rebase. Blind rebase attempts waste cycles and can fail noisily.
 
 ### Common Rationalizations
 
@@ -50,6 +51,7 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "Tests are green so the implementation is correct" | Check that test doubles match real query shapes. Mocks that inject fields the actual query doesn't `select` will pass while prod breaks. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
+| "I'll include the full implementation for the deferred item in CONTRACTS.md" | Mark deferred items as stubs with a TODO, not full implementations. Over-scoping contracts leads to over-scoped plans. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
@@ -160,6 +162,8 @@ cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
 { <metrics object with completed_at set to current ISO timestamp> }
 EOF
 ```
+
+**Metrics are mandatory even when phases are skipped.** Set skipped phases to 0, not null. Skipping the metrics write makes skipped phases invisible to retros — the whole point of tracking is to detect when the workflow is heavier than what the task actually needs.
 
 Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
 
