@@ -29,10 +29,10 @@ The orchestrator tracks workflow efficiency metrics for this session. These feed
 **Write metrics at workflow completion** (final phase, before PR/handoff):
 
 ```bash
-mkdir -p ~/.claude/feature-collab/metrics
+mkdir -p ~/.feature-collab/metrics
 BRANCH=$(git branch --show-current)
 DATE=$(date +%Y-%m-%d)
-# Write the metrics JSON to ~/.claude/feature-collab/metrics/${DATE}-${BRANCH}.json
+# Write the metrics JSON to ~/.feature-collab/metrics/${DATE}-${BRANCH}.json
 ```
 
 Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.

@@ -25,21 +25,21 @@ You will receive:
 - **Compliance report**: Grades on skill selection, plan discipline, agent dispatch, process adherence, user corrections, wasted effort
 - **Experience report**: Grades on fulfillment, efficiency, flow, communication, plus sentiment analysis and frustration/affirmation counts
 - **Technical quality report**: Grades on architecture/pattern adherence, test quality, scope/churn, missed opportunities, plus a "PR review" summary
-- **Metrics file** (optional): `~/.claude/feature-collab/metrics/{date}-{branch}.json` — workflow efficiency counters written by the orchestrator at completion
+- **Metrics file** (optional): `~/.feature-collab/metrics/{date}-{branch}.json` — workflow efficiency counters written by the orchestrator at completion
 
 ### Workflow Efficiency Analysis (run this before synthesizing the three reports)
 
 Check whether a metrics file exists for the branch being retro'd:
 
 ```bash
-ls ~/.claude/feature-collab/metrics/ 2>/dev/null
+ls ~/.feature-collab/metrics/ 2>/dev/null
 ```
 
 If a matching file exists, read it. Then read all prior metrics files for the same `workflow_type`:
 
 ```bash
 # example: all prior enhance sessions
-ls ~/.claude/feature-collab/metrics/ | grep -v {current-date-branch}
+ls ~/.feature-collab/metrics/ | grep -v {current-date-branch}
 ```
 
 For each numeric field (`phases_executed`, `user_interventions`, `agent_dispatches`, `dark_factory_escalations`, `scope_guardian_flags`, `criteria_not_ready_count`), compute the mean across prior sessions of the same `workflow_type`. Then check the current session's values against those means.
@@ -158,13 +158,13 @@ Technical quality findings have a unique property: they identify issues that may
 
 ## Persistence: Structured JSON Snapshot
 
-After producing the markdown retro above, write a structured JSON snapshot to `~/.claude/feature-collab/retros/` so future retros can read prior data and show trends.
+After producing the markdown retro above, write a structured JSON snapshot to `~/.feature-collab/retros/` so future retros can read prior data and show trends.
 
 ### Step 1: Check for prior retros
 
 ```bash
-mkdir -p ~/.claude/feature-collab/retros
-ls -t ~/.claude/feature-collab/retros/*.json 2>/dev/null | head -5
+mkdir -p ~/.feature-collab/retros
+ls -t ~/.feature-collab/retros/*.json 2>/dev/null | head -5
 ```
 
 If prior retro files exist, read the last 3–5 and extract their `compliance_score`, `experience_score`, `technical_findings_count`, `recommendations_count`, and `key_themes`. Include a `trends` section in the markdown output immediately before the Encoding Recommendations section (see format below).
@@ -175,7 +175,7 @@ File name: `{date}-{branch}.json` where `date` is `YYYY-MM-DD` (today) and `bran
 
 ```bash
 # Example path
-~/.claude/feature-collab/retros/2024-03-18-spike-autopilot.json
+~/.feature-collab/retros/2024-03-18-spike-autopilot.json
 ```
 
 JSON schema:

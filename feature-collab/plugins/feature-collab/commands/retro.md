@@ -135,7 +135,7 @@ Entries: {count}
 {full technical agent output}
 ```
 
-Present the synthesizer's output to the user as the final retro report. The synthesizer also writes a structured JSON snapshot to `~/.claude/feature-collab/retros/{date}-{branch}.json` for cross-session trend tracking — if prior retros exist, a Trends table will appear in the report automatically.
+Present the synthesizer's output to the user as the final retro report. The synthesizer also writes a structured JSON snapshot to `~/.feature-collab/retros/{date}-{branch}.json` for cross-session trend tracking — if prior retros exist, a Trends table will appear in the report automatically.
 
 ## Phase 3: Encode Recommendations
 

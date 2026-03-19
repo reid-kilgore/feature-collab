@@ -1104,10 +1104,10 @@ The orchestrator tracks workflow efficiency metrics for this session. These feed
 **Write metrics at workflow completion** (Phase 9, before PR handoff):
 
 ```bash
-mkdir -p ~/.claude/feature-collab/metrics
+mkdir -p ~/.feature-collab/metrics
 BRANCH=$(git branch --show-current)
 DATE=$(date +%Y-%m-%d)
-cat > ~/.claude/feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
+cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
 { <metrics object with completed_at set to current ISO timestamp> }
 EOF
 ```

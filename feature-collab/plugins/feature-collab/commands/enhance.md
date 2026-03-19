@@ -46,6 +46,8 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md or CONTRACTS.md by section link. Don't reproduce tables the user can already read. |
+| "I'll just cast it with `as` to add the field" | Update the query to return the field. `as` casts on repository returns hide real bugs — the compiler can't verify the query actually returns the data. |
+| "Tests are green so the implementation is correct" | Check that test doubles match real query shapes. Mocks that inject fields the actual query doesn't `select` will pass while prod breaks. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
@@ -151,10 +153,10 @@ The orchestrator tracks workflow efficiency metrics for this session. These feed
 **Write metrics at workflow completion** (Phase 5, before PR handoff):
 
 ```bash
-mkdir -p ~/.claude/feature-collab/metrics
+mkdir -p ~/.feature-collab/metrics
 BRANCH=$(git branch --show-current)
 DATE=$(date +%Y-%m-%d)
-cat > ~/.claude/feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
+cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
 { <metrics object with completed_at set to current ISO timestamp> }
 EOF
 ```
@@ -216,6 +218,8 @@ ANNOTATION GUIDE:
    Even small enhancements have implicit assumptions about existing code. Surface them.
 
 3. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
+
+   For field-swap or field-addition features, concept tracing MUST enumerate ALL query paths (Prisma `select`/`include`, SQL queries, API calls) that feed the function under change. Verify each path returns the new field. Missing a query path is the #1 cause of "tests pass but prod breaks" bugs.
 
    Protect the orchestrator's context window — delegate ALL code reading to agents.
 
@@ -297,6 +301,10 @@ Dispatch a haiku agent to commit all planning documents before implementation be
 git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
+
+**Pre-commit typecheck gate**: Before dispatching the commit agent, the orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
+
+When an agent discovers the correct invocation for lint, test, or build commands through trial and error, record it in PLAN.md and include it in subsequent agent prompts. Do not force each agent to rediscover the same commands independently.
 
 ## Context Compaction
 
@@ -491,6 +499,8 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    ```
 
    If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
+
+   **CI flaky-test policy**: When a CI failure is diagnosed as flaky and unrelated to this PR, immediately run `gh run rerun --failed` and continue monitoring. Do not declare "PR ready" with red checks — the user should not have to babysit CI.
 
 7. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 
