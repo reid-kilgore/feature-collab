@@ -55,6 +55,9 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
+| "I fixed the review comment" | After applying a review-feedback fix, re-read the full function and verify code *behavior* matches user intent before committing. Don't pattern-match feedback as a documentation issue when the user is pointing at a code branch. |
+| "Let me apply another incremental fix for this review comment" | When a reviewer says "I still see X" after your fix, STOP. Re-read the original feedback and the full diff — your mental model of the problem is wrong. Do not apply another incremental edit. |
+| "I'll commit the failing tests first for TDD RED" | If pre-commit hooks run the full test suite, intentionally-failing tests will block the commit. Write the tests, verify they fail locally, then implement before committing. Commit RED+GREEN together. |
 
 ### Red Flags — STOP
 
@@ -510,6 +513,8 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **CI flaky-test policy**: When a CI failure is diagnosed as flaky and unrelated to this PR, immediately run `gh run rerun --failed` and continue monitoring. Do not declare "PR ready" with red checks — the user should not have to babysit CI.
 
 7. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+
+   **Post-PR plan sync**: If review feedback changes the interface or design (e.g., optional→required, new parameter, renamed field), update PLAN.md and CONTRACTS.md before committing the fix. Stale planning artifacts mislead future readers about what was actually shipped.
 
 8. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
 
