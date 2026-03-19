@@ -111,7 +111,15 @@ Your scorecard is authoritative. No one can dispute THAT a test fails (they can 
 
 1. **Add a new row** to the scorecard with the current run number
 
-2. **Execute automated test suites** (one column each):
+2. **Run typecheck and lint** (before tests — these catch errors that tests miss):
+   ```bash
+   npx tsc --noEmit  # TypeScript projects only
+   npx eslint --no-fix src/  # or project-specific lint command
+   ```
+   - If either fails, mark a Typecheck/Lint column ❌ and report the specific errors
+   - Pre-commit hooks only run unit tests — they do NOT catch type errors or lint violations
+
+3. **Execute automated test suites** (one column each):
    ```bash
    npm test  # or project-specific command
    ```

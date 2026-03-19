@@ -70,6 +70,7 @@ BEFORE transitioning between any phases:
 | "Tests should be green by now" | "Should" isn't verified. Launch test-runner. |
 | "This phase is just a formality" | Every phase exists for a reason. Run it fully. |
 | "I'll skip scope-guardian, scope looks clean" | You can't assess scope drift without checking. Launch the agent. |
+| "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque", "never know about") | These are abstraction-boundary signals, not naming signals. Propose a separate encapsulating entity. Confirm: "So X should only interact with [outer] and never reference [inner]?" |
 | "CodeRabbit review isn't necessary for this change" | The workflow says it runs. Don't skip phases. |
 | "I'll combine these phases to save time" | Phases have different quality gates. Don't merge them. |
 | "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
@@ -83,7 +84,7 @@ BEFORE transitioning between any phases:
 
 - Reading code directly instead of delegating to an agent
 - Running tests or commands directly instead of via test-runner
-- **Using Edit or Write on source files** — that's code-architect's job
+- **Using Edit or Write on source files** — that's code-architect's job, even for "mechanical" code review fixes
 - Claiming a phase is complete without citing agent evidence
 - Skipping a phase because "it's obvious"
 - Merging dark factory phases together
