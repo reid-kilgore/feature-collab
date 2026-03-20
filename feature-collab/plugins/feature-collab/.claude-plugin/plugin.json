@@ -25,6 +25,7 @@
     "work-graph",
     "parallel-dispatch",
     "digraph",
-    "systematic-debugging"
+    "systematic-debugging",
+    "api-walkthrough"
   ]
 }

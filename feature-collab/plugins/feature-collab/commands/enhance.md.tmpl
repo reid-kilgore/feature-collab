@@ -1,0 +1,323 @@
+---
+name: enhance
+description: "Use when adding a small improvement (<200 lines) to existing functionality — a new option, a UI tweak, or a minor behavior change"
+argument-hint: Enhancement description
+---
+
+# Enhance: Small Enhancement
+
+You are helping a developer implement a small enhancement (<200 lines of production code) through a contract-first TDD process.
+
+{{SPIRIT_AND_LETTER}}
+
+## Orchestrator Discipline
+
+You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dispatch agents, synthesize their outputs, update PLAN.md, and talk to the user.
+
+### The Iron Law
+
+```
+STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
+```
+
+### Orchestrator Never Edits Source
+
+The orchestrator dispatches agents. It does not use `Edit` or `Write` on source files. If a quick fix is needed, dispatch a targeted `code-architect` agent. This is not negotiable regardless of how small the change is.
+
+### Transparency Rules
+
+1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
+2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
+3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
+4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
+
+### Pre-PR Divergence Check
+
+Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the file count matches expected scope. Rebase first if diverged.
+
+### Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
+| "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
+| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
+| "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
+| "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
+| "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
+| "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
+| "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
+| "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
+| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
+
+### Red Flags — STOP
+
+- Reading code directly instead of delegating
+- Approaching 200 lines without flagging it
+- Skipping contract definition because "it's small"
+- Claiming completion without test-runner verification
+- Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
+
+{{MODEL_TIERING}}
+
+## Core Principles
+
+- **Small scope enforced**: If the enhancement exceeds ~200 lines, recommend `/feature-collab` instead
+- **Contracts before code**: Define types and interfaces first
+- **Tests before implementation**: TDD RED-GREEN
+- **PLAN.md is source of truth**
+- **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
+- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
+
+{{DOCS_DIR}}
+
+{{WIP_TRACKING}}
+
+Initial request: $ARGUMENTS
+
+---
+
+{{METRICS_TRACKING}}
+
+---
+
+## Phase 1: Scope & Contract
+
+**Goal**: Define what's being added, write contracts, write failing tests.
+
+**Actions**:
+
+1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
+
+```markdown
+{{PLAN_ANNOTATION_GUIDE}}
+
+# Enhancement: [Title]
+
+## Status
+**Current Phase**: Scope & Contract
+**Waiting For**: User review
+
+## Description
+[What's being added and why]
+
+## Scope
+
+### In Scope
+- [ ] [Specific deliverable 1]
+- [ ] [Specific deliverable 2]
+
+### Explicitly Out of Scope
+- [Things deliberately excluded]
+
+## Contracts
+[Types, interfaces, function signatures — see CONTRACTS.md]
+
+## Exit Criteria
+- [ ] All new tests passing
+- [ ] All existing tests still passing
+- [ ] Enhancement works as specified
+- [ ] Code follows existing patterns
+- [ ] < 200 lines of production code added
+```
+
+2. **Concept Extraction**: Before touching code, decompose the enhancement into every concept, assumption, and unspoken dependency it implies. List them in PLAN.md:
+   ```markdown
+   ## Concepts to Trace
+   - [Concept 1]: [why it matters]
+   - [Assumption 1]: [what we're assuming]
+   ```
+   Even small enhancements have implicit assumptions about existing code. Surface them.
+
+3. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
+
+   Protect the orchestrator's context window — delegate ALL code reading to agents.
+
+4. **Synthesize findings** into PLAN.md. Must answer: what files will be touched, what patterns to follow, what might break. Enhancement research is complete when you can name every file that will change and why.
+
+5. Create CONTRACTS.md with types, routes, and function signatures.
+
+6. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+
+7. Launch `test-gap-finder` agent to review TEST_SPEC.md adversarially.
+
+8. Launch `test-implementer` agent to write failing tests.
+
+9. Launch `test-runner` agent to confirm RED state (tests should fail).
+
+10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+
+11. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+
+12. **CHECKPOINT**:
+    > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
+
+---
+
+## Phase 2: Implement (Dark Factory)
+
+**Goal**: Make all tests pass. Runs autonomously after user approval.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: Implement
+   **Waiting For**: In progress (dark factory)
+   ```
+
+2. Launch `code-architect` agent to implement:
+   - Follow CONTRACTS.md and DETAILS.md
+   - Make failing tests pass
+   - Stay within scope
+
+3. Launch `test-runner` agent after implementation:
+   - Verify new tests pass
+   - Verify existing tests still pass
+
+4. Launch `scope-guardian` agent:
+   - Verify implementation stays within scope
+   - Flag if approaching 200-line limit
+
+5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
+
+6. **Escalation**: If 5 fix cycles fail, escalate to user.
+
+7. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+
+8. Proceed to Phase 3 when all tests pass.
+
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
+
+### Context Checkpoint
+
+All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to continue.**
+
+---
+
+## Phase 3: CodeRabbit Review (Dark Factory)
+
+**Goal**: Run CodeRabbit locally and incorporate its feedback. Runs autonomously.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: CodeRabbit Review
+   **Waiting For**: In progress (dark factory)
+   ```
+
+2. Launch `code-reviewer` agent to run CodeRabbit locally:
+   - Run `npx coderabbitai review` (or the project-configured CodeRabbit CLI command)
+   - Collect all findings: bugs, style issues, suggestions, security concerns
+
+3. Launch `code-architect` agent to address actionable CodeRabbit findings:
+   - Fix bugs and security issues flagged by CodeRabbit
+   - Apply style/pattern suggestions that align with project conventions
+   - Skip suggestions that conflict with the existing architecture or are out of scope
+   - Document any skipped findings with rationale in PLAN.md
+
+4. Launch `test-runner` agent to verify no regressions after fixes.
+
+5. Launch `code-reviewer` agent to re-run CodeRabbit and confirm findings are resolved.
+
+6. Update PLAN.md with CodeRabbit Review Results:
+   ```markdown
+   ## CodeRabbit Review
+   - **Findings**: [count] total
+   - **Fixed**: [count]
+   - **Skipped (with rationale)**: [count]
+   - **Remaining**: 0 actionable
+   ```
+
+7. **WIP**: `wip note <item> "Phase 3: CodeRabbit review complete"`
+
+8. Proceed to Phase 4.
+
+---
+
+## Phase 4: Verify (Dark Factory)
+
+**Goal**: Final verification pass. Runs autonomously.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: Verify
+   **Waiting For**: In progress (dark factory)
+   ```
+
+2. Launch `test-runner` agent for full test suite run.
+
+3. Launch `criteria-assessor` agent to check exit criteria.
+
+4. If criteria-assessor returns NOT READY, fix and re-assess (up to 3 cycles).
+
+5. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
+
+6. Proceed to Phase 5 when READY.
+
+---
+
+## Phase 5: Demo
+
+**Goal**: Present proof of enhancement to user.
+
+**Actions**:
+
+1. Update PLAN.md status:
+   ```markdown
+   ## Status
+   **Current Phase**: Demo
+   **Waiting For**: User review
+   ```
+
+2. Launch `demo-builder` agent:
+   - Verify DEMO.md (re-run all captures)
+   - Add final captures
+
+3. If web enhancement, launch `browser-verifier` agent.
+
+4. Update PLAN.md:
+
+```markdown
+## Status
+**Current Phase**: Complete
+**Completed**: [date]
+
+## Summary
+- **What was added**: [description]
+- **Tests**: All passing (N/N)
+- **Lines added**: [count] (within 200-line limit)
+- **Proof**: See DEMO.md
+```
+
+5. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
+
+6. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+
+7. Prompt user:
+   > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+
+8. {{RETRO_OFFER}}
+
+### Context Checkpoint
+
+All state has been saved to disk:
+- PLAN.md: Final status
+- CONTRACTS.md: Type definitions
+- DEMO.md: Proof of work
+
+**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

@@ -210,6 +210,37 @@ You will receive specific instructions like:
 [Any issues encountered or questions for the main thread]
 ```
 
+## Risk Ledger Protocol
+
+The Risk Ledger (`$DOCS_DIR/RISK_LEDGER.md`) tracks cumulative autonomous risk across all agents. You must follow this protocol on every implementation task.
+
+### Before Starting a Fix
+
+1. Read `$DOCS_DIR/RISK_LEDGER.md`.
+2. Check the `Current Risk` value at the top.
+3. **If `Current Risk > 20%`: STOP. Do not implement. Report back to the orchestrator with the current risk total and the last few events that caused it. The orchestrator must escalate to the user.**
+
+### After Completing a Fix
+
+If any of the following occurred, append a row to the `## Events` table and update `Current Risk` at the top:
+
+| What happened | Event name | Delta |
+|---------------|-----------|-------|
+| You reverted a previous change | Revert | +15% |
+| Your fix touched more than 3 files | Wide fix (>3 files) | +5% |
+| Your fix touched files outside the declared scope | Out-of-scope touch | +20% |
+| This is the 16th or later fix attempt in this session | Fix spiral | +1% per fix past 15 |
+| Tests that were passing before your fix are now failing | Test failure after green | +10% |
+
+**Append format** (add one row per event, not one row per fix):
+```
+| 2024-01-15T10:32Z | code-architect | Wide fix (>3 files) | +5% | 25% | Fixed auth middleware, touched 5 files |
+```
+
+Then update the `Current Risk: X%` line at the top to reflect the new running total.
+
+If none of these events occurred, do not modify the Risk Ledger.
+
 ## Key Principles
 
 - **Tests are the spec** - your code must make tests pass

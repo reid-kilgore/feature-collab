@@ -41,6 +41,15 @@ A release ships to users. Every shortcut here becomes a production incident.
 - When spawning agents, the agent frontmatter specifies the correct model
 - Never use Opus for agents that just run commands or read files
 
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer, test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, conflict resolution |
+| Plan/synthesize/assess | Opus | release scope decisions |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
+
 ## Core Principles
 
 - **User controls what's included**: Never cherry-pick without confirmation
@@ -84,6 +93,10 @@ wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <
 Initial request: $ARGUMENTS
 
 ---
+
+## Context Compaction
+
+When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
 
 ## Phase 1: Plan
 
@@ -227,6 +240,9 @@ ANNOTATION GUIDE:
 
 5. Prompt user:
    > "Release branch ready. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review. When ready, push with `git push origin [release-branch]`."
+
+6. Offer retrospective:
+   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 

@@ -8,7 +8,7 @@ argument-hint: What to refactor and refactor goals
 
 You are helping a developer refactor code while proving that behavior is completely unchanged.
 
-**Violating the letter of the rules is violating the spirit of the rules.**
+{{SPIRIT_AND_LETTER}}
 
 ## Orchestrator Discipline
 
@@ -37,19 +37,7 @@ ZERO BEHAVIOR CHANGES — IF A TEST FAILS, THE REFACTOR IS WRONG, NOT THE TEST
 - Fixing bugs found during refactoring (separate ticket)
 - Claiming behavior equivalence without before/after test proof
 
-## Model Usage
-- Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
-- Never use Opus for agents that just run commands or read files
-
-**Agent model table** — match the task, not the agent name:
-
-| Task | Model | Examples |
-|------|-------|----------|
-| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
-| Implement/refactor/debug | Sonnet | code-architect, test-implementer |
-| Plan/synthesize/assess | Opus | criteria-assessor |
-| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
+{{MODEL_TIERING}}
 
 ## Core Principles
 
@@ -78,66 +66,13 @@ mkdir -p "$DOCS_DIR"
 
 All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
 
-## WIP Tracking
-
-```bash
-# At start: detect and activate wip item
-wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting refactor: [description]"
-# At phase transitions: wip note <item> "Phase N: [status]"
-# When creating branches: wip add-branch <item> <branch>
-# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
-# DONE status is set only after branch is merged (not by this skill)
-# If wip get fails, skip tracking silently
-```
+{{WIP_TRACKING}}
 
 Initial request: $ARGUMENTS
 
 ---
 
-## Context Compaction
-
-When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
-
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "refactor",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'refactor' to proceed" counts; follow-up clarifications count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — increment when the 5-cycle escalation in Phase 2 is triggered and the user is interrupted
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 3 Demo, before PR handoff):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
+{{METRICS_TRACKING}}
 
 ---
 
@@ -150,11 +85,7 @@ Individual agents do not need to know about metrics — this is orchestrator-onl
 1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
 
 ```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
+{{PLAN_ANNOTATION_GUIDE}}
 
 # Refactor: [Title]
 
@@ -248,14 +179,7 @@ ANNOTATION GUIDE:
 
 9. When all tests pass and criteria met, proceed to Phase 3.
 
-### Commit Planning Artifacts
-
-Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
-
-```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
-git commit -m "docs: planning artifacts for $(git branch --show-current)"
-```
+{{COMMIT_PLANNING_ARTIFACTS}}
 
 ### Context Checkpoint
 
@@ -301,13 +225,6 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 5. Prompt user:
    > "Refactor complete. All tests still passing. See DEMO.md for before/after proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-6. Offer retrospective:
-   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
+6. {{RETRO_OFFER}}
 
-### Context Checkpoint
-
-All state has been saved to disk:
-- PLAN.md: Final status and refactor summary
-- DEMO.md: Before/after proof with test results
-
-**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
+{{CONTEXT_CHECKPOINT}}

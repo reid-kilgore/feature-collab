@@ -20,18 +20,44 @@ You are the ORCHESTRATOR. You do not read code, run tests, or implement. You dis
 STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 ```
 
+### Orchestrator Never Edits Source
+
+The orchestrator dispatches agents. It does not use `Edit` or `Write` on source files. If a quick fix is needed, dispatch a targeted `code-architect` agent. This is not negotiable regardless of how small the change is.
+
+### Transparency Rules
+
+1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
+2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
+3. **Execute mandatory skill phases even when trivial.** Don't skip phases because the feature is "too simple." If you believe a phase is genuinely inapplicable, see rule 5.
+4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
+5. **Never skip phases without user permission.** If a phase seems inapplicable (e.g., test-gap-finder for a schema-only change), ask: "Phase [X] seems inapplicable because [reason] — skip it? (y/n)". Do not proceed past the phase until the user confirms. Silent phase-skipping is the #1 compliance violation across retros.
+
+### Pre-PR Divergence Check
+
+Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the file count matches expected scope. Rebase first if diverged. Before rebasing, check if there's actually anything to rebase: `git log --oneline HEAD..origin/main`. If empty, skip the rebase. Blind rebase attempts waste cycles and can fail noisily.
+
 ### Common Rationalizations
 
 | Excuse | Reality |
 |--------|---------|
 | "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
 | "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
+| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
+| "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
+| "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md or CONTRACTS.md by section link. Don't reproduce tables the user can already read. |
+| "I'll just cast it with `as` to add the field" | Update the query to return the field. `as` casts on repository returns hide real bugs — the compiler can't verify the query actually returns the data. |
+| "Tests are green so the implementation is correct" | Check that test doubles match real query shapes. Mocks that inject fields the actual query doesn't `select` will pass while prod breaks. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
+| "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
+| "I'll include the full implementation for the deferred item in CONTRACTS.md" | Mark deferred items as stubs with a TODO, not full implementations. Over-scoping contracts leads to over-scoped plans. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
+| "I fixed the review comment" | After applying a review-feedback fix, re-read the full function and verify code *behavior* matches user intent before committing. Don't pattern-match feedback as a documentation issue when the user is pointing at a code branch. |
+| "Let me apply another incremental fix for this review comment" | When a reviewer says "I still see X" after your fix, STOP. Re-read the original feedback and the full diff — your mental model of the problem is wrong. Do not apply another incremental edit. |
+| "I'll commit the failing tests first for TDD RED" | If pre-commit hooks run the full test suite, intentionally-failing tests will block the commit. Write the tests, verify they fail locally, then implement before committing. Commit RED+GREEN together. |
 
 ### Red Flags — STOP
 
@@ -43,8 +69,17 @@ STAY UNDER 200 LINES — IF IT GROWS, SWITCH TO /FEATURE-COLLAB
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
+- **Read the agent's frontmatter `model:` field** before dispatching — it specifies the correct model. Do not default to the orchestrator's model tier.
 - Never use Opus for agents that just run commands or read files
+
+**Agent model table** — match the task, not the agent name:
+
+| Task | Model | Examples |
+|------|-------|----------|
+| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner, commit agent |
+| Implement/refactor/debug | Sonnet | code-architect, test-implementer |
+| Plan/synthesize/assess | Opus | criteria-assessor, architecture selection |
+| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
 
 ## Core Principles
 
@@ -65,6 +100,7 @@ docs/reidplans/$(git branch --show-current)/
   DEMO.md
   CONTRACTS.md
   TEST_SPEC.md
+  RISK_LEDGER.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -82,12 +118,57 @@ All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/<
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
 # At phase transitions: wip note <item> "Phase N: [status]"
 # When creating branches: wip add-branch <item> <branch>
-# At completion: wip note <item> "enhance complete — ready for PR/merge"
+# At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
 ```
 
 Initial request: $ARGUMENTS
+
+---
+
+## Metrics Tracking
+
+The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
+
+**Schema** — maintain this object in working memory throughout the session:
+
+```json
+{
+  "workflow_type": "enhance",
+  "started_at": "<ISO timestamp — set at skill start>",
+  "phases_executed": 0,
+  "user_interventions": 0,
+  "agent_dispatches": 0,
+  "dark_factory_escalations": 0,
+  "scope_guardian_flags": 0,
+  "criteria_not_ready_count": 0,
+  "completed_at": null
+}
+```
+
+**Increment rules**:
+- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
+- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'implement' to begin" counts; follow-up clarifications count)
+- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
+- `dark_factory_escalations` — increment when the 5-failure escalation in Phase 2 is triggered and the user is interrupted
+- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
+- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
+
+**Write metrics at workflow completion** (Phase 5, before PR handoff):
+
+```bash
+mkdir -p ~/.feature-collab/metrics
+BRANCH=$(git branch --show-current)
+DATE=$(date +%Y-%m-%d)
+cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
+{ <metrics object with completed_at set to current ISO timestamp> }
+EOF
+```
+
+**Metrics are mandatory even when phases are skipped.** Set skipped phases to 0, not null. Skipping the metrics write makes skipped phases invisible to retros — the whole point of tracking is to detect when the workflow is heavier than what the task actually needs.
+
+Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
 
 ---
 
@@ -145,25 +226,39 @@ ANNOTATION GUIDE:
 
 3. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
 
+   For field-swap or field-addition features, concept tracing MUST enumerate ALL query paths (Prisma `select`/`include`, SQL queries, API calls) that feed the function under change. Verify each path returns the new field. Missing a query path is the #1 cause of "tests pass but prod breaks" bugs.
+
    Protect the orchestrator's context window — delegate ALL code reading to agents.
 
 4. **Synthesize findings** into PLAN.md. Must answer: what files will be touched, what patterns to follow, what might break. Enhancement research is complete when you can name every file that will change and why.
 
-5. Create CONTRACTS.md with types, routes, and function signatures.
+5. Launch `test-gap-finder` agent to audit EXISTING test coverage for the code being changed. This runs BEFORE contracts — gaps in existing coverage inform what contracts need to specify. The gap-finder reviews current tests against current code and reports: what's untested, what's fragile, what assumptions are baked in.
 
-6. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+6. Create CONTRACTS.md with types, routes, and function signatures. Incorporate gap-finder's findings — if existing tests are missing edge cases, the contracts should specify them.
 
-7. Launch `test-gap-finder` agent to review TEST_SPEC.md adversarially.
+7. Launch `code-verifier` agent to generate TEST_SPEC.md from contracts.
+
+8. Launch `test-gap-finder` agent again to review TEST_SPEC.md adversarially (different pass — this time checking the NEW spec, not existing coverage).
 
 8. Launch `test-implementer` agent to write failing tests.
 
 9. Launch `test-runner` agent to confirm RED state (tests should fail).
 
-10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+10. If APIs are being changed, initialize `$DOCS_DIR/DEMO.md` with endpoint inventory and `$DOCS_DIR/bruno/` directory for API collection files.
 
-11. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+11. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
+    ```markdown
+    # Risk Ledger
+    Current Risk: 0%
 
-12. **CHECKPOINT**:
+    ## Events
+    | Timestamp | Agent | Event | Delta | Running Total | Description |
+    |-----------|-------|-------|-------|---------------|-------------|
+    ```
+
+12. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+
+13. **CHECKPOINT**:
     > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
 
 ---
@@ -193,14 +288,42 @@ ANNOTATION GUIDE:
 4. Launch `scope-guardian` agent:
    - Verify implementation stays within scope
    - Flag if approaching 200-line limit
+   - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
+5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 5.
 
-6. **Escalation**: If 5 fix cycles fail, escalate to user.
+6. **Risk check**: Before each fix cycle, read `$DOCS_DIR/RISK_LEDGER.md`. If `Current Risk > 20%`, STOP and escalate to user immediately — do not dispatch another code-architect.
 
-7. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+7. **Escalation**: If 5 fix cycles fail, escalate to user.
 
-8. Proceed to Phase 3 when all tests pass.
+8. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+
+9. Proceed to Phase 3 when all tests pass.
+
+### Commit Planning Artifacts
+
+Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
+
+**Pre-commit typecheck gate**: Before dispatching the commit agent, the orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
+
+When an agent discovers the correct invocation for lint, test, or build commands through trial and error, record it in PLAN.md and include it in subsequent agent prompts. Do not force each agent to rediscover the same commands independently.
+
+## Context Compaction
+
+When conversation is compacted, **the current skill must be fully re-invoked** — do not continue from the compressed summary alone.
+
+Your compaction summary **must** include:
+
+1. **Current phase** from PLAN.md Status section
+2. **What you were waiting for** (user input, agent results, etc.)
+3. **Instruction to re-invoke** `/pickup` to continue with full prompt reload
+
+**Why**: After compaction, the iron law, 200-line limit awareness, and delegation rules are no longer in context. PLAN.md is the recovery artifact — without it, re-invocation has nothing to restore from.
 
 ### Context Checkpoint
 
@@ -269,9 +392,31 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 4. If criteria-assessor returns NOT READY, fix and re-assess (up to 3 cycles).
 
-5. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
+5. **User override handling**: If the user explicitly overrides a NOT_READY finding from criteria-assessor, code-reviewer, or code-security (e.g., "that's not an issue", "ignore that", "proceed anyway"):
+   - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
+   - Ask: "Should I suppress this finding for future sessions? (y/n)"
+   - If yes, ask for a brief reason, then write the suppression:
 
-6. Proceed to Phase 5 when READY.
+   ```bash
+   SLUG=$(git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//' || basename $(git rev-parse --show-toplevel))
+   mkdir -p "$HOME/.claude/feature-collab/suppressions"
+   SUPPRESSION_FILE="$HOME/.claude/feature-collab/suppressions/${SLUG}.json"
+   # Read existing entries (or start with []), append new entry, write back
+   # Entry schema: {"finding_type": "...", "pattern": "...", "reason": "...", "agent": "...", "date": "YYYY-MM-DD", "expires": "YYYY-MM-DD"}
+   # Set expires = today + 90 days
+   ```
+
+   Only the orchestrator writes suppressions. Never suppress broad categories — the `pattern` must be specific enough to identify the particular finding.
+
+6. **Suppression summary**: At the end of Phase 4, before proceeding to Phase 5, report:
+   > "Suppressions active for this project: N total, M applied this session"
+   > List each active (non-expired) suppression: `- [finding_type] / [pattern] (expires: [date], reason: [reason])`
+
+   If no suppressions file exists for this project, skip this summary.
+
+7. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
+
+8. Proceed to Phase 5 when READY.
 
 ---
 
@@ -288,13 +433,13 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Add final captures
+2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
 
-3. If web enhancement, launch `browser-verifier` agent.
+   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
 
-4. Update PLAN.md:
+   If no API endpoints were changed (e.g., schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per rule 5.
+
+3. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -305,19 +450,82 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **What was added**: [description]
 - **Tests**: All passing (N/N)
 - **Lines added**: [count] (within 200-line limit)
-- **Proof**: See DEMO.md
+- **Proof**: See DEMO.md (if API changes) or test output
 ```
 
-5. **WIP**: `wip note <item> "enhance complete — ready for PR/merge"`
+5. **Bisectable Commit Splitting**
 
-6. Prompt user:
-   > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+   Dispatch a single haiku agent to split commits into clean layers before the PR goes up.
+
+   **Pre-flight check**: Count lines in `git diff main...HEAD`. If fewer than 50 lines, skip splitting entirely — one commit is fine. Otherwise proceed.
+
+   **Stash guard**: Run `git stash` if there are uncommitted changes (restore with `git stash pop` at the end).
+
+   **3-layer split** (enhance-sized changes don't warrant more than 3 commits):
+   - Layer 1 (Infrastructure): config files, package.json, tsconfig, CI, Dockerfiles
+   - Layer 2 (Implementation + Tests): all production code and its tests
+   - Layer 3 (Documentation): PLAN.md, DEMO.md, CHANGELOG, README, docs/
+
+   **Soft-reset to main**:
+   ```bash
+   git reset --soft $(git merge-base HEAD main)
+   ```
+
+   **Commit each layer separately** (skip layers with no files). Commit message format:
+   ```
+   <layer-type>: <descriptive summary>
+
+   Extracted from: <original commit messages, one per line>
+   ```
+
+   **Typecheck after each commit** (TypeScript projects only):
+   ```bash
+   npx tsc --noEmit
+   ```
+   If typecheck fails, abort: hard-reset to the pre-split state, squash everything into one commit with original messages preserved, and report the failure.
+
+   The agent reports back: how many commits were created and whether typecheck passed.
+
+6. **Push and create PR**:
+
+   Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
+
+   ```bash
+   git push -u origin $(git branch --show-current)
+   gh pr create --title "<concise title>" --body "$(cat <<'EOF'
+   ## Summary
+   <1-3 bullet points from PLAN.md>
+
+   ## Test plan
+   - [ ] All tests passing (verified by test-runner)
+   - [ ] DEMO.md with Bruno API collection (if API changes)
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+   EOF
+   )"
+   ```
+
+   If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
+
+   **CI flaky-test policy**: When a CI failure is diagnosed as flaky and unrelated to this PR, immediately run `gh run rerun --failed` and continue monitoring. Do not declare "PR ready" with red checks — the user should not have to babysit CI.
+
+7. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+
+   **Post-PR plan sync**: If review feedback changes the interface or design (e.g., optional→required, new parameter, renamed field), update PLAN.md and CONTRACTS.md before committing the fix. Stale planning artifacts mislead future readers about what was actually shipped.
+
+8. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
+
+8. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR up for review"`
+   > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
+
+9. Present the PR URL to the user and offer retrospective:
+   > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Final status
 - CONTRACTS.md: Type definitions
-- DEMO.md: Proof of work
+- DEMO.md: API walkthrough + Bruno collection (if API changes)
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

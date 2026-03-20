@@ -8,7 +8,7 @@ argument-hint: What to explore or investigate
 
 You are helping a developer explore a technical question, prototype an approach, or investigate a codebase area. Spikes produce a REPORT — not production code.
 
-**Violating the letter of the rules is violating the spirit of the rules.**
+{{SPIRIT_AND_LETTER}}
 
 ## Orchestrator Discipline
 
@@ -37,19 +37,7 @@ NO PRODUCTION CODE — SPIKES PRODUCE KNOWLEDGE, NOT FEATURES
 - Skipping the report/DEMO.md
 - Turning a spike into an implementation without switching skills
 
-## Model Usage
-- Use Opus for the main thread (planning, user interaction, synthesis)
-- When spawning agents, the agent frontmatter specifies the correct model
-- Never use Opus for agents that just run commands or read files
-
-**Agent model table** — match the task, not the agent name:
-
-| Task | Model | Examples |
-|------|-------|----------|
-| Read/find/trace/list code | Haiku | code-explorer (concept tracing), test-runner |
-| Analyze/design/recommend | Sonnet | code-architect (prototyping in spike-scratch/) |
-| Plan/synthesize/assess | Opus | retro-synthesizer, spike synthesis |
-| CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
+{{MODEL_TIERING}}
 
 ## Core Principles
 
@@ -78,61 +66,13 @@ mkdir -p "$DOCS_DIR"
 
 All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
 
-## WIP Tracking
-
-```bash
-# At start: detect and activate wip item
-wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting spike: [question]"
-# At phase transitions: wip note <item> "Phase N: [status]"
-# At completion: wip note <item> "spike complete — ready for PR/merge"
-# DONE status is set only after branch is merged (not by this skill)
-# If wip get fails, skip tracking silently
-```
+{{WIP_TRACKING}}
 
 Initial request: $ARGUMENTS
 
 ---
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "spike",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input (direction changes, scope questions, and "say 'done'" prompts all count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — spikes have no dark factory; leave at 0
-- `scope_guardian_flags` — spikes do not dispatch scope-guardian; leave at 0
-- `criteria_not_ready_count` — spikes do not dispatch criteria-assessor; leave at 0
-
-**Write metrics at workflow completion** (Phase 2 Report, before PR/merge):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
+{{METRICS_TRACKING}}
 
 ---
 
@@ -145,11 +85,7 @@ Individual agents do not need to know about metrics — this is orchestrator-onl
 1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
 
 ```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
+{{PLAN_ANNOTATION_GUIDE}}
 
 # Spike: [Question/Topic]
 
@@ -184,14 +120,7 @@ ANNOTATION GUIDE:
 
 4. For each finding, launch `demo-builder` agent to capture executable examples.
 
-### Commit Planning Artifacts
-
-Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
-
-```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
-git commit -m "docs: planning artifacts for $(git branch --show-current)"
-```
+{{COMMIT_PLANNING_ARTIFACTS}}
 
 ### Context Checkpoint
 
@@ -260,19 +189,7 @@ All state saved to disk:
 5. Prompt user:
    > "Spike complete. See DEMO.md for executable findings and PLAN.md for recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-6. Offer retrospective:
-   > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
-
-### Hard Gate: Implementation Requires Skill Transition
-
-If the user asks to implement findings mid-spike ("build it", "go implement", "kick it off", etc.), you MUST:
-
-1. **Stop the spike.** Do not write production code under the spike skill.
-2. **Commit spike artifacts** (PLAN.md, DEMO.md, any spike-scratch/ files).
-3. **Invoke the appropriate implementation skill**: `/feature-collab` for multi-component work (>200 lines), `/enhance` for small additions (<200 lines).
-4. The spike's PLAN.md and DEMO.md carry forward as Phase 1 context — no research duplication.
-
-This is not optional. "The user told me to" does not override the spike's iron law (no production code). The correct response to "build it" is to transition skills, not to start editing source files.
+6. {{RETRO_OFFER}}
 
 ## Transitioning to Implementation
 
