@@ -953,26 +953,30 @@ All state has been saved to disk:
    **Waiting For**: Proof generation
    ```
 
-2. Launch `demo-builder` agent:
+2. **API Demo (conditional):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
+
+   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
+
+3. Launch `demo-builder` agent:
    - Run `uvx showboat verify DEMO.md` to re-run all captures and confirm they still pass
    - Add final summary to DEMO.md
    - Capture final test run, curl results, any key outputs
 
-3. **If this is a web feature**, launch `browser-verifier` agent:
+4. **If this is a web feature**, launch `browser-verifier` agent:
    - Create rodney walkthrough script
    - Run the walkthrough, capture screenshots
    - Add screenshots to DEMO.md via `uvx showboat image`
 
-4. Prune PLAN.md to final summary (<200 lines):
+5. Prune PLAN.md to final summary (<200 lines):
    - Keep: Status, Final Summary, key decisions
    - Move details to DECISIONS.md
    - Archive exploration notes if valuable
 
-5. Ensure DECISIONS.md is complete (architectural decision records)
+6. Ensure DECISIONS.md is complete (architectural decision records)
 
-6. Generate CHANGELOG.md for PR description
+7. Generate CHANGELOG.md for PR description
 
-7. Update Final Summary:
+8. Update Final Summary:
 
 ```markdown
 ## Final Summary
@@ -1001,7 +1005,7 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-8. **Bisectable Commit Splitting**
+9. **Bisectable Commit Splitting**
 
    Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
 
@@ -1039,7 +1043,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
 
-9. **Push and create PR**:
+10. **Push and create PR**:
 
    Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
 
@@ -1061,14 +1065,14 @@ See DEMO.md for re-executable proof that the feature works.
 
    If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
 
-10. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+11. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 
-11. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
+12. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
 
-11. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR up for review"`
+13. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR up for review"`
     > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-12. Present the PR URL to the user and offer retrospective:
+14. Present the PR URL to the user and offer retrospective:
     > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ---

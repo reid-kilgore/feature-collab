@@ -433,10 +433,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch a `code-architect` agent to produce:
-   - **Bruno-compatible API collection** (YAML files) covering all changed/new endpoints, with example requests targeting **staging**
-   - **Walkthrough** in DEMO.md: step-by-step instructions for interacting with the changed APIs on staging, including expected responses
-   - **Diagrams** (Mermaid sequence diagrams or flowcharts) showing the request flow through changed components — highly encouraged, especially for multi-service or async flows
+2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
 
    Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
 
