@@ -94,6 +94,31 @@ else
   PASS=$((PASS + 1))
 fi
 
+echo "--- T9: Lock helpers exist ---"
+assert "_lock_workfile exists" grep -q '_lock_workfile' "$WIP"
+assert "_unlock_workfile exists" grep -q '_unlock_workfile' "$WIP"
+
+echo "--- T10: _update_line uses locking ---"
+# Extract _update_line function body and check for lock call
+assert "_update_line uses locking" bash -c "sed -n '/_update_line()/,/^}/p' '$WIP' | grep -q '_lock_workfile'"
+
+echo "--- T11: Lock uses mkdir (not flock) ---"
+assert "lock uses mkdir not flock" bash -c "sed -n '/_lock_workfile()/,/^}/p' '$WIP' | grep -q 'mkdir'"
+
+echo "--- T12: Stale lock cleanup ---"
+assert "stale lock has PID check" bash -c "sed -n '/_lock_workfile()/,/^}/p' '$WIP' | grep -q 'kill -0'"
+
+echo "--- T13: --triage-all --save flag recognized ---"
+# This needs dry-run to avoid hitting Linear API. Just check it doesn't say "Unknown argument"
+assert "--save flag recognized" bash -c "$WIP autopilot --triage-all --save /tmp/wip-test-triage.jsonl 2>&1 | grep -qv 'Unknown argument'"
+
+echo "--- T14: triage-score dispatch recognized ---"
+assert "triage-score dispatches" bash -c "$WIP triage-score /dev/null 2>&1 | grep -qv 'Unknown command'"
+
+echo "--- T15: Lock cleanup on deletion paths ---"
+# Check that the inline awk deletion blocks in cmd_status also use locking
+assert "deletion paths use locking" bash -c "grep -c '_lock_workfile\|_unlock_workfile' '$WIP' | awk '{exit (\$1 >= 4 ? 0 : 1)}'"
+
 echo
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1
