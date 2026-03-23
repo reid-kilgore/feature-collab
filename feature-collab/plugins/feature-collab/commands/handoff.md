@@ -203,6 +203,88 @@ If PLAN.md doesn't already list HANDOFF.md in its documents, add it.
 > - **Next step**: [brief description]
 > - **[X] todos pending**"
 
+## Step 7: Linear Update
+
+### Gate
+
+Read PLAN.md. Search for Linear ticket references (project identifiers such as `PAS-567`, ticket IDs, or Linear URLs).
+
+If no Linear references found:
+- Ask the user: "No Linear ticket referenced in PLAN.md — is there one that should be updated?"
+- If the user says no or skips: skip this step entirely and proceed to completion.
+- If the user provides a reference: use it and continue below.
+
+### Actions (when Linear reference exists)
+
+**1. Comment on the referenced ticket** with a session summary:
+
+```bash
+LINEAR_TOKEN=$(cat ~/.config/linear/token)
+
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_TOKEN" \
+  -d '{
+    "query": "mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success comment { id } } }",
+    "variables": {
+      "input": {
+        "issueId": "<issue-id>",
+        "body": "<comment body>"
+      }
+    }
+  }'
+```
+
+The comment body should include:
+- Current session phase at time of handoff (e.g., "Phase 5 — Implementation")
+- Brief summary of what was completed this session (2–4 bullets)
+- What needs to happen next (taken verbatim from HANDOFF.md "What Needs to Happen Next")
+
+To resolve the `issueId` from a ticket identifier like `PAS-567`, query Linear first:
+
+```bash
+# Look up issue ID by identifier
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_TOKEN" \
+  -d '{
+    "query": "{ issueViaIdentifier(identifier: \"PAS-567\") { id identifier title } }"
+  }'
+```
+
+Use the `id` UUID from the response, not the `identifier` string, as the `issueId` in the comment mutation.
+
+If the identifier lookup fails, try searching by identifier string:
+
+```bash
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_TOKEN" \
+  -d '{
+    "query": "{ issueSearch(query: \"PAS-567\") { nodes { id identifier title } } }"
+  }'
+```
+
+**2. Suggest new issues** for untracked Fast Follows:
+
+Check HANDOFF.md and PLAN.md for Fast Follows or out-of-scope items that do not yet have a Linear identifier (no `PAS-XXX` or similar in the Fast Follows table).
+
+If any exist, present them to the user:
+
+> "The following Fast Follows from this session are not yet filed as Linear issues:
+> - FF-001: [title] ([type])
+> - FF-002: [title] ([type])
+>
+> Want me to file these? Say **'file all'**, **'file FF-001'**, or **'skip'**."
+
+If the user approves, invoke the `linear-issues` agent to create them. Never auto-create without approval.
+
+### Non-requirements
+
+- Does NOT modify HANDOFF.md content or format
+- Does NOT block handoff completion if Linear is unreachable — if the API call fails, log the error, warn the user, and proceed
+- Does NOT create issues without explicit user approval
+
 ## Key Principles
 
 - **Write MORE than you think is needed** — the next agent has zero context

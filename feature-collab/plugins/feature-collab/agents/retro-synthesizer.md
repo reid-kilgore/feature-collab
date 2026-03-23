@@ -276,7 +276,7 @@ Include this table in the retro output between Trends and Encoding Recommendatio
 | E2 | Compaction requires /pickup re-invocation | spike-autopilot | feature-collab.md, enhance.md, bugfix.md, refactor.md, hotfix.md, release.md | {score} |
 | E3 | Ban `as` casts on repository return types | PAS-1151 | enhance.md | {score} |
 | E4 | CI flaky-test re-trigger policy | PAS-1151 | enhance.md | {score} |
-| E5 | Pre-commit typecheck gate | PAS-1151 | enhance.md | {score} |
+| E5 | Pre-commit typecheck + eslint gate (concrete commands, not prose) | PAS-1151, better-signup-writes | enhance.md | TRIGGERED-VIOLATED → strengthened |
 | E6 | Data pipeline trace for field-swap features | PAS-1151 | enhance.md | {score} |
 | E7 | Pass discovered commands to subsequent agents | PAS-1151 | enhance.md | {score} |
 | E8 | Mocks-too-generous warning | PAS-1151 | enhance.md | {score} |

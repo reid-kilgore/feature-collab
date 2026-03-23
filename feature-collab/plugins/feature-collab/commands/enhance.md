@@ -471,13 +471,14 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    Extracted from: <original commit messages, one per line>
    ```
 
-   **Typecheck after each commit** (TypeScript projects only):
+   **Typecheck and lint after each commit** (TypeScript projects only):
    ```bash
    npx tsc --noEmit
+   npx eslint --no-fix $(git diff --name-only HEAD~1 HEAD -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs')
    ```
-   If typecheck fails, abort: hard-reset to the pre-split state, squash everything into one commit with original messages preserved, and report the failure.
+   If typecheck or lint fails, abort: hard-reset to the pre-split state, squash everything into one commit with original messages preserved, and report the failure.
 
-   The agent reports back: how many commits were created and whether typecheck passed.
+   The agent reports back: how many commits were created and whether typecheck and lint passed.
 
 6. **Push and create PR**:
 

@@ -46,7 +46,58 @@ Read these files in order (skip any that don't exist, but PLAN.md is required):
 3. **SESSION_STATE.md** — session metadata
 If HANDOFF.md doesn't exist, fall back to SESSION_STATE.md and PLAN.md alone. The workflow can still resume — you'll just need to infer state from PLAN.md.
 
-## Step 3: Load Supporting Documents (Phase-Dependent)
+## Step 3: Check Linear for Updates
+
+### Gate
+
+Search PLAN.md for Linear ticket references: project identifiers (e.g., `PAS-567`), ticket IDs, or Linear URLs (`linear.app/...`).
+
+**If no Linear reference found in PLAN.md:**
+> "No Linear ticket referenced in PLAN.md — is there one I should check for updates?"
+
+- If user says no or skips: proceed to Step 4.
+- If user provides a reference: use it and continue with the actions below.
+
+### Actions (when a Linear reference exists)
+
+Query the referenced ticket for changes since the last session:
+
+1. **Status changes** — has the ticket moved states (e.g., In Progress → In Review)?
+2. **New comments** — any discussion added since the previous session?
+3. **Linked/related issues added** — any new blockers, dependencies, or sub-issues?
+
+```bash
+LINEAR_TOKEN=$(cat ~/.config/linear/token)
+
+# Fetch issue by identifier (e.g., PAS-567)
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_TOKEN" \
+  -d '{
+    "query": "{ issueViaIdentifier(identifier: \"<IDENTIFIER>\") { identifier title state { name } comments { nodes { createdAt body user { name } } } relations { nodes { type relatedIssue { identifier title state { name } } } } updatedAt } }"
+  }'
+```
+
+If the identifier lookup fails, try searching by identifier string:
+
+```bash
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_TOKEN" \
+  -d '{
+    "query": "{ issueSearch(query: \"<IDENTIFIER>\") { nodes { identifier title state { name } comments { nodes { createdAt body user { name } } } relations { nodes { type relatedIssue { identifier title state { name } } } } updatedAt } } }"
+  }'
+```
+
+**Surface any updates to the user before proceeding.** If nothing has changed, a brief "Linear ticket PAS-XXX is unchanged" is sufficient.
+
+### Non-requirements
+
+- Does NOT modify the disk-read flow from Step 2
+- Does NOT block pickup if Linear is unreachable — if the API call fails, log a warning and proceed
+- Does NOT auto-modify PLAN.md based on Linear state
+
+## Step 4: Load Supporting Documents (Phase-Dependent)
 
 Based on the current phase from PLAN.md Status, read the relevant supporting docs:
 
@@ -61,7 +112,7 @@ Based on the current phase from PLAN.md Status, read the relevant supporting doc
 | 7 (Exit Criteria) | TEST_SPEC.md, DETAILS.md |
 | 8 (Documentation) | DECISIONS.md |
 
-## Step 4: Restore the Todo List
+## Step 5: Restore the Todo List
 
 If HANDOFF.md contains an Active Todo List, recreate it using TaskCreate:
 
@@ -72,7 +123,7 @@ If HANDOFF.md contains an Active Todo List, recreate it using TaskCreate:
 
 If there's no HANDOFF.md, create the standard 9-phase todo list and mark phases as completed based on PLAN.md's Status section.
 
-## Step 5: Confirm Understanding
+## Step 6: Confirm Understanding
 
 Before continuing, summarize to the user what you understand:
 
@@ -88,7 +139,7 @@ Before continuing, summarize to the user what you understand:
 >
 > Continuing with `/feature-collab`..."
 
-## Step 6: Re-enter the Workflow
+## Step 7: Re-enter the Workflow
 
 Invoke `/feature-collab` to continue the workflow. The feature-collab skill will:
 
