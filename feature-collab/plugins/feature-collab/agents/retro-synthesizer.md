@@ -221,6 +221,23 @@ Field derivation:
 
 Use the Write tool to write the file. Do not fail silently — if the write fails, note it at the end of the retro output.
 
+### Step 3: Write the markdown report
+
+**MANDATORY**: Write the full markdown retro report to `~/.feature-collab/retros/{date}-{branch}.md` (same naming convention as the JSON, different extension). The JSON snapshot alone is not sufficient — the `.md` contains the full recommendations, encoding details, and root cause analysis that are needed for encoding. If the `.md` is not written, the retro's findings are lost when the session ends.
+
+```bash
+# Example path
+~/.feature-collab/retros/2024-03-18-spike-autopilot.md
+```
+
+**Do NOT write the markdown report to the project working directory or repo root.** Retro reports are cross-session artifacts that live in `~/.feature-collab/retros/`.
+
+After writing both files, verify both exist:
+```bash
+ls -la ~/.feature-collab/retros/{date}-{branch}.json ~/.feature-collab/retros/{date}-{branch}.md
+```
+If either file is missing, report the failure explicitly — do not continue silently.
+
 ### Trends section format (only include if prior retros exist)
 
 Insert this block into the markdown output between the Metrics table and the Encoding Recommendations heading:

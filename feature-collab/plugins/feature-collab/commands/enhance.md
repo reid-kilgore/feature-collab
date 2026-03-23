@@ -49,6 +49,7 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md or CONTRACTS.md by section link. Don't reproduce tables the user can already read. |
 | "I'll just cast it with `as` to add the field" | Update the query to return the field. `as` casts on repository returns hide real bugs — the compiler can't verify the query actually returns the data. |
 | "Tests are green so the implementation is correct" | Check that test doubles match real query shapes. Mocks that inject fields the actual query doesn't `select` will pass while prod breaks. |
+| "I'll use `jest.fn()` for the mock" | Use `jest.fn<ActualFunctionType>()` with the real function's type signature. Untyped mocks silently accept wrong parameter counts — JS drops extra args, so tests pass by accident. TypeScript catches arity mismatches at compile time only if the mock is properly typed. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
 | "I'll include the full implementation for the deferred item in CONTRACTS.md" | Mark deferred items as stubs with a TODO, not full implementations. Over-scoping contracts leads to over-scoped plans. |
@@ -100,7 +101,6 @@ docs/reidplans/$(git branch --show-current)/
   DEMO.md
   CONTRACTS.md
   TEST_SPEC.md
-  RISK_LEDGER.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -246,15 +246,6 @@ ANNOTATION GUIDE:
 
 10. If APIs are being changed, initialize `$DOCS_DIR/DEMO.md` with endpoint inventory and `$DOCS_DIR/bruno/` directory for API collection files.
 
-11. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
-    ```markdown
-    # Risk Ledger
-    Current Risk: 0%
-
-    ## Events
-    | Timestamp | Agent | Event | Delta | Running Total | Description |
-    |-----------|-------|-------|-------|---------------|-------------|
-    ```
 
 12. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
 
@@ -292,13 +283,13 @@ ANNOTATION GUIDE:
 
 5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 5.
 
-6. **Risk check**: Before each fix cycle, read `$DOCS_DIR/RISK_LEDGER.md`. If `Current Risk > 20%`, STOP and escalate to user immediately — do not dispatch another code-architect.
+6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
-7. **Escalation**: If 5 fix cycles fail, escalate to user.
+8. **CONTRACTS reconciliation**: If the implementation diverged from CONTRACTS.md (e.g., a parameter was dropped, a function signature changed, a tx mechanism was simplified), update CONTRACTS.md to match reality and verify all test function calls match actual implementation signatures (parameter count and types). Tests written against a stale contract pass by accident in JS (extra args are silently dropped) and create phantom correctness.
 
-8. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+9. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
 
-9. Proceed to Phase 3 when all tests pass.
+10. Proceed to Phase 3 when all tests pass.
 
 ### Commit Planning Artifacts
 
@@ -310,6 +301,8 @@ git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
 **Pre-commit typecheck gate**: Before dispatching the commit agent, the orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
+
+**Pre-commit eslint gate**: Also run `npx eslint --no-fix` on all changed files before dispatching the commit agent. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
 
 When an agent discovers the correct invocation for lint, test, or build commands through trial and error, record it in PLAN.md and include it in subsequent agent prompts. Do not force each agent to rediscover the same commands independently.
 
@@ -489,6 +482,12 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 6. **Push and create PR**:
 
    Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
+
+   **Pre-push PR state check**: Before pushing, verify the branch's PR (if any) is not already merged or closed:
+   ```bash
+   PR_STATE=$(gh pr view --json state -q '.state' 2>/dev/null || echo "NONE")
+   ```
+   If `PR_STATE` is `MERGED` or `CLOSED`, do NOT push to this branch. Instead: create a new branch off main, cherry-pick or rewrite the changes, push the new branch, and open a new PR referencing the original.
 
    ```bash
    git push -u origin $(git branch --show-current)

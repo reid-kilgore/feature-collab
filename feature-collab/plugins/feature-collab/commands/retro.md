@@ -135,7 +135,11 @@ Entries: {count}
 {full technical agent output}
 ```
 
-Present the synthesizer's output to the user as the final retro report. The synthesizer also writes a structured JSON snapshot to `~/.feature-collab/retros/{date}-{branch}.json` for cross-session trend tracking — if prior retros exist, a Trends table will appear in the report automatically.
+Present the synthesizer's output to the user as the final retro report. The synthesizer writes both:
+- A structured JSON snapshot to `~/.feature-collab/retros/{date}-{branch}.json` for cross-session trend tracking
+- A markdown report to `~/.feature-collab/retros/{date}-{branch}.md` for human reading
+
+**Do NOT write the retro markdown report to the project working directory.** Retro reports are cross-session artifacts that belong in `~/.feature-collab/retros/`, not in the repo root or `docs/` directory.
 
 ## Phase 3: Encode Recommendations
 

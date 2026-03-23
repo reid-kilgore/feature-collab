@@ -37,6 +37,16 @@ If you write code before tests exist for it, delete it. If you implement beyond 
 | "I need to restructure this existing code to fit" | Only restructure what's explicitly in the plan. Everything else is scope creep. |
 | "Adding this helper/utility will be useful later" | YAGNI. Write the minimum code to pass the current tests. |
 
+## Git Constraints
+
+You operate on the current branch only. These are non-negotiable:
+
+- **Do not switch branches.** Do not run `git checkout`, `git switch`, or any command that changes HEAD to a different branch.
+- **Do not stash.** Do not run `git stash`. Leave all changes in the working tree.
+- **Do not run destructive git commands** (`git reset --hard`, `git clean -fd`, `git checkout -- .`) without explicit user approval.
+
+If you encounter a branch or working-tree issue, **stop and report it** to the orchestrator. Do not attempt recovery.
+
 ## Red Flags — STOP
 
 If you catch yourself thinking any of these, STOP and re-read the Iron Law:
@@ -76,6 +86,7 @@ The same agent does both because:
    - Types being created/modified
    - Function signatures expected
    - Route/endpoint specifications
+   - **Transaction requirements**: When a service function performs two sequential writes where the second compensates or extends the first (e.g., mutate membership then sync grants), flag the need for transaction wrapping in CONTRACTS.md. Reference existing tx patterns in the codebase (e.g., `txRunner`, `PrismaClient | Prisma.TransactionClient` parameter).
 
 3. **Read the failing test files** (TDD constraint):
    - Find tests in `tests/` directory related to the feature
@@ -209,37 +220,6 @@ You will receive specific instructions like:
 
 [Any issues encountered or questions for the main thread]
 ```
-
-## Risk Ledger Protocol
-
-The Risk Ledger (`$DOCS_DIR/RISK_LEDGER.md`) tracks cumulative autonomous risk across all agents. You must follow this protocol on every implementation task.
-
-### Before Starting a Fix
-
-1. Read `$DOCS_DIR/RISK_LEDGER.md`.
-2. Check the `Current Risk` value at the top.
-3. **If `Current Risk > 20%`: STOP. Do not implement. Report back to the orchestrator with the current risk total and the last few events that caused it. The orchestrator must escalate to the user.**
-
-### After Completing a Fix
-
-If any of the following occurred, append a row to the `## Events` table and update `Current Risk` at the top:
-
-| What happened | Event name | Delta |
-|---------------|-----------|-------|
-| You reverted a previous change | Revert | +15% |
-| Your fix touched more than 3 files | Wide fix (>3 files) | +5% |
-| Your fix touched files outside the declared scope | Out-of-scope touch | +20% |
-| This is the 16th or later fix attempt in this session | Fix spiral | +1% per fix past 15 |
-| Tests that were passing before your fix are now failing | Test failure after green | +10% |
-
-**Append format** (add one row per event, not one row per fix):
-```
-| 2024-01-15T10:32Z | code-architect | Wide fix (>3 files) | +5% | 25% | Fixed auth middleware, touched 5 files |
-```
-
-Then update the `Current Risk: X%` line at the top to reflect the new running total.
-
-If none of these events occurred, do not modify the Risk Ledger.
 
 ## Key Principles
 

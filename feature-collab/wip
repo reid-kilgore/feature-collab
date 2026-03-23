@@ -403,8 +403,16 @@ cmd_notify() {
   local branch
   branch=$(echo "$_item" | jq -r '[.branches[] | select(.status == "ACTIVE") | .name] | first // .name')
   local msg="$branch${text:+: $text}"
-  alert "$msg" info &
-  echo "Notified: $msg"
+  local item_status
+  item_status=$(echo "$_item" | jq -r '.status // "UNKNOWN"')
+  local alert_type
+  case "$item_status" in
+    DONE|IN_REVIEW)  alert_type="success" ;;
+    BLOCKED|CLOSED)  alert_type="failure" ;;
+    *)               alert_type="info" ;;
+  esac
+  alert "$msg" "$alert_type" &
+  echo "Notified ($alert_type): $msg"
 }
 
 # rk-0228-pipeline-der-audit → Pipeline Der Audit

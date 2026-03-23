@@ -138,7 +138,6 @@ docs/reidplans/$(git branch --show-current)/
   DECISIONS.md
   SESSION_STATE.md
   CHANGELOG.md
-  RISK_LEDGER.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -254,15 +253,6 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 
 4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
 
-5. **Initialize Risk Ledger**: Create `$DOCS_DIR/RISK_LEDGER.md`:
-   ```markdown
-   # Risk Ledger
-   Current Risk: 0%
-
-   ## Events
-   | Timestamp | Agent | Event | Delta | Running Total | Description |
-   |-----------|-------|-------|-------|---------------|-------------|
-   ```
 
 6. **WIP**: Detect and activate wip item:
    ```bash
@@ -767,8 +757,7 @@ All state has been saved to disk:
    Loop until scorecard all green:
      1. test-runner reports status (captures to DEMO.md via showboat)
      2. Identify failing tests
-     3. Check $DOCS_DIR/RISK_LEDGER.md — if Current Risk >20%, STOP and escalate to user
-     4. Delegate fix to code-architect (code-architect reads Risk Ledger before each fix)
+     3. Delegate fix to code-architect
      5. test-runner verifies (captures to DEMO.md via showboat)
      6. scope-guardian checks for drift (every 2-3 cycles)
    ```
@@ -1005,7 +994,13 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-9. **Bisectable Commit Splitting**
+9. **Pre-commit gates** (before commit splitting or push):
+
+   **Typecheck gate**: The orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
+
+   **Eslint gate**: Run `npx eslint --no-fix` on all changed files. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
+
+10. **Bisectable Commit Splitting**
 
    Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
 
@@ -1043,9 +1038,15 @@ See DEMO.md for re-executable proof that the feature works.
 
    The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
 
-10. **Push and create PR**:
+11. **Push and create PR**:
 
    Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
+
+   **Pre-push PR state check**: Before pushing, verify the branch's PR (if any) is not already merged or closed:
+   ```bash
+   PR_STATE=$(gh pr view --json state -q '.state' 2>/dev/null || echo "NONE")
+   ```
+   If `PR_STATE` is `MERGED` or `CLOSED`, do NOT push to this branch. Instead: create a new branch off main, cherry-pick or rewrite the changes, push the new branch, and open a new PR referencing the original.
 
    ```bash
    git push -u origin $(git branch --show-current)
@@ -1065,7 +1066,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
 
-11. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+12. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 
 12. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
 
@@ -1119,36 +1120,6 @@ EOF
 Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
 
 ---
-
-## Risk Ledger
-
-**File**: `$DOCS_DIR/RISK_LEDGER.md`
-
-The Risk Ledger tracks cumulative agent risk across the dark factory phases. It survives `/clear` and `/pickup` because it lives on disk alongside PLAN.md.
-
-**Format**:
-```markdown
-# Risk Ledger
-Current Risk: 0%
-
-## Events
-| Timestamp | Agent | Event | Delta | Running Total | Description |
-|-----------|-------|-------|-------|---------------|-------------|
-```
-
-**Risk events**:
-
-| Event | Delta | When |
-|-------|-------|------|
-| Revert | +15% | Agent reverted a previous change |
-| Wide fix (>3 files) | +5% | Single fix touched more than 3 files |
-| Out-of-scope touch | +20% | Fix touched files outside declared scope |
-| Fix spiral (after 15th fix) | +1% per fix | Diminishing returns / possible thrashing |
-| Test failure after green | +10% | Tests that were passing started failing |
-
-**Threshold**: If `Current Risk > 20%`, the orchestrator MUST stop the dark factory and escalate to the user before dispatching further code-architect agents.
-
-**Updates**: `code-architect` agents append events to the ledger after any revert, wide fix, or out-of-scope touch. The orchestrator reads Current Risk before each fix cycle.
 
 ---
 

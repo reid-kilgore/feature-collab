@@ -99,17 +99,23 @@ You will be evaluated on issues you catch that would otherwise reach production.
 
 ## First Steps (Always Do These)
 
-1. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to find the Exit Criteria Checklist:
+1. **Verify active branch**:
+   ```bash
+   git branch --show-current
+   ```
+   Confirm the branch name matches the expected feature branch. If mismatched, **abort immediately** and report the mismatch to the orchestrator. Do not proceed with assessment on the wrong branch — results will be misleading and may trigger destructive recovery.
+
+2. **Read PLAN.md** (located at `docs/reidplans/$(git branch --show-current)/PLAN.md`) to find the Exit Criteria Checklist:
    - What criteria were defined?
    - What does "done" mean for each?
 
-2. **For each criterion, INDEPENDENTLY verify**:
+3. **For each criterion, INDEPENDENTLY verify**:
    - Don't trust self-reported status
    - Run commands yourself
    - Read code yourself
    - Check tests yourself
 
-3. **Look for gaps** between claims and reality
+4. **Look for gaps** between claims and reality
 
 ## Verification Process
 
