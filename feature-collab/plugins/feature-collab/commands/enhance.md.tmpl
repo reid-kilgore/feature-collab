@@ -28,7 +28,7 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 
 1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
-3. **Execute mandatory skill phases even when trivial.** demo-builder for a simple enhancement takes 30 seconds — don't skip it because the feature is "too simple."
+3. **Execute mandatory skill phases even when trivial.** The api-walkthrough phase is conditional on API changes — if no API changed, ask the user before skipping it.
 4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
 
 ### Pre-PR Divergence Check
@@ -41,15 +41,13 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 |--------|---------|
 | "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
 | "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
-| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
+| "This feature doesn't need an API walkthrough" | api-walkthrough only runs when API endpoints change — if they did, run it. |
 | "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
-| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
-
 ### Red Flags — STOP
 
 - Reading code directly instead of delegating
@@ -145,7 +143,7 @@ Initial request: $ARGUMENTS
 
 9. Launch `test-runner` agent to confirm RED state (tests should fail).
 
-10. Launch `demo-builder` agent to initialize proof doc and capture failing state.
+10. If APIs are being changed, initialize `$DOCS_DIR/DEMO.md` with endpoint inventory and `$DOCS_DIR/bruno/` directory for API collection files.
 
 11. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
 
@@ -180,7 +178,7 @@ Initial request: $ARGUMENTS
    - Verify implementation stays within scope
    - Flag if approaching 200-line limit
 
-5. **MANDATORY demo capture**: After tests go green, launch `demo-builder` agent to capture proof-of-work — test output, curl results, key code walkthroughs. Do NOT defer all demo work to Phase 5. Captures during implementation are more valuable than reconstructed captures.
+5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 5.
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
@@ -193,7 +191,7 @@ Initial request: $ARGUMENTS
 Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -283,13 +281,13 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Add final captures
+2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
 
-3. If web enhancement, launch `browser-verifier` agent.
+   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
 
-4. Update PLAN.md:
+   If no API endpoints were changed (e.g., schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per Transparency Rule 5.
+
+3. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -300,24 +298,24 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **What was added**: [description]
 - **Tests**: All passing (N/N)
 - **Lines added**: [count] (within 200-line limit)
-- **Proof**: See DEMO.md
+- **Proof**: See DEMO.md (if API changes) or test output
 ```
 
-5. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
+4. **Downstream ticket updates**: After PR is ready, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
 
-6. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
+5. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-7. Prompt user:
-   > "Enhancement complete and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+6. Prompt user:
+   > "Enhancement complete and verified. See DEMO.md for API walkthrough (if API changed) or test output for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-8. {{RETRO_OFFER}}
+7. {{RETRO_OFFER}}
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Final status
 - CONTRACTS.md: Type definitions
-- DEMO.md: Proof of work
+- DEMO.md: API walkthrough + Bruno collection (if API changes)
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

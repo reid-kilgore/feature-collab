@@ -68,7 +68,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -77,7 +76,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 
 ## WIP Tracking
 
@@ -173,16 +172,14 @@ ANNOTATION GUIDE:
 
 6. Launch `test-runner` agent to confirm the test fails (TDD RED state).
 
-7. Launch `demo-builder` agent to initialize proof doc and capture failing state.
-
-9. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
+7. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
 
 ### Commit Planning Artifacts
 
 Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -190,7 +187,6 @@ git commit -m "docs: planning artifacts for $(git branch --show-current)"
 
 All state saved to disk:
 - PLAN.md: Issue, root cause, hotfix plan, scope
-- DEMO.md: Failing test capture
 
 **If your context feels heavy, `/clear` then `/pickup` to continue.**
 
@@ -219,7 +215,6 @@ All state saved to disk:
 3. Launch `test-runner` agent:
    - Reproduction test now passes
    - ALL existing tests still pass
-   - test-runner captures results to DEMO.md via showboat integration
 
 4. Cherry-pick to main:
    ```bash
@@ -246,7 +241,7 @@ All state saved to disk:
 
 ---
 
-## Phase 3: Demo
+## Phase 3: Wrap-up
 
 **Goal**: Present proof of fix and readiness to deploy.
 
@@ -255,14 +250,11 @@ All state saved to disk:
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Demo
+   **Current Phase**: Wrap-up
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - `uvx showboat verify DEMO.md`
-
-3. Update PLAN.md:
+2. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -275,7 +267,6 @@ All state saved to disk:
 - **Fix**: [one-line]
 - **Hotfix branch**: hotfix/[name] — tests passing
 - **Main branch**: cherry-pick applied — tests passing
-- **Proof**: See DEMO.md
 
 ## Deploy Readiness
 - [ ] Hotfix branch pushed
@@ -283,23 +274,22 @@ All state saved to disk:
 - [ ] Ready for deploy
 ```
 
-4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "hotfix complete — ready to deploy/merge"`
+3. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "hotfix complete — ready to deploy/merge"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-5. Prompt user:
-   > "Hotfix ready. Both hotfix branch and main have the fix with passing tests. See DEMO.md for proof. Run `mdannotate PLAN.md` to review. Push when ready:
+4. Prompt user:
+   > "Hotfix ready. Both hotfix branch and main have the fix with passing tests. Run `mdannotate PLAN.md` to review. Push when ready:
    > ```
    > git push origin hotfix/[name]
    > git push origin main
    > ```"
 
-6. Offer retrospective:
+5. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Hotfix details and deploy readiness
-- DEMO.md: Proof of fix on both branches
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

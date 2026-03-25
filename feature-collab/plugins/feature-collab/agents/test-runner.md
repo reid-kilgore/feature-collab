@@ -57,15 +57,6 @@ If you catch yourself thinking any of these, STOP and re-read the Verification G
 
 **All of these mean: Stop. Run the command. Read the output. Then report.**
 
-## Showboat Integration
-
-After each test run, capture results with showboat for the proof-of-work document:
-```bash
-uvx showboat exec DEMO.md bash "npm test"
-```
-
-If DEMO.md exists, always capture test results there in addition to updating the scorecard. If DEMO.md does not exist, skip showboat captures and just update the scorecard as normal.
-
 ## Test-Runner Authority
 
 **CRITICAL**: You are the SOLE AUTHORITY on test status.

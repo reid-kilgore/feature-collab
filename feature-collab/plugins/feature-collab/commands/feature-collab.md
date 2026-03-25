@@ -74,12 +74,9 @@ BEFORE transitioning between any phases:
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque", "never know about") | These are abstraction-boundary signals, not naming signals. Propose a separate encapsulating entity. Confirm: "So X should only interact with [outer] and never reference [inner]?" |
 | "CodeRabbit review isn't necessary for this change" | The workflow says it runs. Don't skip phases. |
 | "I'll combine these phases to save time" | Phases have different quality gates. Don't merge them. |
-| "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
-| "I'll capture demos at the end, after everything works" | Capture during implementation, not after. Deferred demos become fabricated demos. |
-| "Test-runner already captured showboat output" | Test-runner captures test results. Demo-builder captures the full proof-of-work with walkthroughs. Both are needed. |
+| "The user seems impatient, I'll skip the API demo" | If APIs changed, Bruno collection is required proof. If no APIs changed, demo is legitimately skippable. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
-| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 
 ### Red Flags — STOP
 
@@ -121,7 +118,7 @@ BEFORE transitioning between any phases:
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
 - **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
-- **Phase 9 is proof**: Showboat + rodney demo as proof of work
+- **Phase 9 is conditional**: Bruno API collection if endpoints changed, otherwise skip
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
 ## Document Paths
@@ -250,9 +247,6 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 - Max tool calls this session: 100
 - Checkpoint trigger: 50 tool calls or phase boundary
 ```
-
-4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
-
 
 6. **WIP**: Detect and activate wip item:
    ```bash
@@ -416,13 +410,12 @@ ANNOTATION GUIDE:
 ### Should Have
 - [ ] Test coverage > 80%
 - [ ] No TODO comments without tickets
-- [ ] Demo complete: all demo scenarios captured via showboat
+- [ ] API demo: Bruno collection generated (if API endpoints changed)
 
-## Demo Scenarios
-What should the proof-of-work demonstrate? Define these NOW — they become the spec for demo-builder in Phase 9.
+## API Demo (if applicable)
+If this feature adds or changes API endpoints, list them here. These become the spec for api-walkthrough in Phase 9.
 
-1. [Scenario name]: [What to show] — [Command or action to capture]
-2. [Scenario name]: [What to show] — [Command or action to capture]
+1. [Endpoint]: [Method] [Path] — [What it does]
 ```
 
 6. **CHECKPOINT**:
@@ -447,7 +440,6 @@ git commit -m "docs: planning artifacts for $(git branch --show-current)"
 All state has been saved to disk:
 - PLAN.md: Scope boundaries and exit criteria
 - SESSION_STATE.md: Current phase
-- DEMO.md: Initialized
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
 
@@ -747,7 +739,6 @@ All state has been saved to disk:
 3. After each implementation batch, run `test-runner` agent:
    - Updates scorecard
    - Reports pass/fail status
-   - Captures results with showboat: `uvx showboat exec DEMO.md bash "npm test"`
    - **Test-runner is authoritative** - do not dispute its findings
 
 4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
@@ -755,21 +746,14 @@ All state has been saved to disk:
 5. **Scorecard-driven iteration**:
    ```
    Loop until scorecard all green:
-     1. test-runner reports status (captures to DEMO.md via showboat)
+     1. test-runner reports status
      2. Identify failing tests
      3. Delegate fix to code-architect
-     5. test-runner verifies (captures to DEMO.md via showboat)
+     5. test-runner verifies
      6. scope-guardian checks for drift (every 2-3 cycles)
    ```
 
-6. **MANDATORY demo capture during dark factory**: After the FIRST green test run and after the FINAL green test run, launch `demo-builder` agent to capture proof-of-work:
-   - Test suite output (via `showboat exec`)
-   - Curl test results (via `showboat exec`)
-   - Key code walkthroughs showing implementation (via `showboat exec` with sed/grep)
-
-   Do NOT defer all demo work to Phase 9. Captures during implementation are more valuable than reconstructed captures after the fact. Phase 9 adds final polish and verification, it should not be building the demo from scratch.
-
-7. **CRITICAL: Test-Runner Authority**
+6. **CRITICAL: Test-Runner Authority**
    - Main thread MUST NOT claim tests pass without test-runner verification
    - Main thread MUST NOT skip curl tests
    - Main thread MUST NOT override test-runner findings
@@ -860,7 +844,7 @@ All state has been saved to disk:
 4. **If issues found**:
    - Fix them automatically via `code-architect`
    - Re-run `code-security` to verify fixes
-   - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
+   - Launch `test-runner` to ensure no regressions
 
 5. **WIP**: `wip note <item> "Phase 7: Security review clear"`
 
@@ -891,7 +875,7 @@ All state has been saved to disk:
    - Independently verifies each criterion using the Verification Gate
    - Runs tests itself — does NOT trust test-runner's previous reports
    - Checks code matches claims
-   - Verifies Demo Scenarios from Phase 1 are covered in DEMO.md
+   - Verifies API endpoints listed in Phase 1 have Bruno files (if applicable)
    - Returns READY or NOT READY verdict
 
 4. **If NOT READY**:
@@ -929,9 +913,7 @@ All state has been saved to disk:
 
 ## Phase 9: Demo & Documentation
 
-**Goal**: Build proof-of-work, finalize documents, prepare for PR
-
-**This phase returns to interactive mode — user reviews the proof.**
+**Goal**: Generate API demo artifacts (if applicable), finalize documents, prepare for PR
 
 **Actions**:
 
@@ -939,22 +921,19 @@ All state has been saved to disk:
    ```markdown
    ## Status
    **Current Phase**: Demo & Documentation
-   **Waiting For**: Proof generation
+   **Waiting For**: Document finalization
    ```
 
-2. **API Demo (conditional):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
+2. **API Demo (conditional):** If this feature changed or added API endpoints (check the "API Demo" section in PLAN.md), launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent traces each endpoint through the code, generates:
+   - ASCII workflow diagrams
+   - Bruno `.bru` collection files pointed at `staging.passcom.co`
+   - DEMO.md with endpoint documentation
 
    Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
 
-3. Launch `demo-builder` agent:
-   - Run `uvx showboat verify DEMO.md` to re-run all captures and confirm they still pass
-   - Add final summary to DEMO.md
-   - Capture final test run, curl results, any key outputs
+   **If no API endpoints were changed** (UI-only, schema-only, internal refactor), skip the demo step entirely — no user confirmation needed.
 
-4. **If this is a web feature**, launch `browser-verifier` agent:
-   - Create rodney walkthrough script
-   - Run the walkthrough, capture screenshots
-   - Add screenshots to DEMO.md via `uvx showboat image`
+3. **If this is a web feature with UI changes**, launch `browser-verifier` agent to create rodney walkthrough and capture screenshots.
 
 5. Prune PLAN.md to final summary (<200 lines):
    - Keep: Status, Final Summary, key decisions
@@ -1056,7 +1035,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    ## Test plan
    - [ ] All tests passing (verified by test-runner)
-   - [ ] DEMO.md proof-of-work attached
+   - [ ] Bruno API collection (if API endpoints changed)
    - [ ] Exit criteria met (verified by criteria-assessor)
 
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -1158,4 +1137,4 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 | 6 | **Dark Factory** | CodeRabbit review + fix | Auto |
 | 7 | **Dark Factory** | None | Auto |
 | 8 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
-| 9 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |
+| 9 | Interactive | Final + API Demo (conditional) | Review Bruno collection (if APIs changed), `mdannotate PLAN.md` |

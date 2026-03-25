@@ -36,5 +36,5 @@ See `/pressure-test` skill for the full workflow. Summary:
 3. test-implementer (completeness = must not skip)
 4. criteria-assessor (adversarial = must not rubber-stamp)
 5. scope-guardian (discipline = must not let things slide)
-6. demo-builder (evidence = must not fabricate)
+6. api-walkthrough (Bruno collection = must not fabricate request shapes or skip endpoints)
 7. orchestrator (main workflow = must not skip phases)

@@ -32,8 +32,6 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
-| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
-
 ### Red Flags — STOP
 
 - Reading code directly instead of delegating
@@ -60,7 +58,7 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 
 - **Reproduce first**: Write a failing test BEFORE attempting any fix
 - **Minimal scope**: Fix the bug and nothing else — no refactoring, no "improvements"
-- **Proof of fix**: Showboat document proves the bug is fixed
+- **Proof of fix**: Passing tests prove the bug is fixed
 - **PLAN.md is source of truth**: Create/update at every phase
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
@@ -72,7 +70,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -81,7 +78,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 
 ## WIP Tracking
 
@@ -131,7 +128,7 @@ The orchestrator tracks workflow efficiency metrics for this session. These feed
 - `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
 - `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
 
-**Write metrics at workflow completion** (Phase 3 Demo, before PR handoff):
+**Write metrics at workflow completion** (Phase 3 Wrap-up, before PR handoff):
 
 ```bash
 mkdir -p ~/.feature-collab/metrics
@@ -212,18 +209,14 @@ ANNOTATION GUIDE:
 
 5. Launch `test-runner` agent to confirm the test fails (TDD RED state).
 
-6. Launch `demo-builder` agent to initialize proof doc:
-   - `showboat init DEMO.md "Bugfix: [bug title]"`
-   - Capture the failing test output
-
-7. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
+6. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
 
 ### Commit Planning Artifacts
 
 Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -231,7 +224,6 @@ git commit -m "docs: planning artifacts for $(git branch --show-current)"
 
 All state saved to disk:
 - PLAN.md: Bug description, root cause, scope
-- DEMO.md: Failing test capture
 
 **If your context feels heavy, `/clear` then `/pickup` to continue.**
 
@@ -262,7 +254,6 @@ All state saved to disk:
    - The reproduction test now passes
    - ALL existing tests still pass
    - Run curl tests if applicable
-   - test-runner captures results to DEMO.md via showboat integration
 
 4. Launch `scope-guardian` agent:
    - Verify the fix didn't change anything outside scope
@@ -281,7 +272,7 @@ All state saved to disk:
 
 ---
 
-## Phase 3: Demo
+## Phase 3: Wrap-up
 
 **Goal**: Present proof of fix to user.
 
@@ -290,17 +281,13 @@ All state saved to disk:
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Demo
+   **Current Phase**: Wrap-up
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Add final summary
+2. If this is a web bug, launch `browser-verifier` agent for visual confirmation.
 
-3. If this is a web bug, launch `browser-verifier` agent for visual confirmation.
-
-4. Update PLAN.md with final status:
+3. Update PLAN.md with final status:
 
 ```markdown
 ## Status
@@ -311,22 +298,20 @@ All state saved to disk:
 - **Root Cause**: [one-line summary]
 - **Fix**: [one-line summary]
 - **Tests**: All passing (N/N)
-- **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
+4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-6. Prompt user:
-   > "Bug fixed and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+5. Prompt user:
+   > "Bug fixed and verified. All tests passing. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-7. Offer retrospective:
+6. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Current status and fix details
-- DEMO.md: Proof of fix with captured outputs
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

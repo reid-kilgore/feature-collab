@@ -272,5 +272,5 @@ After closing loopholes, run ALL scenarios again (not just the failed ones) to e
 3. **test-implementer** — Completeness role, temptation to combine or skip test cases
 4. **criteria-assessor** — Adversarial role, temptation to rubber-stamp
 5. **scope-guardian** — Discipline role, temptation to allow "small" additions
-6. **demo-builder** — Evidence role, temptation to describe instead of capture
+6. **api-walkthrough** — Evidence role, temptation to fabricate Bruno files without tracing code
 7. **orchestrator** — Main workflow, temptation to skip phases or read code directly

@@ -105,12 +105,12 @@ The retroactive capture is a reconstruction, not a live proof-of-work. It captur
 
 ## Recommendations
 
-1. **Add demo-builder to the dark factory checklist explicitly**: The orchestrator's mental summary of dark factory was "implement, test, review, verify." The skill should surface demo capture in the phase summary table, not just in the detailed instructions.
+1. **Add api-walkthrough to the dark factory checklist explicitly**: The orchestrator's mental summary of dark factory was "implement, test, review, verify." The skill should surface API collection generation in the phase summary table, not just in the detailed instructions.
 
-2. **Make test-runner always capture via showboat**: The test-runner agent definition should include showboat capture as a default behavior, not rely on the orchestrator to include it in each prompt.
+2. **api-walkthrough is conditional on API changes**: Unlike the old showboat-based demo-builder (which was mandatory for every PR), api-walkthrough should be dispatched only when the feature introduces or modifies API endpoints. If a PR has no API surface changes, skipping api-walkthrough is correct behavior -- not a failure. The orchestrator should check for API changes before dispatching.
 
-3. **Criteria assessor should verify DEMO.md content**: Add a hard check -- `showboat verify DEMO.md` must pass, and the file must contain exec captures (not just an init header) for the exit criteria to pass.
+3. **Criteria assessor should verify Bruno collection completeness conditionally**: If the feature includes API endpoints, the exit criteria check should verify that a Bruno collection exists with files for every endpoint listed in PLAN.md's "API Demo" section, `bruno.json` present, and `environments/staging.bru` using `staging.passcom.co`. If the feature has no API endpoints, this criterion is N/A.
 
-4. **Add a "demo checkpoint" between test-green and code-review**: Insert an explicit phase gate: "tests green -> demo capture -> code review." This makes it structural rather than relying on the orchestrator remembering.
+4. **Add a "API collection checkpoint" after implementation when endpoints are present**: Insert an explicit phase gate: "API endpoints added/changed -> api-walkthrough -> code review." This makes it structural rather than relying on the orchestrator remembering. For PRs without API changes, this gate is skipped.
 
-5. **Pressure test this scenario**: Add a test case to orchestrator scenarios where the orchestrator is given a dark factory run and must demonstrate demo-builder invocation at the correct trigger points.
+5. **Pressure test this scenario**: Add a test case to orchestrator scenarios where the orchestrator correctly dispatches api-walkthrough when endpoints change and correctly skips it when they do not. Both correct skip and correct dispatch should be tested -- the failure modes are symmetric.

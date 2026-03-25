@@ -66,7 +66,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -75,7 +74,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 
 ## WIP Tracking
 
@@ -187,12 +186,9 @@ ANNOTATION GUIDE:
    - **Do NOT auto-resolve** — get user confirmation
    - After resolution: `git add . && git cherry-pick --continue`
 
-5. Launch `demo-builder` agent to initialize proof doc and capture the release git log.
-
-6. Launch `test-runner` agent on the release branch:
+5. Launch `test-runner` agent on the release branch:
    - Full test suite must pass
    - All curl tests must pass
-   - test-runner captures results to DEMO.md via showboat integration
 
 7. If tests fail, work with user to resolve.
 
@@ -211,11 +207,7 @@ ANNOTATION GUIDE:
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Capture final git log showing included commits
-
-3. Update PLAN.md:
+2. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -227,7 +219,6 @@ ANNOTATION GUIDE:
 - **Commits included**: [count]
 - **Conflicts resolved**: [count]
 - **Tests**: All passing (N/N)
-- **Proof**: See DEMO.md
 
 ## Included Changes
 [Summary of what's in this release]
@@ -236,18 +227,17 @@ ANNOTATION GUIDE:
 [Any caveats or known issues with this release]
 ```
 
-4. **WIP**: `wip note <item> "release complete — ready to push/merge"`
+3. **WIP**: `wip note <item> "release complete — ready to push/merge"`
 
-5. Prompt user:
-   > "Release branch ready. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review. When ready, push with `git push origin [release-branch]`."
+4. Prompt user:
+   > "Release branch ready. All tests passing. Run `mdannotate PLAN.md` to annotate and review. When ready, push with `git push origin [release-branch]`."
 
-6. Offer retrospective:
+5. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Release details and status
-- DEMO.md: Proof with git log and test results
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

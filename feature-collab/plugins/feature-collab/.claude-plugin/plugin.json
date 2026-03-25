@@ -1,7 +1,7 @@
 {
   "name": "feature-collab",
   "version": "3.0.0",
-  "description": "Multi-shape collaborative development: features, bugfixes, enhancements, refactors, spikes, releases, and hotfixes with contract-first TDD, showboat proof-of-work, rodney browser verification, work graphs for parallel dispatch, Linear issue tracking, and systematic debugging",
+  "description": "Multi-shape collaborative development: features, bugfixes, enhancements, refactors, spikes, releases, and hotfixes with contract-first TDD, Bruno API demos, rodney browser verification, work graphs for parallel dispatch, Linear issue tracking, and systematic debugging",
   "author": {
     "name": "Reid"
   },
@@ -19,7 +19,7 @@
     "verification",
     "criticmarkup",
     "tdd",
-    "showboat",
+    "bruno",
     "rodney",
     "linear",
     "work-graph",

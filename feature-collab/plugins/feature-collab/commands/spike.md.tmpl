@@ -28,13 +28,12 @@ NO PRODUCTION CODE — SPIKES PRODUCE KNOWLEDGE, NOT FEATURES
 | "The prototype is clean enough to keep" | Prototypes go in spike-scratch/. Production code goes through /feature-collab. |
 | "I can quickly check the code myself" | Delegate to code-explorer. You orchestrate. |
 | "We've answered the question, no need for a report" | The report IS the deliverable. No report = no spike. |
-| "The demo doc isn't necessary for research" | DEMO.md with executable examples is the proof. Always. |
 
 ### Red Flags — STOP
 
 - Writing code outside spike-scratch/
 - Modifying production files
-- Skipping the report/DEMO.md
+- Skipping the report
 - Turning a spike into an implementation without switching skills
 
 {{MODEL_TIERING}}
@@ -42,9 +41,8 @@ NO PRODUCTION CODE — SPIKES PRODUCE KNOWLEDGE, NOT FEATURES
 ## Core Principles
 
 - **No production code**: Spikes produce knowledge, not features
-- **Executable examples**: Findings should be demonstrated with runnable code
+- **Findings + recommendations**: The PLAN.md report IS the deliverable
 - **Time-boxed**: Spikes have a clear question and stop when answered
-- **Showboat as deliverable**: The demo doc IS the deliverable
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
@@ -55,7 +53,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -64,7 +61,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 
 {{WIP_TRACKING}}
 
@@ -102,37 +99,37 @@ Initial request: $ARGUMENTS
 
 ## Scope
 - **Investigate**: [what to look at]
-- **Produce**: Report with executable examples
+- **Produce**: Report with findings and recommendations
 - **Do NOT**: Write production code, modify existing code
 
 ## Exit Criteria
 - [ ] Question answered with evidence
-- [ ] Executable examples in DEMO.md via showboat
 - [ ] Recommendations documented with trade-offs
 - [ ] No production code written (spike-scratch/ only)
 ```
 
-2. Launch `demo-builder` agent to initialize proof doc: `showboat init DEMO.md "Spike: [question]"`
-
-3. Launch 2-3 `code-explorer` agents in parallel:
+2. Launch 2-3 `code-explorer` agents in parallel:
    - Each explores a different angle of the question
    - Focus on finding patterns, constraints, and trade-offs
 
-4. For each finding, launch `demo-builder` agent to capture executable examples.
+### Commit Planning Artifacts
 
-{{COMMIT_PLANNING_ARTIFACTS}}
+Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
+
+```bash
+git add $DOCS_DIR/PLAN.md 2>/dev/null
+git commit -m "docs: planning artifacts for $(git branch --show-current)"
+```
 
 ### Context Checkpoint
 
 All state saved to disk:
-- PLAN.md: Question, hypotheses, scope
-- DEMO.md: Findings so far
+- PLAN.md: Question, hypotheses, scope, findings so far
 
 **If your context feels heavy, `/clear` then `/pickup` to continue.**
 
-5. If prototyping is needed, launch `code-architect` agent:
+3. If prototyping is needed, launch `code-architect` agent:
    - Work in a `spike-scratch/` directory, NOT in production code
-   - Then launch `demo-builder` to capture prototype outputs
 
 ---
 
@@ -153,7 +150,6 @@ All state saved to disk:
 
 ### [Finding 1 Title]
 [Description with evidence]
-- See DEMO.md section: [reference]
 
 ### [Finding 2 Title]
 [Description with evidence]
@@ -177,17 +173,13 @@ All state saved to disk:
 **Completed**: [date]
 ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all examples, confirm they still work)
-   - DEMO.md IS the deliverable — it should be comprehensive
-
-3. Clean up scratch files:
+2. Clean up scratch files:
    > "Spike scratch files are in `spike-scratch/`. Keep them for reference or delete with `rm -rf spike-scratch/`."
 
 4. **WIP**: `wip note <item> "spike complete — ready for PR/merge"`
 
 5. Prompt user:
-   > "Spike complete. See DEMO.md for executable findings and PLAN.md for recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+   > "Spike complete. See PLAN.md for findings and recommendations. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
 6. {{RETRO_OFFER}}
 
@@ -195,17 +187,17 @@ All state saved to disk:
 
 Spikes often lead to implementation. When the user wants to act on spike findings:
 
-1. **The spike's PLAN.md, DEMO.md, and findings become Phase 1 context** for `/feature-collab` or `/enhance`. The concept extraction and codebase research is already done — the next skill should consume it, not redo it.
+1. **The spike's PLAN.md findings and recommendations become Phase 1 context** for `/feature-collab` or `/enhance`. The concept extraction and codebase research is already done — the next skill should consume it, not redo it.
 
 2. Suggest the right next skill:
    > "This spike answered [question]. To implement, I'd suggest:
    > - `/enhance` if it's <200 lines and straightforward
    > - `/feature-collab` if it spans multiple components or is >200 lines
    >
-   > The spike findings (PLAN.md, DEMO.md) will carry forward as Phase 1 context — no research duplication."
+   > The spike findings (PLAN.md) will carry forward as Phase 1 context — no research duplication."
 
 3. When `/feature-collab` or `/enhance` starts after a spike, Phase 1 should:
-   - Read the spike's PLAN.md findings, DEMO.md evidence, and recommendations
+   - Read the spike's PLAN.md findings and recommendations
    - Skip redundant exploration — the spike already traced concepts through the codebase
    - Focus Phase 1 on scope locking and contracts, not re-exploration
    - Reference spike findings in the new PLAN.md's Codebase Context section

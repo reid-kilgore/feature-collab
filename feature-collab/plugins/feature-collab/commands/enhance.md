@@ -28,7 +28,7 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 
 1. **Never silently drop user-requested phases.** If the user's invocation includes activities the skill doesn't cover (e.g., mutation testing), say so: "enhance doesn't include mutation testing — should I add it?"
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
-3. **Execute mandatory skill phases even when trivial.** Don't skip phases because the feature is "too simple." If you believe a phase is genuinely inapplicable, see rule 5.
+3. **Execute mandatory skill phases even when trivial.** Don't skip phases because the feature is "too simple." The api-walkthrough phase is conditional on API changes — if no API changed, ask the user per rule 5 before skipping it.
 4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
 5. **Never skip phases without user permission.** If a phase seems inapplicable (e.g., test-gap-finder for a schema-only change), ask: "Phase [X] seems inapplicable because [reason] — skip it? (y/n)". Do not proceed past the phase until the user confirms. Silent phase-skipping is the #1 compliance violation across retros.
 
@@ -42,7 +42,7 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 |--------|---------|
 | "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
 | "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
-| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
+| "This feature doesn't need an API walkthrough" | api-walkthrough only runs when API endpoints change — if they did, run it. |
 | "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
@@ -55,7 +55,6 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "I'll include the full implementation for the deferred item in CONTRACTS.md" | Mark deferred items as stubs with a TODO, not full implementations. Over-scoping contracts leads to over-scoped plans. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
-| "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 | "I fixed the review comment" | After applying a review-feedback fix, re-read the full function and verify code *behavior* matches user intent before committing. Don't pattern-match feedback as a documentation issue when the user is pointing at a code branch. |
 | "Let me apply another incremental fix for this review comment" | When a reviewer says "I still see X" after your fix, STOP. Re-read the original feedback and the full diff — your mental model of the problem is wrong. Do not apply another incremental edit. |
 | "I'll commit the failing tests first for TDD RED" | If pre-commit hooks run the full test suite, intentionally-failing tests will block the commit. Write the tests, verify they fail locally, then implement before committing. Commit RED+GREEN together. |

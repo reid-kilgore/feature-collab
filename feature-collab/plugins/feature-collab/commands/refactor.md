@@ -54,8 +54,8 @@ ZERO BEHAVIOR CHANGES — IF A TEST FAILS, THE REFACTOR IS WRONG, NOT THE TEST
 ## Core Principles
 
 - **Behavior must not change**: All existing tests must pass before AND after
-- **Characterize first**: Snapshot current behavior before touching anything
-- **Proof via diff**: Showboat captures before/after to prove equivalence
+- **Characterize first**: Record baseline test results before touching anything
+- **Proof via tests**: Identical pass/fail counts before and after prove equivalence
 - **PLAN.md is source of truth**
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
@@ -67,7 +67,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
 ```
 
 **At skill start**, resolve the doc directory:
@@ -76,7 +75,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`.
+All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 
 ## WIP Tracking
 
@@ -169,7 +168,7 @@ ANNOTATION GUIDE:
 ## Current State
 - **Test suite status**: [passing/failing count]
 - **Files to modify**: [list]
-- **Behavior snapshot**: See DEMO.md (before section)
+- **Behavior snapshot**: [passing test count before refactor]
 
 ## Scope
 
@@ -185,7 +184,7 @@ ANNOTATION GUIDE:
 ## Exit Criteria
 - [ ] ALL existing tests still pass (zero regressions)
 - [ ] Refactor goals achieved
-- [ ] No behavior changes (showboat before/after match)
+- [ ] No behavior changes (same test count passes before and after)
 - [ ] Code is cleaner/simpler by stated goals
 ```
 
@@ -194,11 +193,9 @@ ANNOTATION GUIDE:
    - Existing test coverage
    - Risk areas
 
-3. Launch `test-runner` agent to run ALL existing tests and record baseline.
+3. Launch `test-runner` agent to run ALL existing tests and record baseline count in PLAN.md.
 
-4. Launch `demo-builder` agent to initialize proof doc and capture baseline test results.
-
-5. **WIP**: `wip note <item> "Phase 1: Behavior characterized, baseline recorded"`
+4. **WIP**: `wip note <item> "Phase 1: Behavior characterized, baseline recorded"`
 
 6. **CHECKPOINT**:
    > "Current behavior characterized. All tests passing (N/N). Review [Refactor Goals](#refactor-goals) and [Scope](#scope). Say **'refactor'** to proceed."
@@ -234,9 +231,7 @@ ANNOTATION GUIDE:
    - Re-run `test-runner`
    - **Escalation**: After 5 cycles, escalate to user
 
-5. test-runner captures after-refactor results to DEMO.md via showboat integration.
-
-6. Launch `scope-guardian` agent:
+5. Launch `scope-guardian` agent:
    - Verify no behavior changes leaked in
    - Verify no new features were added
 
@@ -253,7 +248,7 @@ ANNOTATION GUIDE:
 Dispatch a haiku agent to commit planning documents. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/DEMO.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -263,7 +258,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 ---
 
-## Phase 3: Demo
+## Phase 3: Wrap-up
 
 **Goal**: Present before/after proof to user.
 
@@ -272,15 +267,11 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Demo
+   **Current Phase**: Wrap-up
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures, confirm before/after match)
-   - Add summary showing behavior is unchanged
-
-3. Update PLAN.md:
+2. Update PLAN.md:
 
 ```markdown
 ## Status
@@ -290,24 +281,22 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 ## Refactor Summary
 - **Goals achieved**: [list]
 - **Tests**: All passing (N/N) — same count as before
-- **Behavior changed**: NO (verified by showboat before/after)
+- **Behavior changed**: NO (same test count passes before and after)
 - **Files modified**: [count]
-- **Proof**: See DEMO.md
 ```
 
-4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "refactor complete — PR ready for human review"`
+3. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "refactor complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-5. Prompt user:
-   > "Refactor complete. All tests still passing. See DEMO.md for before/after proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
+4. Prompt user:
+   > "Refactor complete. All tests still passing (same count as before). Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-6. Offer retrospective:
+5. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint
 
 All state has been saved to disk:
 - PLAN.md: Final status and refactor summary
-- DEMO.md: Before/after proof with test results
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

@@ -1,43 +1,43 @@
-# Demo-Builder Rationalization Analysis
+# api-walkthrough Rationalization Analysis
 
 ## How Each Anti-Rationalization Section Defends Against Specific Attacks
 
 ### The Iron Law
 
 ```
-EVERY DEMO CAPTURE MUST BE A FRESH EXECUTION -- NEVER TRANSCRIBE, NEVER REFERENCE OLD OUTPUT
+EVERY .bru FILE MUST REFLECT TRACED REQUEST SHAPES -- NEVER FABRICATE FIELD NAMES OR REQUEST BODIES
 ```
 
-**What it prevents**: Any attempt to manually write output into the demo document, regardless of how the agent justifies it.
+**What it prevents**: Any `.bru` file content that was not derived from reading the actual source -- controllers, validators, DTOs, Zod schemas, or type definitions.
 
 **Attack vectors it blocks**:
-- "I just saw this output" (Scenario 1)
-- "I can type it from memory" (Scenario 3)
-- "I'll summarize the test report" (Scenario 4)
+- "The endpoint name makes the shape obvious" (Scenario 1)
+- "I'll use generic request bodies" (Scenario 3)
+- "I'll infer from a related file I grepped" (Scenario 1 variant)
 
-**Weakness**: On its own, an absolute rule can be rationalized around ("I'm not transcribing, I'm summarizing" or "I'm not referencing old output, I redirected it fresh to a file"). The Iron Law needs the rationalizations table to close loopholes.
+**Weakness**: On its own, an absolute rule can be rationalized around ("I'm not fabricating, I found a related file" or "I traced the route even if I didn't read the validator"). The Iron Law needs the rationalizations table to close the "partial trace" loophole.
 
 ### Common Rationalizations Table
 
 | Rationalization | Scenario it blocks | How it blocks |
 |----------------|-------------------|---------------|
-| "I saw this output earlier, I'll just describe it" | 1, 4 | Pre-rebuts the agent's own excuse before it can form |
-| "The test-runner already verified this" | 4 | Distinguishes verification from demo (different purposes) |
-| "Showboat isn't working so I'll write it manually" | 1 | Closes the "tool failure" escape hatch |
-| "This is too trivial to capture" | 2 | Removes judgment about what "deserves" capture |
-| "I'll add this capture later" | 2 | Removes the "deferred compliance" escape |
+| "The endpoint name makes the shape obvious" | 1 | Pre-rebuts inference-from-name before the agent can form it as reasoning |
+| "I'll use generic request bodies" | 3 | Establishes that placeholder fields defeat the purpose of the collection |
+| "Staging URL doesn't matter, I'll use example.com" | 2 | Closes the "fill it in later" escape hatch for the required staging URL |
+| "This endpoint is trivial, no need for a .bru file" | 4 | Removes judgment about which endpoints "deserve" a file |
+| "The consumer will fill in real values anyway" | 3 | Removes the "someone else will fix it" escape |
 
-**Key mechanism**: The table works by **pre-computing the agent's excuses**. When the agent generates a rationalization under pressure, it matches against one already listed -- and the rebuttal is right there. This prevents the agent from treating its own rationalization as novel reasoning.
+**Key mechanism**: The table works by **pre-computing the agent's excuses**. When the agent generates a rationalization under pressure, it matches against one already listed -- and the rebuttal is right there. This prevents the agent from treating its own rationalization as novel reasoning that merits an exception.
 
-**Weakness**: Can only block rationalizations that are explicitly listed. A truly novel excuse might slip through. However, the 5 listed rationalizations cover the most common failure modes observed in practice.
+**Weakness**: Can only block rationalizations that are explicitly listed. A truly novel excuse might slip through. However, the listed rationalizations cover the most structurally common failure modes for code-tracing tasks.
 
 ### Red Flags -- STOP
 
-- Writing demo content without running showboat commands
-- Describing output instead of capturing it
-- Typing code snippets instead of using `showboat exec` with sed/grep/cat
-- Skipping Demo Scenarios listed in PLAN.md
-- Thinking "the tests prove it works, demo is optional"
+- Writing `.bru` field names without having read the corresponding validator, DTO, or Zod schema
+- Guessing request body shape from the endpoint path or HTTP method
+- Using `example.com` or any placeholder as the staging base URL
+- Skipping any endpoint listed in PLAN.md's "API Demo" section
+- Thinking "the consumer will correct field names, my job is just the structure"
 
 **Key mechanism**: This section works as a **behavioral checklist** rather than a rule or rebuttal. It describes what the agent is DOING (not what it's THINKING) and tells it to stop. This catches the agent even when it has already rationalized past the Iron Law and the table.
 
@@ -50,47 +50,47 @@ EVERY DEMO CAPTURE MUST BE A FRESH EXECUTION -- NEVER TRANSCRIBE, NEVER REFERENC
 
 ## Rationalization Taxonomy
 
-Based on the four scenarios, baseline agent rationalizations fall into distinct categories:
+Based on the four scenarios, baseline agent rationalizations for Bruno generation fall into distinct categories:
 
-### 1. Mechanism Laundering (Scenario 1)
+### 1. Partial Trace Laundering (Scenario 1)
 
-**Pattern**: "I'm not violating the rule because I used a different mechanism that achieves the same prohibited outcome."
+**Pattern**: "I did some code reading, therefore I traced the code."
 
-**Example**: Redirecting output to a file and then using `showboat note` to include it. The output is "technically captured" but not via showboat exec, defeating the verifiability guarantee.
+**Example**: Grepping for a keyword and finding one related file, then inferring remaining fields from domain knowledge. The agent cites the grep as evidence that it traced -- but the actual field names came from inference, not from the validator.
 
-**Why it's dangerous**: The agent follows the LETTER of avoiding manual transcription while violating the SPIRIT. The demo document will contain output that `showboat verify` cannot re-execute.
+**Why it's dangerous**: The agent follows the LETTER of "look at the code" while violating the SPIRIT. The resulting `.bru` file will contain a mix of real and fabricated fields, which is worse than a clearly-labeled placeholder: it looks authoritative but is wrong.
 
-**Defense needed**: The Iron Law's "if showboat didn't capture it, it's not in the demo" plus the rationalizations table entry for broken showboat.
+**Defense needed**: The Iron Law's "every field must come from traced source" plus the rationalization table entry for "The endpoint name makes the shape obvious."
 
-### 2. Judgment Override (Scenario 2)
+### 2. Scaffolding Deferral (Scenario 2)
 
-**Pattern**: "The rule says X but my judgment says some instances of X are unnecessary."
+**Pattern**: "The structural config can be filled in later; the real work is the endpoint files."
 
-**Example**: "Cover every scenario" but some scenarios are redundant/trivial. The agent substitutes its own judgment for the plan's specification.
+**Example**: Leaving `environments/staging.bru` with `example.com` because "the consumer knows their staging URL." The agent delivers the endpoint files -- which required real work -- and treats the collection metadata as a detail.
 
-**Why it's dangerous**: The agent is often RIGHT that scenarios overlap. But the demo-builder's role is execution, not scope judgment. Scope was set in Phase 1; the demo-builder captures, it doesn't curate.
+**Why it's dangerous**: A Bruno collection without the correct environment file cannot be imported and run against the real staging environment. The endpoint files are useless without the scaffolding. The partial delivery looks complete but is not functional.
 
-**Defense needed**: The "too trivial to capture" rebuttal plus the explicit red flag against skipping listed scenarios.
+**Defense needed**: The explicit staging URL (`staging.passcom.co`) must be stated in the rationalization rebuttal, not just in the main instructions. A single-sentence requirement is easy to defer; a named rationalization with a specific URL is not.
 
-### 3. Role Confusion (Scenario 4)
+### 3. Placeholder Pragmatism (Scenario 3)
 
-**Pattern**: "Another role already did this work, so I don't need to redo it."
+**Pattern**: "The consumer is the expert on exact values; my job is the structure."
 
-**Example**: "The test-runner already verified this, so the demo can reference that verification." The agent conflates verification (did it work?) with demonstration (prove it works).
+**Example**: Writing `{ "field1": "value1", "field2": "value2" }` or guessing field names from the route. The agent frames this as "structural scaffolding" and expects the caller to fill in real names.
 
-**Why it's dangerous**: It produces demos that are dependent on other artifacts rather than standing alone as proof-of-work. If the test report is lost, the demo proves nothing.
+**Why it's dangerous**: It produces a `.bru` file that cannot be used to call the API. The entire purpose of the Bruno collection is to enable someone to run real requests without code archaeology. A file with placeholder fields requires the consumer to do exactly that archaeology -- defeating the value of the agent's work.
 
-**Defense needed**: The explicit "Verification and demo are different" rebuttal that establishes the demo's independent purpose.
+**Defense needed**: The explicit statement that a fabricated request body defeats the purpose of the collection. The agent needs to understand WHY tracing matters (the collection must be runnable), not just THAT it's required.
 
-### 4. Aesthetic Preference (Scenario 3)
+### 4. Judgment Override (Scenario 4)
 
-**Pattern**: "The correct method produces uglier output than doing it manually."
+**Pattern**: "The rule says cover all endpoints, but my judgment says this one is too trivial / too complex."
 
-**Example**: sed output vs. nicely formatted code with syntax highlighting markers.
+**Example**: Skipping `GET /health` as trivial or skipping `DELETE /api/sessions/:id` as requiring too much auth setup. The agent is often right that these are edge cases -- but the api-walkthrough role is execution, not scope judgment.
 
-**Why it's dangerous**: It's the weakest rationalization -- purely cosmetic. The baseline agent usually resists this one because the Critical Rule section is already strong.
+**Why it's dangerous**: The agent is often correct that a health check is less interesting than a business endpoint. But completeness is what makes the collection useful. Partial collections require the consumer to determine which endpoints are missing and add them -- again defeating the purpose.
 
-**Defense needed**: The Critical Rule section alone is sufficient. The Red Flags section provides redundant coverage.
+**Defense needed**: The "This endpoint is trivial, no need for a .bru file" rebuttal plus the explicit red flag against skipping PLAN.md-listed endpoints.
 
 ---
 
@@ -98,18 +98,18 @@ Based on the four scenarios, baseline agent rationalizations fall into distinct 
 
 ### What the anti-rationalization sections achieve
 
-1. **Eliminate the "reasonable middle ground"**: The most dangerous failure mode is Option C -- the partial violation that feels responsible. The anti-rationalization sections make the binary clear: either showboat captured it, or it's not in the demo.
+1. **Close the "partial trace" loophole**: The most dangerous failure mode is Scenario 1 -- the agent does SOME code reading and believes it has satisfied the tracing requirement. The Iron Law's "every field from traced source" makes the binary clear: either the field name came from reading a validator/DTO/schema, or it did not belong in the file.
 
-2. **Pre-compute excuses**: By listing the exact rationalizations the agent will generate, the table prevents the agent from treating its own excuses as novel reasoning that merits exception.
+2. **Pre-compute excuses**: By listing the exact rationalizations the agent will generate, the table prevents the agent from treating its own excuses as novel reasoning. "The endpoint name makes the shape obvious" is not a valid inference -- it is a named rationalization with a named rebuttal.
 
-3. **Behavioral tripwires**: The Red Flags section catches the agent in the act of violating, even if it has rationalized past the principles.
+3. **Name the staging URL explicitly in the defense**: `staging.passcom.co` must appear in the anti-rationalization content, not just in the main instructions. A URL buried in instructions is deferrable; a URL that is the explicit rebuttal to a named rationalization is not.
 
-4. **Role clarity**: The "test-runner already verified this" rebuttal establishes that the demo-builder has an independent purpose, not subordinate to other roles.
+4. **Role clarity for coverage**: The "This endpoint is trivial" rebuttal establishes that the api-walkthrough agent generates files, it does not curate scope. Scope was set in PLAN.md; the agent's job is exhaustive execution of that scope.
 
 ### Remaining vulnerabilities
 
 1. **Novel rationalizations**: An excuse not in the table might slip through. Mitigation: the Iron Law is broad enough to catch most variants.
 
-2. **Cascading tool failure**: If showboat is genuinely broken AND the agent cannot escalate (no orchestrator available), it has no viable path. The prompt says "escalate" but doesn't define the escalation mechanism.
+2. **Ambiguous PLAN.md scope**: If the "API Demo" section in PLAN.md is unclear about which endpoints are in scope, the agent may legitimately not know what to cover. Mitigation: the orchestrator must ensure the PLAN.md section is explicit before dispatching api-walkthrough.
 
-3. **User override**: "Just write the output, I don't care about showboat" from the user would override the prompt. This is arguably correct behavior (user authority) but could produce fraudulent demos.
+3. **Schema not findable**: If the validator or DTO genuinely cannot be located in the codebase (deleted, renamed, or not yet written), the agent has no viable path to a correct `.bru` file. The prompt should specify: escalate to orchestrator rather than fabricate.

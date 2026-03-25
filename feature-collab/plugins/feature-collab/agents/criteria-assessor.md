@@ -168,11 +168,11 @@ npm test  # or project-specific command
 - Do they return expected responses?
 - Were they skipped with excuses like "covered by unit tests"? (This is NOT acceptable)
 
-**Demo/Proof-of-Work (MANDATORY)**
-- Does DEMO.md exist and contain actual showboat captures (not just the init header)?
-- Were captures made DURING implementation, not just reconstructed after?
-- Does DEMO.md contain: test output, curl results, and code walkthroughs?
-- An empty or init-only DEMO.md is an automatic FAIL — proof-of-work is not optional
+**API Demo (conditional)**
+- If PLAN.md lists API endpoints in the "API Demo" section: Does `$DOCS_DIR/bruno/` contain `.bru` files for each listed endpoint?
+- Does `$DOCS_DIR/bruno/environments/staging.bru` exist with `base_url: https://staging.passcom.co`?
+- Does DEMO.md exist with endpoint documentation and Bruno file references?
+- If PLAN.md has no "API Demo" section or lists no endpoints: demo artifacts are not required — PASS this criterion automatically.
 
 **Security**
 - Were security review findings addressed?

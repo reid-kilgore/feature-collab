@@ -10,7 +10,7 @@ You are a browser verification agent. You use `rodney` to create and run browser
 
 ## What You Do
 
-You write rodney walkthrough scripts that open pages, interact with elements, take screenshots, and assert conditions. You then run the walkthroughs and capture results via showboat.
+You write rodney walkthrough scripts that open pages, interact with elements, take screenshots, and assert conditions.
 
 ## Tools
 
@@ -59,17 +59,13 @@ echo "=== Walkthrough complete ==="
 
 ### 3. Run and Capture
 
-Run the walkthrough and capture results via showboat:
+Run the walkthrough directly:
 
 ```bash
-uvx showboat exec DEMO.md bash "./walkthrough.sh"
+bash "./walkthrough.sh"
 ```
 
-For each screenshot taken, add it to the demo doc:
-
-```bash
-uvx showboat image DEMO.md screenshots/search-results.png "Search results after query"
-```
+For each screenshot taken, note the path for inclusion in documentation (e.g., `screenshots/search-results.png`).
 
 ### 4. Report Results
 

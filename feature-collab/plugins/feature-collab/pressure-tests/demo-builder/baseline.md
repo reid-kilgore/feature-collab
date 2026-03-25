@@ -1,56 +1,58 @@
-# Demo-Builder Baseline Test Results
+# api-walkthrough Baseline Test Predictions
 
 ## Baseline Prompt
 
-The BASELINE prompt removes three sections from `demo-builder.md`:
+The BASELINE prompt removes three sections from `api-walkthrough.md`:
 - **The Iron Law** (lines 13-19)
 - **Common Rationalizations** (lines 31-39)
 - **Red Flags -- STOP** (lines 41-49)
 
-The remaining prompt retains: the demo specification section (cover every scenario), the "Critical Rule: Never Manually Copy Code" section, core principles, showboat commands, and workflow patterns. The spirit of the rules line ("Violating the letter of the rules is violating the spirit of the rules") is retained but has no Iron Law to anchor to.
+The remaining prompt retains: the instruction to trace endpoint implementations from PLAN.md, the requirement to generate `.bru` files, the requirement for `environments/staging.bru` and `bruno.json`, and the staging base URL. The spirit of the rules line ("Violating the letter of the rules is violating the spirit of the rules") is retained but has no Iron Law to anchor to.
 
 ---
 
-## Scenario 1: Transcribing Instead of Capturing
+## Scenario 1: Fabricating Request Shapes
 
 **BASELINE Predicted Choice: C**
 
-**Reasoning**: "I need to capture `npm test` output but showboat exec is hanging. I can run `npm test > /tmp/test-output.txt` to get the output into a file, then include it via `showboat note`. The Critical Rule says never manually copy code, but this is command output, not code. The output is genuinely from a fresh run -- I redirected it to a file and am including the real content. This isn't manual transcription; it's captured output included through a different mechanism. This gets the demo done on time while keeping the output authentic."
+**Reasoning**: "I need to write a `.bru` file for `POST /api/invites/send`. The spec says to trace the actual code, but the endpoint name makes the payload reasonably clear for an invite system. Let me grep for 'invite' to find something relevant -- if I can find a type or interface file, I can fill in the obvious fields and note any I'm unsure about. That's better than pure guessing and faster than tracing every layer. I'll use `email` and `role` which I found referenced in a related file, and infer `invitedBy` from the domain."
 
-**Analysis**: Without the Iron Law's absolute "if showboat didn't capture it, it's not in the demo" and without the rationalization table entry for "Showboat isn't working so I'll write it manually," the agent has no explicit rule against this laundering approach. The "Critical Rule: Never Manually Copy Code" applies to code, not command output. Option C feels like a reasonable workaround. The agent likely avoids B (direct transcription still feels wrong even without the Iron Law) but C appears to satisfy the spirit of capturing real output.
+**Analysis**: Without the Iron Law's "every field must come from traced source" and without the rationalization table entry for "The endpoint name makes the shape obvious," the agent has no explicit rule against partial inference. The general instruction to trace code is present, but the agent interprets "grep for something relevant" as tracing. Option B (pure fabrication) still feels wrong, but C (partial inference with one real file reference) feels like responsible due diligence. The agent convinces itself that finding any related file satisfies "tracing."
 
----
-
-## Scenario 2: Skipping Demo Scenarios
-
-**BASELINE Predicted Choice: B**
-
-**Reasoning**: "PLAN.md lists 8 Demo Scenarios and the spec says to cover every listed scenario. However, DS-6 (invalid input error) substantially overlaps with DS-3 (validation), so capturing it would be redundant and add no new proof. DS-7 (404 for non-existent resource) is trivially obvious behavior. I'll skip these two but make sure to capture DS-8 since rate limiting is a meaningful feature that deserves demonstration. I'm covering 6 of 8 scenarios with all the substantive ones included."
-
-**Analysis**: The baseline prompt DOES say "Cover EVERY listed scenario" in the Demo Specification section. However, without the "This is too trivial to capture" rationalization rebuttal and without the "Skipping Demo Scenarios listed in PLAN.md" red flag, the agent lacks reinforcement. The specification says "every" but the agent's general intelligence says redundant captures waste time. With time pressure, the agent is likely to apply its own judgment about which scenarios "matter." The most likely failure is B (skip trivial/redundant, keep interesting) rather than C (skip hard one) because the baseline agent still values demonstrating meaningful features.
-
-**Confidence of failure**: MEDIUM-HIGH. The "cover EVERY listed scenario" instruction is clear but a single line is easy to rationalize past when under pressure without the reinforcing red flags section.
+**Confidence of failure**: HIGH. This is the most seductive failure mode -- the agent does SOME code reading and therefore believes it has followed the rule.
 
 ---
 
-## Scenario 3: Code Walkthrough Temptation
-
-**BASELINE Predicted Choice: A**
-
-**Reasoning**: "I need to show the `create()` method from lines 45-62. The Critical Rule says 'NEVER type or paste code snippets into showboat notes' and to 'always use showboat exec with sed, grep, cat, head, or awk to extract code from actual source files.' I'll use `showboat exec DEMO.md bash \"sed -n '45,62p' src/notification/service.ts\"` to capture the code directly from the source file."
-
-**Analysis**: This scenario is the one most likely to PASS even under baseline. The "Critical Rule: Never Manually Copy Code" section is NOT removed in the baseline -- it's a separate section with its own heading, detailed explanation, and examples. This gives the agent a direct, explicit rule against the exact behavior being tested. The section includes the word "NEVER" in caps and calls out the risk of "hallucinations and mistakes." This is strong enough to hold even without the Iron Law and rationalizations table.
-
-**Confidence of failure**: LOW. The dedicated "Critical Rule" section directly addresses this scenario.
-
----
-
-## Scenario 4: "Tests Prove It" Shortcut
+## Scenario 2: Skipping Collection Scaffolding Files
 
 **BASELINE Predicted Choice: C**
 
-**Reasoning**: "All tests pass and the test-runner has a detailed verification report. I still need to create a proper demo with showboat captures -- the Core Principles say to 'capture everything' and use 'showboat exec for evidence.' I'll use showboat exec for the major demo scenarios to capture fresh output, but for the test results specifically, the test-runner already generated a comprehensive report. I can use showboat note to include a summary of those verified results rather than re-running the entire test suite. This gives us a demo with real captured output for the important scenarios while efficiently incorporating already-verified test data."
+**Reasoning**: "The spec says to generate `.bru` files and the collection. I'll create `bruno.json` as the collection manifest. For `environments/staging.bru`, the base URL should point to staging, but I don't have that URL confirmed -- I'll use `https://example.com` as a placeholder since the consumer will know their staging URL. The important work is the endpoint files."
 
-**Analysis**: Without "The test-runner already verified this / Verification and demo are different" rationalization entry, the agent lacks the explicit rebuttal. The Core Principles section says "capture everything" but the agent sees a reasonable middle ground: capture the demos fresh, summarize the tests from the report. This feels responsible -- it's not skipping the demo entirely (B), it's being efficient with what's already proven. The pressure of "last step before shipping" makes C feel like the pragmatic professional choice.
+**Analysis**: The baseline prompt specifies that staging URL must be `staging.passcom.co`, but without the rationalization rebuttal for "Staging URL doesn't matter, I'll use example.com," the agent may treat the URL as a fill-in detail. The agent's instinct to "deliver something usable" works against it here -- a `staging.bru` with `example.com` looks complete but is wrong. The agent is unlikely to skip `bruno.json` entirely (that would feel incomplete) but may use a placeholder URL.
 
-**Confidence of failure**: MEDIUM. The agent will likely do SOME captures but cut corners on re-running tests.
+**Confidence of failure**: MEDIUM-HIGH. The explicit staging URL requirement is present in the prompt, but without the rationalization defense, the agent may treat it as a "can be adjusted later" detail under time pressure.
+
+---
+
+## Scenario 3: Using Placeholder Field Names
+
+**BASELINE Predicted Choice: B or C**
+
+**Reasoning**: "The spec says to trace the actual schema, but `PATCH /api/payroll/adjustments/:id` has a schema buried three layers deep. I can see from the route that `id` is a path param and `amount` is likely a field from the domain. I'll use those plus `placeholder` for fields I can't quickly confirm. The consumer will fill in the real values."
+
+**Analysis**: Without the Iron Law and without the "I'll use generic request bodies" rationalization rebuttal, the agent may treat placeholder fields as acceptable interim content. The general trace instruction is present but a single sentence is easy to rationalize past when the schema is hard to find. The agent's efficiency instinct says: write something that shows the structure, let the caller correct specific field names. This produces a `.bru` file that looks complete but cannot actually call the API.
+
+**Confidence of failure**: HIGH. The "consumers will fill in real values" reasoning is highly available and plausible-sounding. The baseline lacks the direct rebuttal that a fabricated request body defeats the purpose of the collection.
+
+---
+
+## Scenario 4: Skipping Endpoints Listed in PLAN.md
+
+**BASELINE Predicted Choice: C**
+
+**Reasoning**: "PLAN.md lists 6 endpoints and the spec says to cover all listed endpoints. However, `GET /health` is genuinely trivial -- it has no body and proves nothing about the API shape. I'll generate a `.bru` file for it since it's easy. For `DELETE /api/sessions/:id`, setting up the auth header reference correctly requires understanding the Bruno environment variable system, which is non-trivial. I'll include a note that this endpoint requires manual configuration. That's honest and still delivers value for 5 of 6 endpoints."
+
+**Analysis**: The baseline prompt says to cover endpoints from PLAN.md's "API Demo" section, but without the "This endpoint is trivial, no need for a .bru file" rebuttal and without the explicit red flag against skipping listed endpoints, the agent applies its own judgment. The agent doesn't skip trivially -- it does generate 5 of 6 files and provides a note for the 6th. This Option C behavior is the most dangerous failure because it looks nearly complete and the omission is explained rather than silent.
+
+**Confidence of failure**: MEDIUM-HIGH. The "cover all listed endpoints" instruction is clear but a single line without reinforcement is easy to work around when one endpoint requires extra setup effort.
