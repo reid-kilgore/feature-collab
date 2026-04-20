@@ -13,8 +13,8 @@ ANNOTATION GUIDE:
 - [Exit Criteria](#exit-criteria)
 
 ## Status
-**Current Phase**: Contract Definition
-**Waiting For**: CONTRACTS.md + TEST_SPEC.md drafting
+**Current Phase**: Implementation (Dark Factory — Phase 3+4 collapsed per user)
+**Waiting For**: Autonomous — will report when tests green
 
 ## Scope Boundaries (LOCKED after Phase 1)
 
@@ -187,15 +187,8 @@ Add a compatibility layer in `wip` that normalizes status names on every write a
 | I | 5 | 2 | no | `_is_agent_managed_status` still present in wip; on-stop.sh still references IN_REVIEW/RETRO; still writes WAITING |
 | **Totals** | **106** | **18** | **0 files errored** | 9 files run, all exited with failures; none crashed before their case statements ran |
 
-### Dominant RED reasons
-- **`wip phase` subcommand does not exist** — B01–B13, D02–D04, D08–D10, D12, A05–A08, A06-remix, C06
-- **Legacy status aliases not normalized (ACTIVE/WAITING/BLOCKED/NEW/IN_REVIEW/RETRO/CLOSED)** — A01–A09, E01–E04, E06–E09, D01, D06, F01–F03, F08
-- **New canonical status names (NOT_STARTED/WORKING/NEEDS_INPUT) rejected by `wip status` validator** — A10–A12, F04–F06, D15
-- **Deprecation notice never emitted to stderr** — A01–A09, A15–A16, F01–F03, F08
-- **`_is_agent_managed_status` guard still present in wip script** — I01, I05
-- **on-stop.sh still emits legacy `WAITING`, does not unconditionally set `NEEDS_INPUT`** — I04, G01–G03, G07, G08, D07
-- **on-stop.sh still has IN_REVIEW/RETRO conditional logic** — I02, I03
-- **Help text missing canonical enum + `wip phase` doc; still shows `wip children` in main USAGE** — C02–C04, C06, C07, C08, D05
-- **on-prompt.sh context line does not normalize legacy status to canonical** — H01, H02, H03
-- **`wip list --json` schema drift: emits `notes`, `priority` keys beyond fixture baseline** — D14
+### Dominant RED reasons (historical — all resolved in impl)
+- `wip phase` missing; legacy aliases not normalized; canonical names rejected by validator; deprecation never emitted; `_is_agent_managed_status` guard still live; `on-stop.sh` emits legacy WAITING + still has IN_REVIEW/RETRO guard; help missing new enum and still promotes `wip children`; `on-prompt.sh` leaks legacy status into context line; `wip list --json` schema drift.
 
+### GREEN (post-impl)
+124/124 passing. Independent test-runner verified. Scope-guardian clean. Security review PASS (3 pre-existing findings filed as beads, not introduced here).

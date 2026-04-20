@@ -2,7 +2,7 @@
 # wip - work-in-progress tracker
 set -euo pipefail
 
-PANOP_DIR="$HOME/panop"
+PANOP_DIR="${PANOP_DIR:-$HOME/panop}"
 REMOTES_FILE="$PANOP_DIR/.wip-remotes"
 LINEAR_TOKEN_FILE="$HOME/.config/linear/token"
 LINEAR_CACHE="$PANOP_DIR/.wip-linear"
@@ -169,29 +169,33 @@ USAGE
   wip list [--json] [--all]                   List active items
   wip get <item>                              Show item as JSON
   wip status <item> <status>                  Set item status
+  wip phase <item> [text]                     Get or set item phase string (<=15 chars)
   wip add-branch <item> <branch>              Add a branch (starts ACTIVE)
   wip branch-status <item> <branch> <status>  Set a branch's status
   wip set <item> <key> <value>                Set an arbitrary field
   wip note <item> <text>                      Append a timestamped note
   wip notify <item> [text]                    Send alert for item (uses branch name + optional text)
   wip pull [alias]                             Sync items from remote hosts
+  wip start --linear <id> [slug]              Start work from a Linear issue (tmux + worktree + PLAN.md)
+  wip start <slug>                            Start work without Linear (tmux + worktree + PLAN.md)
   wip pull-linear                             Sync Linear issues assigned to you
-  wip triage-score <file>                  Score triage predictions against outcomes
+  wip triage-score <file>                     Score triage predictions against outcomes
   wip help                                    Show this message
 
 ITEM STATUSES
-  NEW        Just created
-  ACTIVE     Being worked on (set by hook on user prompt)
-  BLOCKED    Waiting on something
-  WAITING    Claude finished, needs user input (set by hook on stop)
-  IN_REVIEW  PR up, CI green, CodeRabbit handled (set by agent)
-  RETRO      Session retrospective in progress (set by agent)
-  DONE       Finished
-  CLOSED     Abandoned / not needed
+  NOT_STARTED  Just created, not yet worked on
+  WORKING      Actively being worked on
+  NEEDS_INPUT  Waiting for user input or blocked
+  DONE         Finished
 
-AGENT-MANAGED STATUSES
-  IN_REVIEW and RETRO are set by agents, not hooks.
-  Hooks will NOT overwrite these with ACTIVE or WAITING.
+DEPRECATED ALIASES (accepted on input; canonical value stored)
+  NEW       -> NOT_STARTED
+  ACTIVE    -> WORKING
+  BLOCKED   -> NEEDS_INPUT
+  WAITING   -> NEEDS_INPUT
+  IN_REVIEW -> WORKING  (also sets phase="Review" if phase unset)
+  RETRO     -> WORKING  (also sets phase="Retro" if phase unset)
+  CLOSED    -> DONE
 
 BRANCH STATUSES
   ACTIVE    In development
@@ -200,20 +204,41 @@ BRANCH STATUSES
 
 EXAMPLES
   wip get rk-0228-auth-fix              # lookup by branch name
-  wip status rk-0227-auth ACTIVE        # set item status
+  wip status rk-0227-auth WORKING       # set item status
+  wip phase rk-0227-auth "Phase 2: Impl"  # set phase string
+  wip phase rk-0227-auth               # read current phase
   wip add-branch rk-0227-auth rk-0228-auth-fix
   wip branch-status rk-0227-auth rk-0228-auth-fix CLOSED
   wip note rk-0227-auth "Switched to JWT approach"
   wip set rk-0227-auth priority high
-  wip list --json | jq '.[] | select(.status=="BLOCKED")'
+  wip list --json | jq '.[] | select(.status=="NEEDS_INPUT")'
   wip pull                                    # sync all remotes
   wip pull hourly-dev                         # sync one remote
+
+ADVANCED
+  wip children <item> [--json]   List child items of a parent item
 
 REMOTES
   Configure at ~/panop/.wip-remotes (one per line):
     hourly-dev:/home/ssm-user/panop
   Remote items show [R] prefix and are read-only locally.
 EOF
+}
+
+_normalize_status_read() {
+  # Map legacy status values to canonical for display (read path — does NOT write)
+  local st="$1"
+  case "$st" in
+    NEW)       echo "NOT_STARTED" ;;
+    ACTIVE)    echo "WORKING" ;;
+    BLOCKED)   echo "NEEDS_INPUT" ;;
+    WAITING)   echo "NEEDS_INPUT" ;;
+    IN_REVIEW) echo "WORKING" ;;
+    RETRO)     echo "WORKING" ;;
+    CLOSED)    echo "DONE" ;;
+    "")        echo "NOT_STARTED" ;;
+    *)         echo "$st" ;;
+  esac
 }
 
 cmd_list() {
@@ -233,17 +258,20 @@ cmd_list() {
       [[ -z "$line" ]] && continue
       local loc
       loc=$(echo "$line" | jq -r '.loc // empty')
-      local status
+      local raw_status canonical_status
       if [[ -z "$loc" ]]; then
-        status="BROKEN"
+        raw_status="BROKEN"
+        canonical_status="BROKEN"
       else
-        status=$(echo "$line" | jq -r '.status // "UNKNOWN"')
+        raw_status=$(echo "$line" | jq -r '.status // ""')
+        canonical_status=$(_normalize_status_read "$raw_status")
       fi
-      if [[ "$show_all" == false ]] && [[ "$status" == "CLOSED" || "$status" == "DONE" ]]; then
+      if [[ "$show_all" == false ]] && [[ "$canonical_status" == "DONE" ]]; then
         continue
       fi
+      # For JSON output, use canonical status but don't add extraneous keys
       local normalized
-      normalized=$(echo "$line" | jq "$_normalize_branches" | jq --arg repo "$repo" --arg st "$status" '. + {repo: (.remote_repo // $repo), status: $st}')
+      normalized=$(echo "$line" | jq "$_normalize_branches" | jq --arg repo "$repo" --arg st "$canonical_status" '. + {repo: (.remote_repo // $repo), status: $st}')
       results=$(echo "$results" | jq --argjson item "$normalized" '. + [$item]')
     done < "$workfile"
   done < <(_find_workfiles)
@@ -258,15 +286,19 @@ cmd_list() {
     return
   fi
 
-  printf '%-12s %-20s %-30s %s\n' "STATUS" "REPO" "NAME" "BRANCHES"
-  printf '%-12s %-20s %-30s %s\n' "------" "----" "----" "--------"
+  printf '%-24s %-20s %-30s %s\n' "STATUS" "REPO" "NAME" "BRANCHES"
+  printf '%-24s %-20s %-30s %s\n' "------" "----" "----" "--------"
   echo "$results" | jq -r '.[] | [
-    (if .source then "[R] " + (.status // "UNKNOWN") else .status // "UNKNOWN" end),
+    (
+      (if .source then "[R] " else "" end) +
+      (.status // "UNKNOWN") +
+      (if (.phase // "") != "" then " [" + .phase + "]" else "" end)
+    ),
     (if .source then .source + "/" + .repo else .repo end),
     .name,
     ([.branches[] | "\(.name)(\(.status))"] | join(", "))
-  ] | @tsv' | while IFS=$'\t' read -r status repo name branches; do
-    printf '%-12s %-20s %-30s %s\n' "$status" "$repo" "$name" "$branches"
+  ] | @tsv' | while IFS=$'\t' read -r status_col repo name branches; do
+    printf '%-24s %-20s %-30s %s\n' "$status_col" "$repo" "$name" "$branches"
   done
 }
 
@@ -281,14 +313,56 @@ cmd_get() {
 cmd_status() {
   local target="${1:?Usage: wip status <name> <status>}"
   local new_status="${2:?Usage: wip status <name> <status>}"
-  local valid="NEW ACTIVE BLOCKED WAITING IN_REVIEW RETRO DONE CLOSED"
-  if [[ ! " $valid " =~ " $new_status " ]]; then
-    echo "Error: status must be one of: $valid" >&2; return 1
+  local canonical_status
+  local phase_side_effect=""
+  # Canonical states (accepted directly, no deprecation)
+  local canonical_set="NOT_STARTED WORKING NEEDS_INPUT DONE"
+  # Legacy alias map
+  local is_legacy=false
+  case "$new_status" in
+    NOT_STARTED|WORKING|NEEDS_INPUT|DONE)
+      canonical_status="$new_status"
+      is_legacy=false
+      ;;
+    NEW)
+      canonical_status="NOT_STARTED"; is_legacy=true ;;
+    ACTIVE)
+      canonical_status="WORKING"; is_legacy=true ;;
+    BLOCKED|WAITING)
+      canonical_status="NEEDS_INPUT"; is_legacy=true ;;
+    IN_REVIEW)
+      canonical_status="WORKING"; is_legacy=true; phase_side_effect="Review" ;;
+    RETRO)
+      canonical_status="WORKING"; is_legacy=true; phase_side_effect="Retro" ;;
+    CLOSED)
+      canonical_status="DONE"; is_legacy=true ;;
+    *)
+      echo "wip: unknown status '$new_status'. Valid: NOT_STARTED, WORKING, NEEDS_INPUT, DONE" >&2
+      return 2
+      ;;
+  esac
+  # Emit one-line deprecation notice for legacy aliases (suppressible)
+  # Track if we've already emitted to avoid double-emitting for on-disk normalization
+  local _dep_emitted=false
+  if [[ "$is_legacy" == true ]] && [[ "${WIP_SILENT_DEPRECATION:-}" != "1" ]]; then
+    echo "wip: status '$new_status' is deprecated; use '$canonical_status'" >&2
+    _dep_emitted=true
   fi
   _resolve_item "$target"
-  # Remote items: DONE/CLOSED dismisses by deleting the local copy
+  # If writing a canonical status but on-disk status is legacy, emit one deprecation notice
+  # (once per invocation; skip if already emitted for the input alias)
+  if [[ "$_dep_emitted" == false ]] && [[ "${WIP_SILENT_DEPRECATION:-}" != "1" ]]; then
+    local _ondisk_status
+    _ondisk_status=$(echo "$_item" | jq -r '.status // ""')
+    case "$_ondisk_status" in
+      NEW|ACTIVE|BLOCKED|WAITING|IN_REVIEW|RETRO|CLOSED)
+        echo "wip: status '$_ondisk_status' is deprecated; use '$(_normalize_status_read "$_ondisk_status")'" >&2
+        ;;
+    esac
+  fi
+  # Remote items: DONE dismisses by deleting the local copy
   if _is_remote_item "$_item"; then
-    if [[ "$new_status" == "DONE" || "$new_status" == "CLOSED" ]]; then
+    if [[ "$canonical_status" == "DONE" ]]; then
       _lock_workfile "$_wf" || { echo "Error: could not acquire lock on $_wf" >&2; return 1; }
       local tmp rc=0
       tmp=$(mktemp) || { _unlock_workfile "$_wf"; return 1; }
@@ -307,7 +381,7 @@ cmd_status() {
   fi
   local loc
   loc=$(echo "$_item" | jq -r '.loc // empty')
-  if [[ -z "$loc" ]] && [[ "$new_status" == "DONE" || "$new_status" == "CLOSED" ]]; then
+  if [[ -z "$loc" ]] && [[ "$canonical_status" == "DONE" ]]; then
     _lock_workfile "$_wf" || { echo "Error: could not acquire lock on $_wf" >&2; return 1; }
     local tmp rc=0
     tmp=$(mktemp) || { _unlock_workfile "$_wf"; return 1; }
@@ -320,9 +394,56 @@ cmd_status() {
     return
   fi
   local updated
-  updated=$(echo "$_item" | jq --arg s "$new_status" '.status = $s')
+  updated=$(echo "$_item" | jq --arg s "$canonical_status" '.status = $s')
+  # Apply phase side-effect for IN_REVIEW/RETRO legacy aliases (only if phase not already set)
+  if [[ -n "$phase_side_effect" ]]; then
+    local existing_phase
+    existing_phase=$(echo "$updated" | jq -r '.phase // empty')
+    if [[ -z "$existing_phase" ]]; then
+      updated=$(echo "$updated" | jq --arg p "$phase_side_effect" '.phase = $p')
+    fi
+  fi
   _update_line "$_wf" "$_ln" "$updated"
-  echo "Updated $target status → $new_status"
+  echo "Updated $target status → $canonical_status"
+}
+
+cmd_phase() {
+  local target="${1:?Usage: wip phase <item> [text]}"
+  shift
+  # No text arg: read mode
+  if [[ $# -eq 0 ]]; then
+    _resolve_item "$target"
+    echo "$_item" | jq -r '.phase // empty'
+    return 0
+  fi
+  local text="$1"
+  # Empty string: clear the phase key
+  if [[ -z "$text" ]]; then
+    _resolve_item "$target"
+    _guard_remote || return 1
+    local updated
+    updated=$(echo "$_item" | jq 'del(.phase)')
+    _update_line "$_wf" "$_ln" "$updated"
+    return 0
+  fi
+  # Validate length as character count (not bytes)
+  # Use Python if available for Unicode char count, else fall back to wc -m with LC_ALL=en_US.UTF-8
+  local char_count
+  if command -v python3 &>/dev/null; then
+    char_count=$(python3 -c "import sys; print(len(sys.argv[1]))" "$text" 2>/dev/null) || char_count=${#text}
+  else
+    char_count=$(LC_ALL=en_US.UTF-8 printf '%s' "$text" | wc -m | tr -d ' ') || char_count=${#text}
+  fi
+  if [[ "$char_count" -gt 15 ]]; then
+    echo "wip: phase must be ≤15 chars (got $char_count)" >&2
+    return 2
+  fi
+  _resolve_item "$target"
+  _guard_remote || return 1
+  local updated
+  updated=$(echo "$_item" | jq --arg p "$text" '.phase = $p')
+  _update_line "$_wf" "$_ln" "$updated"
+  return 0
 }
 
 cmd_add_branch() {
@@ -395,6 +516,53 @@ cmd_note() {
   echo "Added note to $(echo "$_item" | jq -r .name)"
 }
 
+cmd_children() {
+  local target="${1:?Usage: wip children <parent-item> [--json]}"
+  shift
+  local use_json=false
+  for arg in "$@"; do
+    case "$arg" in
+      --json) use_json=true ;;
+    esac
+  done
+
+  # Resolve parent name (allow branch name too)
+  local parent_name
+  parent_name=$("$0" get "$target" 2>/dev/null | jq -r '.name // empty')
+  [[ -z "$parent_name" ]] && { echo "Error: '$target' not found" >&2; return 1; }
+
+  # Collect all items, filter by parent
+  local all_items
+  all_items=$("$0" list --json --all 2>/dev/null)
+  local children
+  children=$(echo "$all_items" | jq --arg p "$parent_name" '[.[] | select(.parent == $p)]')
+  local count
+  count=$(echo "$children" | jq 'length')
+
+  if [[ "$use_json" == true ]]; then
+    echo "$children" | jq .
+    return
+  fi
+
+  if [[ "$count" -eq 0 ]]; then
+    echo "No children for $parent_name"
+    return
+  fi
+
+  printf '%-12s %-40s %-20s %s\n' "STATUS" "NAME" "BRANCH" "LAST NOTE"
+  printf '%-12s %-40s %-20s %s\n' "------" "----" "------" "---------"
+  echo "$children" | jq -r '.[] | [
+    (.status // "UNKNOWN"),
+    .name,
+    ([.branches[] | select(.status == "ACTIVE") | .name] | first // "—"),
+    ((.notes // []) | last // "—" | ltrimstr("[") | sub("].*$"; "] ") + (split("] ") | .[1:] | join("] ") | .[0:50]))
+  ] | @tsv' | while IFS=$'\t' read -r status name branch note; do
+    printf '%-12s %-40s %-20s %s\n' "$status" "$name" "$branch" "$note"
+  done
+  echo ""
+  echo "($count children — $(echo "$children" | jq '[.[] | select(.status == "DONE")] | length') done, $(echo "$children" | jq '[.[] | select(.status == "ACTIVE" or .status == "WAITING" or .status == "IN_REVIEW")] | length') active)"
+}
+
 cmd_notify() {
   local target="${1:?Usage: wip notify <name> [text]}"
   shift
@@ -436,14 +604,6 @@ _status_rank() {
     ACTIVE)    echo 1 ;; IN_REVIEW) echo 2 ;; BLOCKED) echo 3 ;;
     WAITING)   echo 4 ;; RETRO)     echo 5 ;; NEW)     echo 6 ;;
     BROKEN)    echo 7 ;; *)         echo 9 ;;
-  esac
-}
-
-# Statuses set by agents that hooks should not overwrite
-_is_agent_managed_status() {
-  case "$1" in
-    IN_REVIEW|RETRO) return 0 ;;
-    *) return 1 ;;
   esac
 }
 
@@ -1060,7 +1220,20 @@ cmd__start_linear() {
   local title url description project labels parent_info
   title=$(echo "$issue" | jq -r '.title')
   url=$(echo "$issue" | jq -r '.url')
-  description=$(echo "$issue" | jq -r '.description // ""')
+  # Fetch fresh description from API (cache may be stale)
+  local token
+  token=$(cat "$LINEAR_TOKEN_FILE" 2>/dev/null | tr -d '[:space:]')
+  if [[ -n "$token" ]]; then
+    local api_desc
+    api_desc=$(curl -s -X POST https://api.linear.app/graphql \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $token" \
+      -d "{\"query\":\"{ searchIssues(term: \\\"$identifier\\\", first: 1) { nodes { identifier description } } }\"}" \
+      | jq -r ".data.searchIssues.nodes[] | select(.identifier == \"$identifier\") | .description // \"\"" 2>/dev/null)
+    description="${api_desc:-$(echo "$issue" | jq -r '.description // ""')}"
+  else
+    description=$(echo "$issue" | jq -r '.description // ""')
+  fi
   project=$(echo "$issue" | jq -r '.project // empty')
   labels=$(echo "$issue" | jq -r '.labels | join(", ")')
   parent_info=$(echo "$issue" | jq -r 'if .parent then "\(.parent.identifier): \(.parent.title)" else empty end')
@@ -2955,6 +3128,57 @@ cmd_triage_score() {
   echo "Total: $total  |  Correct: $correct  Wrong: $wrong  Pending: $pending  Accuracy: $accuracy"
 }
 
+# ── start ────────────────────────────────────────────────────────────────────
+
+cmd_start() {
+  local linear_id="" parent="" slug=""
+  # Parse flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --linear)  shift; linear_id="${1:?Usage: wip start --linear <id>}"; shift ;;
+      --parent)  shift; parent="${1:?Usage: wip start --parent <item>}"; shift ;;
+      *)         slug="$1"; shift ;;
+    esac
+  done
+
+  if [[ -n "$linear_id" ]]; then
+    cmd__start_linear "$linear_id" "$slug"
+    # Set parent after _start_linear creates the item
+    if [[ -n "$parent" ]]; then
+      local branch_for_parent="${slug:-}"
+      [[ -z "$branch_for_parent" ]] && {
+        local issue
+        issue=$(grep -h "\"identifier\":\"$linear_id\"" "$LINEAR_CACHE" "${LINEAR_CACHE}-all" 2>/dev/null | head -1)
+        local title
+        title=$(echo "$issue" | jq -r '.title')
+        branch_for_parent=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-40)
+      }
+      local full="rk-$(date +%m%d)-$branch_for_parent"
+      "$PANOP_DIR/wip" set "$full" parent "\"$parent\"" 2>/dev/null || true
+    fi
+  else
+    [[ -z "$slug" ]] && { echo "Usage: wip start [--linear <id>] [--parent <item>] <slug>" >&2; return 1; }
+    local full_branch="rk-$(date +%m%d)-$slug"
+    local hourly_dir="$LINEAR_HOURLY_DIR"
+    if [[ ! -d "$hourly_dir" ]]; then
+      echo "Error: $hourly_dir not found" >&2; return 1
+    fi
+    local worktree_dir="$hourly_dir/../$full_branch"
+    cat > /tmp/wip-gwt-launch.sh <<GWTEOF
+#!/bin/zsh
+cd "$hourly_dir" && gwt "$slug"
+cd "$worktree_dir" 2>/dev/null
+exec zsh
+GWTEOF
+    chmod +x /tmp/wip-gwt-launch.sh
+    tmux new-window -n "$slug" "zsh /tmp/wip-gwt-launch.sh"
+    echo "Started $full_branch in tmux window '$slug'"
+    if [[ -n "$parent" ]]; then
+      "$PANOP_DIR/wip" set "$full_branch" parent "\"$parent\"" 2>/dev/null || true
+    fi
+  fi
+}
+
 # ── dispatch ─────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -2962,12 +3186,15 @@ case "${1:-}" in
   list)               shift; cmd_list "$@" ;;
   get)                shift; cmd_get "$@" ;;
   status)             shift; cmd_status "$@" ;;
+  phase)              shift; cmd_phase "$@" ;;
   add-branch)         shift; cmd_add_branch "$@" ;;
   branch-status)      shift; cmd_branch_status "$@" ;;
   set)                shift; cmd_set "$@" ;;
   note)               shift; cmd_note "$@" ;;
+  children)           shift; cmd_children "$@" ;;
   notify)             shift; cmd_notify "$@" ;;
   pull)               shift; cmd_pull "$@" ;;
+  start)              shift; cmd_start "$@" ;;
   pull-linear)        cmd_pull_linear ;;
   _prompt_linear)     shift; cmd__prompt_linear "$@" ;;
   _start_linear)      shift; cmd__start_linear "$@" ;;
