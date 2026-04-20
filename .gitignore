@@ -16,3 +16,8 @@ web/dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
