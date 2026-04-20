@@ -13,8 +13,8 @@ ANNOTATION GUIDE:
 - [Exit Criteria](#exit-criteria)
 
 ## Status
-**Current Phase**: Discovery (drafting scope)
-**Waiting For**: User to `lock scope`
+**Current Phase**: Contract Definition
+**Waiting For**: CONTRACTS.md + TEST_SPEC.md drafting
 
 ## Scope Boundaries (LOCKED after Phase 1)
 
@@ -27,7 +27,9 @@ ANNOTATION GUIDE:
 - [ ] Interactive UI (fzf browser) renders new state + phase string
 - [ ] **Backwards-compat aliases** for one cycle: `ACTIVE`→WORKING, `WAITING`→NEEDS_INPUT, `BLOCKED`→NEEDS_INPUT, `NEW`→NOT_STARTED, `CLOSED`→DONE, `IN_REVIEW`→WORKING+phase="Review", `RETRO`→WORKING+phase="Retro". Accept both on input; emit deprecation notice to stderr.
 - [ ] Update `wip --help` text: new state enum; demote `wip children` to an "Advanced" section or strip from the main USAGE block
-- [ ] Update hooks `~/.claude/hooks/on-prompt.sh` and `~/.claude/hooks/on-stop.sh` to emit new state names, preserving the agent-managed-status guard (IN_REVIEW/RETRO equivalents stay protected — i.e., `WORKING`+phase∈{"Review","Retro"} is not overwritten to NEEDS_INPUT on stop)
+- [ ] Update hook `~/.claude/hooks/on-prompt.sh` to emit new state names.
+- [ ] Update hook `~/.claude/hooks/on-stop.sh` to set `NEEDS_INPUT` unconditionally (no phase-based or status-based guard).
+- [ ] **Remove** `_is_agent_managed_status()` (`wip:495–500`) — the concept is retired. Removing the guard means `IN_REVIEW`/`RETRO`-style work shows as `NEEDS_INPUT` once Claude stops, which is the desired signal.
 - [ ] Read-path compatibility: items stored with old statuses (`ACTIVE`, `WAITING`, etc.) continue to render correctly after upgrade — no migration required, since wip state is just a JSON field; old values map on read.
 
 ### Explicitly Out of Scope
@@ -41,14 +43,21 @@ ANNOTATION GUIDE:
 Tracked as beads; see `bd list` for live state. Initial set filed during scope lock.
 
 ### Scope Lock Status
-**Status**: UNLOCKED
-**Lock requires**: User confirmation
+**Status**: LOCKED (2026-04-20)
+**Decisions captured**:
+- `CLOSED` folds into `DONE` — one fewer concept.
+- **Protected-phase concept abandoned entirely.** Rationale from user: protected items repeatedly lured them into checking what turned out to be Claude autonomously working. The signal was noise. `on-stop.sh` now always sets `NEEDS_INPUT`; `_is_agent_managed_status()` is deleted.
 
 ## Overview
 
 The `wip` CLI currently exposes 8 item statuses (NEW / ACTIVE / BLOCKED / WAITING / IN_REVIEW / RETRO / DONE / CLOSED). In practice these conflate two orthogonal axes: *lifecycle state* (am I working on this?) and *current sub-phase* (review / retro / implementation). Nasqueron and feature-collab skills both feel this — Nasqueron can't render a consistent color cue per state, and skills embed phase info in freeform `wip note` prose instead of a queryable field.
 
 This PR collapses the 8 statuses into **4 lifecycle states** plus a separate **`phase` display string** (≤15 chars). The 4-state enum drives color/label; the phase string is the human-readable "what are we doing right now." Backwards-compat aliases let skills migrate incrementally without a flag day.
+
+## Decisions (pinned for implementers)
+- **Phase whitespace**: preserve exactly as written (no trim).
+- **on-stop.sh unconditional rule applies to all states**: including NOT_STARTED → NEEDS_INPUT. No exceptions; no guard.
+- **Unicode length**: `wip phase` counts characters, not bytes.
 
 ## Constraints
 
@@ -60,9 +69,9 @@ This PR collapses the 8 statuses into **4 lifecycle states** plus a separate **`
 ## Questions
 
 ### Immediate (Block Progress)
-- [ ] Q: Should `CLOSED` semantically survive as a distinct state (abandoned/not-done) or fold into `DONE`? **Proposal**: fold into DONE — one fewer concept, distinguish via a separate boolean `abandoned` field if ever needed. {==Need user decision before lock==}
-- [ ] Q: What's the canonical list of "protected phases" (hook won't overwrite)? **Proposal**: `Review`, `Retro`. Configurable via `wip set <item> protect_phase true`? Or a hardcoded allowlist in the hook? {==Need user decision before lock==}
-- [ ] Q: Deprecation notices on stderr — too noisy during migration? **Proposal**: emit once per invocation, only when an alias is actually used, include "deprecated: use WORKING" style hint.
+- [x] ~~CLOSED vs DONE~~ — **DECIDED**: fold CLOSED into DONE.
+- [x] ~~Protected-phase allowlist~~ — **DECIDED**: abandon the concept; no guard in `on-stop.sh`.
+- [ ] Q: Deprecation notices on stderr — too noisy during migration? **Proposal**: emit once per invocation, only when an alias is actually used, include "deprecated: use WORKING" style hint. (Non-blocking; default to proposal.)
 
 ### Open (Resolve Later)
 - [ ] Q: Should `wip phase <item>` auto-truncate past 15 chars, or reject? **Tentative**: reject with clear error; scripts can pre-truncate.
@@ -88,9 +97,9 @@ Consuming **SPIKE_FINDINGS.md** (carried from `rk-swiftui-cli-spike`) — explor
 - Agent-managed-status guard at `on-stop.sh:47–49` and `wip:495–500` (`_is_agent_managed_status()`).
 
 ### Risk register
-- **Phase-based hook guard is the subtle bit.** If we map `IN_REVIEW`→`WORKING`+phase="Review", the `on-stop.sh` guard has to inspect *phase*, not just status, to avoid demoting a PR-review item to NEEDS_INPUT every time Claude stops.
 - **Alias layer must handle BOTH write and read.** A user/hook/skill writing old name → map to new; reading old data on disk → map to new for rendering.
-- **Deprecation noise** could drown terminals if every skill/hook invocation prints to stderr.
+- **Deprecation noise** could drown terminals if every skill/hook invocation prints to stderr. Mitigation: `WIP_SILENT_DEPRECATION=1`, once-per-invocation emission.
+- **Removing the hook guard** means any item that was previously pinned to `IN_REVIEW` or `RETRO` by an agent will now flip to `NEEDS_INPUT` at the next Claude stop. User-facing effect is intentional — the old guard was misleading — but document in the PR so skills/autopilot that relied on it know they can stop fighting it.
 
 ### 3-sentence direction
 Add a compatibility layer in `wip` that normalizes status names on every write and render, then introduce the 4-state enum + `phase` field as the new source of truth. Update the two hooks to speak the new names and protect phase-based agent-managed work. Leave skills, Nasqueron, and data-at-rest alone — they continue to work via the alias layer until their own migrations land.
@@ -122,7 +131,7 @@ Add a compatibility layer in `wip` that normalizes status names on every write a
 - [ ] `wip list` (both human and `--json`) shows phase when set.
 - [ ] `wip get` shows phase when set.
 - [ ] Existing `~/panop/*/work.txt` items with `status: "ACTIVE"` render as WORKING in list without file modification.
-- [ ] `on-stop.sh` sets NEEDS_INPUT (not WAITING); still does NOT overwrite when the item's phase is in the protected set.
+- [ ] `on-stop.sh` unconditionally sets `NEEDS_INPUT`; `_is_agent_managed_status()` removed.
 - [ ] `on-prompt.sh` context injection uses new state names.
 - [ ] `wip --help` shows new enum and de-emphasizes `wip children`.
 - [ ] All tests passing — unit (bash) + integration (end-to-end CLI invocations). TEST_SPEC.md drives this list.
@@ -136,7 +145,7 @@ Add a compatibility layer in `wip` that normalizes status names on every write a
 ## Demo Scenarios
 1. **New enum happy path**: `wip status demo WORKING`, `wip phase demo "Phase 5: Impl"`, `wip list` shows `WORKING [Phase 5: Impl]`.
 2. **Legacy alias**: `wip status demo ACTIVE` → deprecation line to stderr, item status becomes WORKING.
-3. **Hook integration**: Trigger `on-stop.sh` on a WORKING item with no protected phase → becomes NEEDS_INPUT. Trigger again with phase="Review" → stays WORKING.
+3. **Hook integration**: Trigger `on-stop.sh` on a WORKING item → becomes NEEDS_INPUT. Run again with phase="Review" → still becomes NEEDS_INPUT (no guard).
 4. **Data-at-rest compat**: Manually write `{"name":"x","status":"WAITING"}` to a work.txt, run `wip get x` → renders as NEEDS_INPUT.
 5. **`wip phase` validation**: `wip phase x "this-is-way-too-long-to-fit"` → rejected with clear error.
 
@@ -145,3 +154,48 @@ Add a compatibility layer in `wip` that normalizes status names on every write a
 ## Annotation Log
 | Date | Phase | Annotation | Response |
 |------|-------|------------|----------|
+
+## Verification Plan
+
+### Categories
+| Cat | File | Tests |
+|---|---|---|
+| A | test_status_normalization.sh | 17 (A01–A16 + A06-remix) |
+| B | test_phase_validation.sh | 13 (B01–B13) |
+| C | test_help_output.sh | 9 (C01–C09) |
+| D | test_integration.sh | 15 (D01–D15) |
+| E | test_data_at_rest.sh | 10 (E01–E10) |
+| F | test_deprecation.sh | 8 (F01–F08) |
+| G | test_on_stop.sh | 8 (G01–G08) |
+| H | test_on_prompt.sh | 4 (H01–H04) |
+| I | test_infrastructure.sh | 6 (I01–I06) |
+
+### RED Baseline (2026-04-20)
+
+**Gate Status**: PASSED (all 9 categories matched; runner keyword fix applied — D→`integration`, E→`data_at_rest`, G→`on_stop`, H→`on_prompt`).
+
+| Cat | Fail | Pass | Errored | Notes |
+|---|---|---|---|---|
+| A | 41 | 1 | no | Status normalization wholly unimplemented; legacy aliases rejected, canonical new names rejected |
+| B | 15 | 5 | no | `wip phase` subcommand does not exist |
+| C | 6 | 4 | no | Help text missing new states and `wip phase`; still advertises `wip children` in main USAGE |
+| D | 14 | 1 | no | E2E flows fail because phase/normalize/hooks all missing |
+| E | 9 | 1 | no | Data-at-rest read compat not implemented; legacy statuses render as-is |
+| F | 8 | 0 | no | Deprecation notice never emitted; legacy aliases rejected before alias layer runs |
+| G | 5 | 3 | no | on-stop.sh still sets WAITING, not NEEDS_INPUT; guard logic still in place |
+| H | 3 | 1 | no | on-prompt.sh does not normalize legacy status in context line |
+| I | 5 | 2 | no | `_is_agent_managed_status` still present in wip; on-stop.sh still references IN_REVIEW/RETRO; still writes WAITING |
+| **Totals** | **106** | **18** | **0 files errored** | 9 files run, all exited with failures; none crashed before their case statements ran |
+
+### Dominant RED reasons
+- **`wip phase` subcommand does not exist** — B01–B13, D02–D04, D08–D10, D12, A05–A08, A06-remix, C06
+- **Legacy status aliases not normalized (ACTIVE/WAITING/BLOCKED/NEW/IN_REVIEW/RETRO/CLOSED)** — A01–A09, E01–E04, E06–E09, D01, D06, F01–F03, F08
+- **New canonical status names (NOT_STARTED/WORKING/NEEDS_INPUT) rejected by `wip status` validator** — A10–A12, F04–F06, D15
+- **Deprecation notice never emitted to stderr** — A01–A09, A15–A16, F01–F03, F08
+- **`_is_agent_managed_status` guard still present in wip script** — I01, I05
+- **on-stop.sh still emits legacy `WAITING`, does not unconditionally set `NEEDS_INPUT`** — I04, G01–G03, G07, G08, D07
+- **on-stop.sh still has IN_REVIEW/RETRO conditional logic** — I02, I03
+- **Help text missing canonical enum + `wip phase` doc; still shows `wip children` in main USAGE** — C02–C04, C06, C07, C08, D05
+- **on-prompt.sh context line does not normalize legacy status to canonical** — H01, H02, H03
+- **`wip list --json` schema drift: emits `notes`, `priority` keys beyond fixture baseline** — D14
+
