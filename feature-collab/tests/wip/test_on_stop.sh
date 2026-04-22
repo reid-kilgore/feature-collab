@@ -37,8 +37,8 @@ _teardown_hook_env() {
   unset fake_home cwd
 }
 
-# ── G01 ── WORKING item (no phase) → NEEDS_INPUT ─────────────────────────────
-echo "--- G01: WORKING item with no phase becomes NEEDS_INPUT ---"
+# ── G01 ── WORKING item (no phase) → WAITING ─────────────────────────────────
+echo "--- G01: WORKING item with no phase becomes WAITING ---"
 (
   _setup_hook_env
   trap _teardown_hook_env EXIT
@@ -49,18 +49,18 @@ echo "--- G01: WORKING item with no phase becomes NEEDS_INPUT ---"
 
   result=$(PANOP_DIR="$PANOP_DIR" "$REAL_WIP" get g01item 2>/dev/null \
     | jq -r '.status // empty')
-  [[ "$result" == "NEEDS_INPUT" ]]
+  [[ "$result" == "WAITING" ]]
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: G01"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: G01 (status did not become NEEDS_INPUT)"
+  echo "  FAIL: G01 (status did not become WAITING)"
   FAIL=$((FAIL + 1))
 fi
 
-# ── G02 ── WORKING + phase=Review → NEEDS_INPUT (no guard) ───────────────────
-echo "--- G02: WORKING item with phase=Review becomes NEEDS_INPUT (no guard) ---"
+# ── G02 ── WORKING + phase=Review → WAITING (no guard) ───────────────────────
+echo "--- G02: WORKING item with phase=Review becomes WAITING (no guard) ---"
 (
   _setup_hook_env
   trap _teardown_hook_env EXIT
@@ -71,18 +71,18 @@ echo "--- G02: WORKING item with phase=Review becomes NEEDS_INPUT (no guard) ---
 
   result=$(PANOP_DIR="$PANOP_DIR" "$REAL_WIP" get g02item 2>/dev/null \
     | jq -r '.status // empty')
-  [[ "$result" == "NEEDS_INPUT" ]]
+  [[ "$result" == "WAITING" ]]
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: G02"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: G02 (WORKING+phase=Review was not flipped to NEEDS_INPUT — guard still present)"
+  echo "  FAIL: G02 (WORKING+phase=Review was not flipped to WAITING — guard still present)"
   FAIL=$((FAIL + 1))
 fi
 
-# ── G03 ── WORKING + phase=Retro → NEEDS_INPUT (no guard) ────────────────────
-echo "--- G03: WORKING item with phase=Retro becomes NEEDS_INPUT (no guard) ---"
+# ── G03 ── WORKING + phase=Retro → WAITING (no guard) ────────────────────────
+echo "--- G03: WORKING item with phase=Retro becomes WAITING (no guard) ---"
 (
   _setup_hook_env
   trap _teardown_hook_env EXIT
@@ -93,13 +93,13 @@ echo "--- G03: WORKING item with phase=Retro becomes NEEDS_INPUT (no guard) ---"
 
   result=$(PANOP_DIR="$PANOP_DIR" "$REAL_WIP" get g03item 2>/dev/null \
     | jq -r '.status // empty')
-  [[ "$result" == "NEEDS_INPUT" ]]
+  [[ "$result" == "WAITING" ]]
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: G03"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: G03 (WORKING+phase=Retro was not flipped to NEEDS_INPUT — guard still present)"
+  echo "  FAIL: G03 (WORKING+phase=Retro was not flipped to WAITING — guard still present)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -188,20 +188,20 @@ echo "--- G07: invoke bash on-stop.sh as real subprocess with synthetic stdin --
 
   result=$(PANOP_DIR="$PANOP_DIR" "$REAL_WIP" get g07item 2>/dev/null \
     | jq -r '.status // empty')
-  [[ "$result" == "NEEDS_INPUT" ]]
+  [[ "$result" == "WAITING" ]]
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: G07"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: G07 (real subprocess invocation did not flip status to NEEDS_INPUT)"
+  echo "  FAIL: G07 (real subprocess invocation did not flip status to WAITING)"
   FAIL=$((FAIL + 1))
 fi
 
-# ── G08 ── NOT_STARTED → NEEDS_INPUT (unconditional rule, per PLAN.md) ────────
+# ── G08 ── NOT_STARTED → WAITING (unconditional rule, per PLAN.md) ────────────
 # PINNED: "on-stop.sh unconditional rule applies to all states: including
-# NOT_STARTED → NEEDS_INPUT. No exceptions; no guard." (PLAN.md §Decisions)
-echo "--- G08: NOT_STARTED item becomes NEEDS_INPUT (unconditional rule) ---"
+# NOT_STARTED → WAITING. No exceptions; no guard." (PLAN.md §Decisions)
+echo "--- G08: NOT_STARTED item becomes WAITING (unconditional rule) ---"
 (
   _setup_hook_env
   trap _teardown_hook_env EXIT
@@ -212,13 +212,13 @@ echo "--- G08: NOT_STARTED item becomes NEEDS_INPUT (unconditional rule) ---"
 
   result=$(PANOP_DIR="$PANOP_DIR" "$REAL_WIP" get g08item 2>/dev/null \
     | jq -r '.status // empty')
-  [[ "$result" == "NEEDS_INPUT" ]]
+  [[ "$result" == "WAITING" ]]
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: G08"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: G08 (NOT_STARTED was not flipped to NEEDS_INPUT — unconditional rule not applied)"
+  echo "  FAIL: G08 (NOT_STARTED was not flipped to WAITING — unconditional rule not applied)"
   FAIL=$((FAIL + 1))
 fi
 

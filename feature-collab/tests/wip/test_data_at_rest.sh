@@ -48,8 +48,8 @@ fi
 cleanup
 
 # ── E02 ───────────────────────────────────────────────────────────────────────
-# Pre-seeded status "WAITING" → wip list renders NEEDS_INPUT; file not modified
-echo "--- E02: WAITING on disk renders as NEEDS_INPUT; file unchanged ---"
+# Pre-seeded status "WAITING" → wip list renders WAITING (canonical); file not modified
+echo "--- E02: WAITING on disk renders as WAITING (canonical); file unchanged ---"
 new_panop_dir
 _seed_raw '{"name":"e02item","status":"WAITING","loc":"/tmp/fake-e02"}'
 e02_wf="$PANOP_DIR/testrepo/work.txt"
@@ -57,10 +57,10 @@ e02_mt0=$(stat -f "%m" "$e02_wf" 2>/dev/null || stat -c "%Y" "$e02_wf" 2>/dev/nu
 e02_list=$(PANOP_DIR="$PANOP_DIR" "$WIP" list 2>/dev/null) || true
 e02_mt1=$(stat -f "%m" "$e02_wf" 2>/dev/null || stat -c "%Y" "$e02_wf" 2>/dev/null)
 e02_ok=1
-echo "$e02_list" | grep -q "NEEDS_INPUT" || { echo "  FAIL: E02 list did not show NEEDS_INPUT"; e02_ok=0; }
-[[ "$e02_mt0" == "$e02_mt1" ]]           || { echo "  FAIL: E02 work.txt was modified"; e02_ok=0; }
+echo "$e02_list" | grep -q "WAITING" || { echo "  FAIL: E02 list did not show WAITING"; e02_ok=0; }
+[[ "$e02_mt0" == "$e02_mt1" ]]       || { echo "  FAIL: E02 work.txt was modified"; e02_ok=0; }
 if [[ "$e02_ok" -eq 1 ]]; then
-  echo "  PASS: E02 WAITING → NEEDS_INPUT, file unchanged"
+  echo "  PASS: E02 WAITING → WAITING (canonical), file unchanged"
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -68,8 +68,8 @@ fi
 cleanup
 
 # ── E03 ───────────────────────────────────────────────────────────────────────
-# Pre-seeded status "BLOCKED" → wip list renders NEEDS_INPUT; file not modified
-echo "--- E03: BLOCKED on disk renders as NEEDS_INPUT; file unchanged ---"
+# Pre-seeded status "BLOCKED" → wip list renders WAITING; file not modified
+echo "--- E03: BLOCKED on disk renders as WAITING; file unchanged ---"
 new_panop_dir
 _seed_raw '{"name":"e03item","status":"BLOCKED","loc":"/tmp/fake-e03"}'
 e03_wf="$PANOP_DIR/testrepo/work.txt"
@@ -77,10 +77,10 @@ e03_mt0=$(stat -f "%m" "$e03_wf" 2>/dev/null || stat -c "%Y" "$e03_wf" 2>/dev/nu
 e03_list=$(PANOP_DIR="$PANOP_DIR" "$WIP" list 2>/dev/null) || true
 e03_mt1=$(stat -f "%m" "$e03_wf" 2>/dev/null || stat -c "%Y" "$e03_wf" 2>/dev/null)
 e03_ok=1
-echo "$e03_list" | grep -q "NEEDS_INPUT" || { echo "  FAIL: E03 list did not show NEEDS_INPUT"; e03_ok=0; }
-[[ "$e03_mt0" == "$e03_mt1" ]]           || { echo "  FAIL: E03 work.txt was modified"; e03_ok=0; }
+echo "$e03_list" | grep -q "WAITING" || { echo "  FAIL: E03 list did not show WAITING"; e03_ok=0; }
+[[ "$e03_mt0" == "$e03_mt1" ]]       || { echo "  FAIL: E03 work.txt was modified"; e03_ok=0; }
 if [[ "$e03_ok" -eq 1 ]]; then
-  echo "  PASS: E03 BLOCKED → NEEDS_INPUT, file unchanged"
+  echo "  PASS: E03 BLOCKED → WAITING, file unchanged"
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))

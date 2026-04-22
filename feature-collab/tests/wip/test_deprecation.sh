@@ -103,13 +103,13 @@ fi
 cleanup
 
 # ── F06 ───────────────────────────────────────────────────────────────────────
-# wip status item NEEDS_INPUT → stderr empty
-echo "--- F06: canonical NEEDS_INPUT emits nothing to stderr ---"
+# wip status item WAITING → stderr empty (WAITING is now canonical)
+echo "--- F06: canonical WAITING emits nothing to stderr ---"
 new_panop_dir
 setup_item "f06item"
-f06_stderr=$(PANOP_DIR="$PANOP_DIR" "$WIP" status f06item NEEDS_INPUT 2>&1 >/dev/null) || true
+f06_stderr=$(PANOP_DIR="$PANOP_DIR" "$WIP" status f06item WAITING 2>&1 >/dev/null) || true
 if [[ -z "$f06_stderr" ]]; then
-  echo "  PASS: F06 no stderr for canonical NEEDS_INPUT"
+  echo "  PASS: F06 no stderr for canonical WAITING"
   PASS=$((PASS + 1))
 else
   echo "  FAIL: F06 unexpected stderr: '$f06_stderr'"

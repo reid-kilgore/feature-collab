@@ -46,13 +46,13 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# ── C04: stdout contains NEEDS_INPUT ─────────────────────────────────────────
-echo "--- C04: stdout contains NEEDS_INPUT ---"
-if echo "$HELP_STDOUT" | grep -q "NEEDS_INPUT"; then
-  echo "  PASS: C04 stdout contains NEEDS_INPUT"
+# ── C04: stdout contains WAITING ─────────────────────────────────────────────
+echo "--- C04: stdout contains WAITING ---"
+if echo "$HELP_STDOUT" | grep -q "WAITING"; then
+  echo "  PASS: C04 stdout contains WAITING"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: C04 stdout does not contain NEEDS_INPUT"
+  echo "  FAIL: C04 stdout does not contain WAITING"
   FAIL=$((FAIL + 1))
 fi
 

@@ -185,17 +185,17 @@ USAGE
 ITEM STATUSES
   NOT_STARTED  Just created, not yet worked on
   WORKING      Actively being worked on
-  NEEDS_INPUT  Waiting for user input or blocked
+  WAITING      Waiting for user input or blocked
   DONE         Finished
 
 DEPRECATED ALIASES (accepted on input; canonical value stored)
-  NEW       -> NOT_STARTED
-  ACTIVE    -> WORKING
-  BLOCKED   -> NEEDS_INPUT
-  WAITING   -> NEEDS_INPUT
-  IN_REVIEW -> WORKING  (also sets phase="Review" if phase unset)
-  RETRO     -> WORKING  (also sets phase="Retro" if phase unset)
-  CLOSED    -> DONE
+  NEW        -> NOT_STARTED
+  ACTIVE     -> WORKING
+  BLOCKED    -> WAITING
+  NEEDS_INPUT -> WAITING
+  IN_REVIEW  -> WORKING  (also sets phase="Review" if phase unset)
+  RETRO      -> WORKING  (also sets phase="Retro" if phase unset)
+  CLOSED     -> DONE
 
 BRANCH STATUSES
   ACTIVE    In development
@@ -211,7 +211,7 @@ EXAMPLES
   wip branch-status rk-0227-auth rk-0228-auth-fix CLOSED
   wip note rk-0227-auth "Switched to JWT approach"
   wip set rk-0227-auth priority high
-  wip list --json | jq '.[] | select(.status=="NEEDS_INPUT")'
+  wip list --json | jq '.[] | select(.status=="WAITING")'
   wip pull                                    # sync all remotes
   wip pull hourly-dev                         # sync one remote
 
@@ -229,15 +229,15 @@ _normalize_status_read() {
   # Map legacy status values to canonical for display (read path — does NOT write)
   local st="$1"
   case "$st" in
-    NEW)       echo "NOT_STARTED" ;;
-    ACTIVE)    echo "WORKING" ;;
-    BLOCKED)   echo "NEEDS_INPUT" ;;
-    WAITING)   echo "NEEDS_INPUT" ;;
-    IN_REVIEW) echo "WORKING" ;;
-    RETRO)     echo "WORKING" ;;
-    CLOSED)    echo "DONE" ;;
-    "")        echo "NOT_STARTED" ;;
-    *)         echo "$st" ;;
+    NEW)        echo "NOT_STARTED" ;;
+    ACTIVE)     echo "WORKING" ;;
+    BLOCKED)    echo "WAITING" ;;
+    NEEDS_INPUT) echo "WAITING" ;;
+    IN_REVIEW)  echo "WORKING" ;;
+    RETRO)      echo "WORKING" ;;
+    CLOSED)     echo "DONE" ;;
+    "")         echo "NOT_STARTED" ;;
+    *)          echo "$st" ;;
   esac
 }
 
@@ -316,11 +316,11 @@ cmd_status() {
   local canonical_status
   local phase_side_effect=""
   # Canonical states (accepted directly, no deprecation)
-  local canonical_set="NOT_STARTED WORKING NEEDS_INPUT DONE"
+  local canonical_set="NOT_STARTED WORKING WAITING DONE"
   # Legacy alias map
   local is_legacy=false
   case "$new_status" in
-    NOT_STARTED|WORKING|NEEDS_INPUT|DONE)
+    NOT_STARTED|WORKING|WAITING|DONE)
       canonical_status="$new_status"
       is_legacy=false
       ;;
@@ -328,8 +328,8 @@ cmd_status() {
       canonical_status="NOT_STARTED"; is_legacy=true ;;
     ACTIVE)
       canonical_status="WORKING"; is_legacy=true ;;
-    BLOCKED|WAITING)
-      canonical_status="NEEDS_INPUT"; is_legacy=true ;;
+    BLOCKED|NEEDS_INPUT)
+      canonical_status="WAITING"; is_legacy=true ;;
     IN_REVIEW)
       canonical_status="WORKING"; is_legacy=true; phase_side_effect="Review" ;;
     RETRO)
@@ -337,7 +337,7 @@ cmd_status() {
     CLOSED)
       canonical_status="DONE"; is_legacy=true ;;
     *)
-      echo "wip: unknown status '$new_status'. Valid: NOT_STARTED, WORKING, NEEDS_INPUT, DONE" >&2
+      echo "wip: unknown status '$new_status'. Valid: NOT_STARTED, WORKING, WAITING, DONE" >&2
       return 2
       ;;
   esac
@@ -355,7 +355,7 @@ cmd_status() {
     local _ondisk_status
     _ondisk_status=$(echo "$_item" | jq -r '.status // ""')
     case "$_ondisk_status" in
-      NEW|ACTIVE|BLOCKED|WAITING|IN_REVIEW|RETRO|CLOSED)
+      NEW|ACTIVE|BLOCKED|NEEDS_INPUT|IN_REVIEW|RETRO|CLOSED)
         echo "wip: status '$_ondisk_status' is deprecated; use '$(_normalize_status_read "$_ondisk_status")'" >&2
         ;;
     esac

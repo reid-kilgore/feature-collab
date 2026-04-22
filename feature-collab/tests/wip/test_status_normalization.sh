@@ -42,36 +42,42 @@ fi
 assert "A02 deprecation to stderr" grep -qi "deprecated" /tmp/wip-a02-stderr.txt
 cleanup
 
-# ── A03: BLOCKED → NEEDS_INPUT, deprecation to stderr ────────────────────────
-echo "--- A03: BLOCKED maps to NEEDS_INPUT ---"
+# ── A03: BLOCKED → WAITING, deprecation to stderr ────────────────────────────
+echo "--- A03: BLOCKED maps to WAITING ---"
 new_panop_dir
 setup_item "item"
 PANOP_DIR="$PANOP_DIR" "$WIP" status item BLOCKED >/dev/null 2>/tmp/wip-a03-stderr.txt || true
 stored=$(PANOP_DIR="$PANOP_DIR" "$WIP" get item 2>/dev/null | jq -r .status)
-if [[ "$stored" == "NEEDS_INPUT" ]]; then
-  echo "  PASS: A03 status on disk = NEEDS_INPUT"
+if [[ "$stored" == "WAITING" ]]; then
+  echo "  PASS: A03 status on disk = WAITING"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: A03 status on disk = $stored (expected NEEDS_INPUT)"
+  echo "  FAIL: A03 status on disk = $stored (expected WAITING)"
   FAIL=$((FAIL + 1))
 fi
 assert "A03 deprecation to stderr" grep -qi "deprecated" /tmp/wip-a03-stderr.txt
 cleanup
 
-# ── A04: WAITING → NEEDS_INPUT, deprecation to stderr ────────────────────────
-echo "--- A04: WAITING maps to NEEDS_INPUT ---"
+# ── A04: WAITING → WAITING (canonical), no deprecation ───────────────────────
+echo "--- A04: WAITING is canonical, stores as WAITING, no deprecation ---"
 new_panop_dir
 setup_item "item"
 PANOP_DIR="$PANOP_DIR" "$WIP" status item WAITING >/dev/null 2>/tmp/wip-a04-stderr.txt || true
 stored=$(PANOP_DIR="$PANOP_DIR" "$WIP" get item 2>/dev/null | jq -r .status)
-if [[ "$stored" == "NEEDS_INPUT" ]]; then
-  echo "  PASS: A04 status on disk = NEEDS_INPUT"
+if [[ "$stored" == "WAITING" ]]; then
+  echo "  PASS: A04 status on disk = WAITING"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: A04 status on disk = $stored (expected NEEDS_INPUT)"
+  echo "  FAIL: A04 status on disk = $stored (expected WAITING)"
   FAIL=$((FAIL + 1))
 fi
-assert "A04 deprecation to stderr" grep -qi "deprecated" /tmp/wip-a04-stderr.txt
+if [[ ! -s /tmp/wip-a04-stderr.txt ]]; then
+  echo "  PASS: A04 no deprecation to stderr (WAITING is canonical)"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: A04 unexpected stderr: $(cat /tmp/wip-a04-stderr.txt)"
+  FAIL=$((FAIL + 1))
+fi
 cleanup
 
 # ── A05: IN_REVIEW (phase unset) → WORKING, phase=Review, deprecation ─────────
@@ -236,17 +242,17 @@ else
 fi
 cleanup
 
-# ── A12: NEEDS_INPUT (canonical) → no deprecation ────────────────────────────
-echo "--- A12: NEEDS_INPUT is canonical, no deprecation ---"
+# ── A12: WAITING (canonical) → no deprecation ────────────────────────────────
+echo "--- A12: WAITING is canonical, no deprecation ---"
 new_panop_dir
 setup_item "item"
-PANOP_DIR="$PANOP_DIR" "$WIP" status item NEEDS_INPUT >/dev/null 2>/tmp/wip-a12-stderr.txt || true
+PANOP_DIR="$PANOP_DIR" "$WIP" status item WAITING >/dev/null 2>/tmp/wip-a12-stderr.txt || true
 stored=$(PANOP_DIR="$PANOP_DIR" "$WIP" get item 2>/dev/null | jq -r .status)
-if [[ "$stored" == "NEEDS_INPUT" ]]; then
-  echo "  PASS: A12 status = NEEDS_INPUT"
+if [[ "$stored" == "WAITING" ]]; then
+  echo "  PASS: A12 status = WAITING"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: A12 status = $stored (expected NEEDS_INPUT)"
+  echo "  FAIL: A12 status = $stored (expected WAITING)"
   FAIL=$((FAIL + 1))
 fi
 if [[ ! -s /tmp/wip-a12-stderr.txt ]]; then
@@ -296,7 +302,7 @@ fi
 assert "A14 stderr mentions unknown status BOGUS" grep -qi "unknown status.*BOGUS\|BOGUS.*unknown" /tmp/wip-a14-stderr.txt
 assert "A14 stderr lists NOT_STARTED" grep -q "NOT_STARTED" /tmp/wip-a14-stderr.txt
 assert "A14 stderr lists WORKING" grep -q "WORKING" /tmp/wip-a14-stderr.txt
-assert "A14 stderr lists NEEDS_INPUT" grep -q "NEEDS_INPUT" /tmp/wip-a14-stderr.txt
+assert "A14 stderr lists WAITING" grep -q "WAITING" /tmp/wip-a14-stderr.txt
 assert "A14 stderr lists DONE" grep -q "DONE" /tmp/wip-a14-stderr.txt
 cleanup
 
@@ -322,12 +328,12 @@ else
 fi
 cleanup
 
-# ── A16: WAITING twice → deprecation emitted once per invocation ─────────────
+# ── A16: NEEDS_INPUT twice → deprecation emitted once per invocation ──────────
 echo "--- A16: deprecation emitted once per invocation, not accumulated ---"
 new_panop_dir
 setup_item "item"
 # First invocation
-PANOP_DIR="$PANOP_DIR" "$WIP" status item WAITING >/dev/null 2>/tmp/wip-a16-first.txt || true
+PANOP_DIR="$PANOP_DIR" "$WIP" status item NEEDS_INPUT >/dev/null 2>/tmp/wip-a16-first.txt || true
 first_count=0; first_count=$(grep -ci "deprecated" /tmp/wip-a16-first.txt 2>/dev/null) || true
 if [[ "$first_count" -eq 1 ]]; then
   echo "  PASS: A16 first invocation: exactly 1 deprecation line"
@@ -337,7 +343,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 # Second invocation
-PANOP_DIR="$PANOP_DIR" "$WIP" status item WAITING >/dev/null 2>/tmp/wip-a16-second.txt || true
+PANOP_DIR="$PANOP_DIR" "$WIP" status item NEEDS_INPUT >/dev/null 2>/tmp/wip-a16-second.txt || true
 second_count=0; second_count=$(grep -ci "deprecated" /tmp/wip-a16-second.txt 2>/dev/null) || true
 if [[ "$second_count" -eq 1 ]]; then
   echo "  PASS: A16 second invocation: exactly 1 deprecation line (not accumulated)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code Stop hook — sets NEEDS_INPUT unconditionally (Claude can't act post-stop)
+# Claude Code Stop hook — sets WAITING unconditionally (Claude can't act post-stop)
 set -eo pipefail
 
 WIP="$HOME/panop/wip"
@@ -43,8 +43,8 @@ fi
 
 [ -z "$item_name" ] && exit 0
 
-# Unconditionally set NEEDS_INPUT (no guard for phase or status)
+# Unconditionally set WAITING (no guard for phase or status)
 # Note: stderr flows through so deprecation notices (for legacy on-disk statuses) are visible
-"$WIP" status "$item_name" NEEDS_INPUT >/dev/null || true
+"$WIP" status "$item_name" WAITING >/dev/null || true
 
 # Notifications now handled by Nasqueron app (status change detection)
