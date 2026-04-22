@@ -55,24 +55,24 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# ── H02 ── on-disk WAITING → context line contains NEEDS_INPUT (not WAITING) ──
-echo "--- H02: item with status WAITING on disk — context line uses NEEDS_INPUT ---"
+# ── H02 ── on-disk NEEDS_INPUT (legacy) → context line contains WAITING ───────
+echo "--- H02: item with status NEEDS_INPUT on disk — context line uses WAITING ---"
 (
   _setup_hook_env
   trap _teardown_hook_env EXIT
-  printf '{"name":"h02item","status":"WAITING","loc":"%s"}\n' "$cwd" \
+  printf '{"name":"h02item","status":"NEEDS_INPUT","loc":"%s"}\n' "$cwd" \
     > "$PANOP_DIR/testrepo/work.txt"
 
   output=$(echo "{\"cwd\":\"$cwd\"}" | bash "$ON_PROMPT" 2>/dev/null)
 
-  echo "$output" | grep -q "NEEDS_INPUT" \
-    && ! echo "$output" | grep -q "Status: WAITING"
+  echo "$output" | grep -q "WAITING" \
+    && ! echo "$output" | grep -q "Status: NEEDS_INPUT"
 )
 if [[ $? -eq 0 ]]; then
   echo "  PASS: H02"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: H02 (on-prompt output contained WAITING instead of canonical NEEDS_INPUT)"
+  echo "  FAIL: H02 (on-prompt output did not normalize NEEDS_INPUT to canonical WAITING)"
   FAIL=$((FAIL + 1))
 fi
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Category I — Removed Guard: static analysis tests.
 # These tests verify by grep that legacy guard logic has been removed
-# and that the new canonical status (NEEDS_INPUT) is present.
+# and that the new canonical status (WAITING) is present.
 # No subprocess wip invocations needed.
 set -euo pipefail
 
@@ -34,10 +34,10 @@ assert_not_grep \
   "RETRO" \
   "$ON_STOP"
 
-echo "--- I04: on-stop.sh sets NEEDS_INPUT (not WAITING) ---"
+echo "--- I04: on-stop.sh sets WAITING (not NEEDS_INPUT) ---"
 assert_grep \
-  "I04: NEEDS_INPUT present in on-stop.sh" \
-  "NEEDS_INPUT" \
+  "I04: WAITING present in on-stop.sh" \
+  "WAITING" \
   "$ON_STOP"
 
 echo "--- I05: wip script has no call site for _is_agent_managed_status ---"

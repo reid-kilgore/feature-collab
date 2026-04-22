@@ -52,15 +52,15 @@ current_phase=$(echo "$item_json" | jq -r '.phase // empty' 2>/dev/null)
 
 # Normalize legacy status to canonical for display
 case "$raw_status" in
-  NEW)       current_status="NOT_STARTED" ;;
-  ACTIVE)    current_status="WORKING" ;;
-  BLOCKED)   current_status="NEEDS_INPUT" ;;
-  WAITING)   current_status="NEEDS_INPUT" ;;
-  IN_REVIEW) current_status="WORKING" ;;
-  RETRO)     current_status="WORKING" ;;
-  CLOSED)    current_status="DONE" ;;
-  "")        current_status="NOT_STARTED" ;;
-  *)         current_status="$raw_status" ;;
+  NEW)        current_status="NOT_STARTED" ;;
+  ACTIVE)     current_status="WORKING" ;;
+  BLOCKED)    current_status="WAITING" ;;
+  NEEDS_INPUT) current_status="WAITING" ;;
+  IN_REVIEW)  current_status="WORKING" ;;
+  RETRO)      current_status="WORKING" ;;
+  CLOSED)     current_status="DONE" ;;
+  "")         current_status="NOT_STARTED" ;;
+  *)          current_status="$raw_status" ;;
 esac
 
 # Build phase string for context line
@@ -73,7 +73,7 @@ fi
 cat <<EOF
 [wip] Item: $item_name | Status: $current_status${phase_info}
 If your work changes the state of this item (starting work, finishing a phase, completing a task, creating a branch), update wip accordingly:
-  wip status $item_name <STATUS>    — set status (WORKING, NEEDS_INPUT, DONE, NOT_STARTED)
+  wip status $item_name <STATUS>    — set status (WORKING, WAITING, DONE, NOT_STARTED)
   wip phase $item_name "<text>"     — set phase string (<=15 chars)
   wip note $item_name "<text>"      — record progress
   wip add-branch $item_name <branch> — track a new branch

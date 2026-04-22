@@ -97,7 +97,7 @@ d05_ok=1
 [[ "$d05_exit" -eq 0 ]] || { echo "  FAIL: D05 --help exit code was $d05_exit"; d05_ok=0; }
 echo "$help_out" | grep -q "NOT_STARTED" || { echo "  FAIL: D05 help missing NOT_STARTED"; d05_ok=0; }
 echo "$help_out" | grep -q "WORKING"     || { echo "  FAIL: D05 help missing WORKING"; d05_ok=0; }
-echo "$help_out" | grep -q "NEEDS_INPUT" || { echo "  FAIL: D05 help missing NEEDS_INPUT"; d05_ok=0; }
+echo "$help_out" | grep -q "WAITING"     || { echo "  FAIL: D05 help missing WAITING"; d05_ok=0; }
 echo "$help_out" | grep -q "DONE"        || { echo "  FAIL: D05 help missing DONE"; d05_ok=0; }
 echo "$help_out" | grep -q "wip phase"   || { echo "  FAIL: D05 help missing 'wip phase'"; d05_ok=0; }
 if [[ "$d05_ok" -eq 1 ]]; then
@@ -109,8 +109,8 @@ fi
 cleanup
 
 # ── D06 ───────────────────────────────────────────────────────────────────────
-# Pre-seed {"name":"x","status":"WAITING"} in work.txt; wip list shows NEEDS_INPUT; file mtime unchanged  [§9.6]
-echo "--- D06: legacy WAITING on disk renders as NEEDS_INPUT without modifying file ---"
+# Pre-seed {"name":"x","status":"WAITING"} in work.txt; wip list shows WAITING (canonical); file mtime unchanged  [§9.6]
+echo "--- D06: canonical WAITING on disk renders as WAITING without modifying file ---"
 new_panop_dir
 mkdir -p "$PANOP_DIR/testrepo"
 printf '{"name":"d06item","status":"WAITING","loc":"/tmp/fake-d06"}\n' \
@@ -120,10 +120,10 @@ d06_mtime_before=$(stat -f "%m" "$d06_wf" 2>/dev/null || stat -c "%Y" "$d06_wf" 
 d06_list=$(PANOP_DIR="$PANOP_DIR" "$WIP" list 2>/dev/null) || true
 d06_mtime_after=$(stat -f "%m" "$d06_wf" 2>/dev/null || stat -c "%Y" "$d06_wf" 2>/dev/null)
 d06_ok=1
-echo "$d06_list" | grep -q "NEEDS_INPUT" || { echo "  FAIL: D06 list did not show NEEDS_INPUT"; d06_ok=0; }
+echo "$d06_list" | grep -q "WAITING" || { echo "  FAIL: D06 list did not show WAITING"; d06_ok=0; }
 [[ "$d06_mtime_before" == "$d06_mtime_after" ]] || { echo "  FAIL: D06 work.txt was modified"; d06_ok=0; }
 if [[ "$d06_ok" -eq 1 ]]; then
-  echo "  PASS: D06 WAITING renders NEEDS_INPUT, file unchanged"
+  echo "  PASS: D06 WAITING renders WAITING (canonical), file unchanged"
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -131,8 +131,8 @@ fi
 cleanup
 
 # ── D07 ───────────────────────────────────────────────────────────────────────
-# on-stop.sh run against WORKING item with phase="Review" → status becomes NEEDS_INPUT  [§9.7]
-echo "--- D07: on-stop.sh sets NEEDS_INPUT even when phase=Review ---"
+# on-stop.sh run against WORKING item with phase="Review" → status becomes WAITING  [§9.7]
+echo "--- D07: on-stop.sh sets WAITING even when phase=Review ---"
 new_panop_dir
 d07_loc="/tmp/fake-d07-loc-$$"
 mkdir -p "$PANOP_DIR/testrepo"
@@ -149,11 +149,11 @@ if [[ -x "$d07_on_stop" ]]; then
   HOME="$d07_home" bash "$d07_on_stop" <<< "{\"cwd\":\"$d07_loc\"}" >/dev/null 2>&1 || true
   d07_result=$(HOME="$d07_home" PANOP_DIR="$d07_home/panop" "$WIP" get d07item 2>/dev/null \
     | jq -r '.status // empty' 2>/dev/null) || d07_result=""
-  if [[ "$d07_result" == "NEEDS_INPUT" ]]; then
-    echo "  PASS: D07 on-stop WORKING+Review → NEEDS_INPUT"
+  if [[ "$d07_result" == "WAITING" ]]; then
+    echo "  PASS: D07 on-stop WORKING+Review → WAITING"
     PASS=$((PASS + 1))
   else
-    echo "  FAIL: D07 expected NEEDS_INPUT after on-stop, got '$d07_result'"
+    echo "  FAIL: D07 expected WAITING after on-stop, got '$d07_result'"
     FAIL=$((FAIL + 1))
   fi
 else
@@ -307,7 +307,7 @@ cleanup
 echo "--- D15: unknown status produces exact stderr message ---"
 new_panop_dir
 setup_item "d15item"
-D15_EXPECTED="wip: unknown status 'BOGUS'. Valid: NOT_STARTED, WORKING, NEEDS_INPUT, DONE"
+D15_EXPECTED="wip: unknown status 'BOGUS'. Valid: NOT_STARTED, WORKING, WAITING, DONE"
 d15_stderr=$(PANOP_DIR="$PANOP_DIR" "$WIP" status d15item BOGUS 2>&1 >/dev/null) || true
 if [[ "$d15_stderr" == "$D15_EXPECTED" ]]; then
   echo "  PASS: D15 exact unknown-status stderr matches"
