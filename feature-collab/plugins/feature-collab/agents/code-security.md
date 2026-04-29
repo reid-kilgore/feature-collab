@@ -1,7 +1,7 @@
 ---
 name: code-security
 description: Reviews code for security vulnerabilities, authentication/authorization issues, input validation, and OWASP Top 10 compliance
-tools: Bash, Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch, KillShell, BashOutput
+tools: Bash, Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch, KillShell, BashOutput, tilth_read, tilth_search
 model: sonnet
 color: red
 ---
@@ -36,6 +36,10 @@ If nothing was suppressed, omit this section entirely.
 Note the count in the summary line: "N findings auto-suppressed from prior sessions"
 
 Users can re-check a suppressed finding by saying "re-check [pattern]" to the orchestrator.
+
+## Tool Preferences
+
+**Prefer tilth_search for tracing data flow through function calls.** tilth_search resolves call chains with callee footers showing function signatures at each call site — use it to trace user input from endpoint to storage. Use tilth_read for structural outlines of large files before drilling into security-relevant sections.
 
 ## First Steps (Always Do These)
 

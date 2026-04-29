@@ -289,6 +289,26 @@ Include this table in the retro output between Trends and Encoding Recommendatio
 | E15 | Post-PR plan sync on design changes | per-scope-workflow | enhance.md | {score} |
 | E16 | TDD RED+GREEN commit together (hooks block RED) | per-scope-workflow | enhance.md | {score} |
 | E17 | Demo phase conditional on API changes (Bruno) | demo-overhaul | enhance.md | {score} |
+| E18 | STOP: invariant change to make test green | rk-0420-daily-tip-rules | code-architect.md | {score} |
+| E19 | Asymmetric inputs for money/allocation tests | RETRO_CRIT | test-gap-finder.md | {score} |
+| E20 | Short-circuit tests must assert negative path | team-filter-report-chain | test-gap-finder.md | {score} |
+| E21 | Concurrency invariants at service boundaries | handlebar | test-gap-finder.md | {score} |
+| E22 | Existing invariants vs new feature surface | onboarding-loc-inactive | test-gap-finder.md | {score} |
+| E23 | Docstring invariant diff check | RETRO_CRIT | criteria-assessor.md | {score} |
+| E24 | Test title drift check | handlebar | test-implementer.md | {score} |
+| E25 | Orchestrator reads agent reasoning, not just summary | RETRO_CRIT | enhance.md, feature-collab.md | {score} |
+| E26 | CR feedback scope gate | handlebar, onboarding-loc-inactive | enhance.md, feature-collab.md | {score} |
+| E27 | Contract phase: enumerate existing mechanics | handlebar, onboarding-loc-inactive | enhance.md, feature-collab.md | {score} |
+| E28 | Deferred items need tracking tickets | protect-admin-permission-workflows | enhance.md | {score} |
+| E29 | Build-vs-buy evaluation during planning | cents-convert-be | enhance.md | {score} |
+| E30 | Library recommendations require verification | cents-convert-be | enhance.md | {score} |
+| E31 | Flag superseded functions for consolidation | cents-convert-be | enhance.md | {score} |
+| E32 | Error-handling changes need recovery tests | baseball-cards-next | enhance.md | {score} |
+| E33 | Check for open PR before dispatching to worktree | baseball-cards-next | enhance.md, feature-collab.md | {score} |
+| E34 | Triple-repeat patch triggers root-fix proposal | onboarding-loc-inactive | enhance.md | {score} |
+| E35 | Serialize concurrent agents on shared checkout | employment-scoped-timeseries-queries | feature-collab.md | {score} |
+| E36 | Consolidation sub-phase after code-architect fan-out | handlebar | feature-collab.md | {score} |
+| E37 | Strip debug markers before commit | handlebar | feature-collab.md | {score} |
 
 **Summary:** {N} TRIGGERED, {N} TRIGGERED-VIOLATED, {N} NOT APPLICABLE, {N} UNCLEAR
 ```

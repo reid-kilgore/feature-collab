@@ -178,6 +178,11 @@ npm test  # or project-specific command
 - Were security review findings addressed?
 - Any new vulnerabilities introduced?
 
+**Docstring Invariant Review**
+- For every hunk touching a function with a docstring/jsdoc contract: did the documented invariant change?
+- If yes, is that change described in PLAN.md? If no PLAN.md reference, flag NOT READY.
+- A rewritten docstring that changes semantics (e.g., "duration = recorded hours" → "spans the full period") is a contract change, not a documentation update.
+
 ## Output Format
 
 ```markdown

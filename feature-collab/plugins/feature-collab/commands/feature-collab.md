@@ -80,6 +80,8 @@ BEFORE transitioning between any phases:
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
+| "The agent says it's done and the fix looks good" | When an agent touches allocation/money/auth code, open the agent's output file and skim its reasoning — not just the summary. Summaries describe intent; reasoning reveals concerns the agent may have dismissed. A false-assurance summary sat unread for hours in the CRIT incident. |
+| "CodeRabbit suggested this improvement so I'll add it" | CR feedback must pass a scope gate before being actioned. Classify each finding as `in-scope-of-PLAN` / `out-of-scope-defer` / `blocking-correctness`. Out-of-scope items require user approval before implementation. Actioning out-of-scope CR feedback without re-checking PLAN.md caused 2 wasted commits + reversions. |
 
 ### Red Flags — STOP
 
@@ -93,6 +95,8 @@ BEFORE transitioning between any phases:
 - Thinking "I know enough to skip exploration"
 - Silently overriding criteria-assessor or skipping user-requested phases
 - Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
+- Dispatching work to a branch with an open PR without explicit user instruction — run `gh pr list --head <branch>` first
+- **Dispatching two agents that may stage files or commit on the same git checkout simultaneously** — use `git worktree` for isolation, or run agents sequentially. 4 agents were killed and ~45 min was wasted from shared working directory collisions in a single session.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -468,7 +472,9 @@ All state has been saved to disk:
    **Waiting For**: Contract drafting
    ```
 
-2. **Create CONTRACTS.md** in the doc directory (`$DOCS_DIR/CONTRACTS.md`):
+2. **Enumerate existing mechanics**: Before proposing a new UI affordance or API surface, enumerate existing mechanisms that achieve similar goals. "Does this capability already exist under a different name or in a different form?" A Skip button was proposed without discovering that Delete already handled the exclusion use case — 2 commits + tests discarded.
+
+3. **Create CONTRACTS.md** in the doc directory (`$DOCS_DIR/CONTRACTS.md`):
 
 ```markdown
 # Feature Contracts
@@ -522,32 +528,32 @@ function createNotificationWithDelivery(
 | createNotification | notification.service.ts | Add delivery creation |
 ```
 
-3. **Launch code-verifier agent** to generate TEST_SPEC.md:
+4. **Launch code-verifier agent** to generate TEST_SPEC.md:
    - Reads CONTRACTS.md
    - Produces exhaustive test list
    - Includes MANDATORY curl tests for every endpoint
 
-4. **Launch test-gap-finder agent** (adversarial):
+5. **Launch test-gap-finder agent** (adversarial):
    - Reviews CONTRACTS.md and TEST_SPEC.md
    - Finds gaps, missing edge cases, untested scenarios
    - Returns critical/important/nice-to-have gaps
 
-5. Update TEST_SPEC.md with gap findings
+6. Update TEST_SPEC.md with gap findings
 
-6. **GATE: Verify interface stability before writing tests.** Review CONTRACTS.md method signatures against architecture decisions. If any repo/service method signatures are still TBD or might change during implementation, resolve them NOW. Test stubs written against unstable interfaces cause expensive fix loops.
+7. **GATE: Verify interface stability before writing tests.** Review CONTRACTS.md method signatures against architecture decisions. If any repo/service method signatures are still TBD or might change during implementation, resolve them NOW. Test stubs written against unstable interfaces cause expensive fix loops.
 
-7. **Launch test-implementer agent**:
+8. **Launch test-implementer agent**:
    - Reads CONTRACTS.md and TEST_SPEC.md
    - Writes actual test files
    - Tests will FAIL (TDD RED state) - this is correct
 
-7. Launch `test-runner` agent to confirm RED state (tests SHOULD fail). Update PLAN.md with test status.
+9. Launch `test-runner` agent to confirm RED state (tests SHOULD fail). Update PLAN.md with test status.
 
-8. Update PLAN.md with Verification Plan summary and Draft Scorecard
+10. Update PLAN.md with Verification Plan summary and Draft Scorecard
 
-9. **WIP**: `wip note <item> "Phase 2: Contracts defined, tests written (TDD RED)"`
+11. **WIP**: `wip note <item> "Phase 2: Contracts defined, tests written (TDD RED)"`
 
-10. **CHECKPOINT**:
+12. **CHECKPOINT**:
    > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to walking skeleton."
 
 ### Context Checkpoint
@@ -783,7 +789,11 @@ All state has been saved to disk:
 
 9. **WIP**: `wip note <item> "Phase 5: All tests green"`
 
-10. When scorecard shows all green, proceed directly to Phase 6 (no user checkpoint).
+10. When scorecard shows all green, proceed directly to consolidation check.
+
+11. **Consolidation check**: After code-architect fan-out (multiple agents implementing across files), dispatch a haiku agent to grep for ≥3 callsites of ≥10-line repeated blocks and propose a shared helper. If no duplicates found, proceed. If duplicates found, dispatch code-architect to extract the helper, then re-run test-runner.
+
+12. Proceed to Phase 6 (no user checkpoint).
 
 ---
 
@@ -995,6 +1005,8 @@ See DEMO.md for re-executable proof that the feature works.
 ```
 
 9. **Pre-commit gates** (before commit splitting or push):
+
+   **Debug marker sweep**: Grep for debug/WIP markers: `TDD RED STATE`, `TODO REMOVE`, `FIXME`, `console.log` in test files, `debugger` statements. Strip or flag before committing.
 
    **Typecheck gate**: The orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
 

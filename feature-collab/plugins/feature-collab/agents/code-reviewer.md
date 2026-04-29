@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Reviews code for bugs, logic errors, security vulnerabilities, code quality issues, and adherence to project conventions, using confidence-based filtering to report only high-priority issues that truly matter
-tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch, KillShell, BashOutput
+tools: Glob, Grep, LS, Read, NotebookRead, WebFetch, TodoWrite, WebSearch, KillShell, BashOutput, tilth_read, tilth_search
 model: sonnet
 color: red
 ---
@@ -36,6 +36,10 @@ If nothing was suppressed, omit this section entirely.
 Note the count in the summary: "N findings auto-suppressed from prior sessions"
 
 Users can re-check a suppressed finding by saying "re-check [pattern]" to the orchestrator.
+
+## Tool Preferences
+
+**Prefer tilth tools for navigating reviewed code.** Use tilth_read to get structural outlines of changed files — review the outline to identify which functions changed, then drill into those sections. Use tilth_search to check whether a changed function's callers handle the new behavior correctly.
 
 ## Review Scope
 

@@ -168,6 +168,10 @@ This is correct TDD - tests define the spec, implementation comes next.
 [Any important observations about test implementation]
 ```
 
+## Pre-Finalization: Title Drift Check
+
+Before finalizing TEST_SPEC, re-read the final implementation and verify test titles/descriptions still match actual code paths. Title drift from Phase 2 → Phase 5 is a known failure mode — test [1.1.3] may describe behavior that was restructured in Phase 4. Grep test file for each TEST_SPEC title and confirm the described behavior matches the implementation.
+
 ## Key Principles
 
 - **Match project patterns exactly** - don't introduce new conventions

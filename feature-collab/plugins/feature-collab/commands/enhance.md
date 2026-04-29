@@ -48,9 +48,16 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
 | "Let me summarize the contracts/scope/test plan here" | Reference PLAN.md or CONTRACTS.md by section link. Don't reproduce tables the user can already read. |
 | "I'll just cast it with `as` to add the field" | Update the query to return the field. `as` casts on repository returns hide real bugs — the compiler can't verify the query actually returns the data. |
+| "I'll widen the Prisma enum to `string` for testability" | Don't widen Prisma enums to `string` for testability — import enums in test files instead. Widening defeats type safety the same way `as` does. |
 | "Tests are green so the implementation is correct" | Check that test doubles match real query shapes. Mocks that inject fields the actual query doesn't `select` will pass while prod breaks. |
 | "I'll use `jest.fn()` for the mock" | Use `jest.fn<ActualFunctionType>()` with the real function's type signature. Untyped mocks silently accept wrong parameter counts — JS drops extra args, so tests pass by accident. TypeScript catches arity mismatches at compile time only if the mock is properly typed. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
+| "The agent says it's done and the fix looks good" | When an agent touches allocation/money/auth code, open the agent's output file and skim its reasoning — not just the summary. Summaries describe intent; reasoning reveals concerns the agent may have dismissed. |
+| "CodeRabbit suggested this improvement so I'll add it" | CR feedback must pass a scope gate before being actioned. Classify each finding as `in-scope-of-PLAN` / `out-of-scope-defer` / `blocking-correctness`. Out-of-scope items require user approval before implementation. |
+| "I'll note the deferral in PLAN.md" | When a plan item is explicitly deferred, create a tracking ticket (Linear issue or bd task) immediately. A deferred item in PLAN.md without a ticket is forgotten — PLAN.md is pruned at session end, and the deferral evaporates. |
+| "I recommend currency.js for this" | Never assert library recommendations without verification. Check npm weekly downloads, last publish date, and open issues count before presenting. If you haven't verified, say 'I haven't checked the maintenance status' explicitly. |
+| "The new utility function is cleaner" | When concept-tracing reveals an existing function that the new code would duplicate, add it to PLAN.md Follow-up section and note the duplication. Don't leave two functions doing the same thing without flagging it. |
+| "The error handling is straightforward, existing tests cover it" | When changing error-handling behavior (e.g., `Promise.all` → `Promise.allSettled`), the test spec MUST include a test for the recovery/partial-failure path. The new behavior's whole point is different failure handling — if that path is untested, the change is untested. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque") | Abstraction-boundary signals. Propose a separate encapsulating entity, not a rename. |
 | "I'll include the full implementation for the deferred item in CONTRACTS.md" | Mark deferred items as stubs with a TODO, not full implementations. Over-scoping contracts leads to over-scoped plans. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
@@ -67,6 +74,10 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 - Skipping contract definition because "it's small"
 - Claiming completion without test-runner verification
 - Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
+- After 1+ compaction, invoke `/handoff` before resuming — do not rely on compressed summary alone
+- If test doubles inject fields/states the actual query doesn't return, STOP — the test passes by accident. Re-sync tests must stub `findFirst` to return an existing record with the claimed prior status, not `null`. A `null` return tests first-time insert, not re-sync.
+- After the 2nd manual patch to the same file in one session, pause and propose a root fix instead of applying a 3rd patch. Three patches to the same file means the first two didn't solve the problem — stop patching and investigate.
+- Before dispatching work to an existing worktree/branch, run `gh pr list --head <branch>`. If an open PR exists, STOP — don't send agents to branches with open PRs unless explicitly instructed.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -224,7 +235,11 @@ ANNOTATION GUIDE:
    ```
    Even small enhancements have implicit assumptions about existing code. Surface them.
 
-3. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
+3. **Enumerate existing mechanics**: Before proposing a new UI affordance or API surface, enumerate existing mechanisms that achieve similar goals. "Does this capability already exist under a different name or in a different form?" Duplicate affordances waste implementation time and confuse users.
+
+4. **Build-vs-buy evaluation**: For non-trivial algorithms (currency math, date parsing, CSV parsing, crypto), evaluate build-vs-buy during planning. Include an "Implementation approach" section in PLAN.md considering library options BEFORE implementation starts.
+
+5. **Launch concept-tracing agents**: Spawn `code-explorer` agents to trace each concept through the codebase. One agent per concept, or group tightly related ones. Each agent reports: what exists, what patterns to follow, what might break.
 
    For field-swap or field-addition features, concept tracing MUST enumerate ALL query paths (Prisma `select`/`include`, SQL queries, API calls) that feed the function under change. Verify each path returns the new field. Missing a query path is the #1 cause of "tests pass but prod breaks" bugs.
 
