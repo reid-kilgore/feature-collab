@@ -1,0 +1,10 @@
+{
+  "name": "feature-collab",
+  "version": "1.0.0",
+  "description": "feature-collab skills for Pi coding agent",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./.gemini/skills"],
+    "prompts": ["./commands"]
+  }
+}
