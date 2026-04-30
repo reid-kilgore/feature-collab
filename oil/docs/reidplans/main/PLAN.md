@@ -4,18 +4,64 @@ ANNOTATION GUIDE:
 - Claude: Uses {==highlights==} only
 -->
 
-# Spike: Pi Coding Harness — Local Setup & Claude Code Drop-in
+# Pi → Oil: Walking Skeleton
 
 ## Status
-**Current Phase**: Report
-**Waiting For**: User review
+**Current Phase**: Implementation
+**Next**: feature-collab:enhance walking skeleton
 
 ---
 
-## Question
+## Goal
 
-1. **Thread A — What is Pi?** What can it do, what knobs exist, how does it extend?
-2. **Thread B — Drop-in**: How do you replicate the existing Claude Code setup (feature-collab skills, beads hooks, etc.) in Pi — and can they coexist?
+A working local coding agent invoked as `oil` (shell alias/wrapper over `pi`) that:
+- Runs `feature-collab:enhance` on a PLAN.md the way Claude Code does
+- Can be pointed at OpenAI/Codex subscription, LM Studio (Qwen local), or Anthropic
+- Has beads context injection at session start (so `bd prime` runs and Pi knows about work)
+
+---
+
+## Walking Skeleton Scope
+
+The skeleton is complete when:
+1. `oil` runs (alias or wrapper for `pi`)
+2. `oil` opens with beads context already injected (SessionStart extension runs `bd prime`)
+3. `/feature-collab:enhance some description` loads the skill and runs the enhance workflow
+4. Provider can be switched to OpenAI (Codex sub) or LM Studio Qwen with a flag or config
+
+Out of scope for skeleton: full beads lifecycle (stop hook), all feature-collab:* skills working perfectly, production-quality extension.
+
+---
+
+## Harness Needs & Gaps
+
+### Resolved from spike
+- Skills: SKILL.md format is shared (Agent Skills standard) — feature-collab skills port directly
+- Package install: `pi install /path` works with a `package.json` declaring skills
+- Settings: `~/.pi/agent/settings.json` for global, `.pi/settings.json` for project
+- Providers: Pi supports Anthropic, OpenAI, and custom OpenAI-compatible endpoints (LM Studio)
+
+### Open Gaps (need resolution before/during build)
+
+| Gap | Blocker? | Notes |
+|-----|----------|-------|
+| Pi extension TypeScript API (`on("session:start", ...)` exact shape) | Yes | Extension docs 404'd; need raw GitHub source |
+| LM Studio OpenAI-compatible endpoint format in Pi settings | Yes | Likely `baseUrl` override under provider config |
+| Slash command namespace in Pi — does `feature-collab:bugfix` format work? | Yes | Package name in package.json may control this |
+| CC-specific SKILL.md frontmatter (`context: fork`, `agent:`) — silently ignored or error? | Medium | Need live test |
+| `oil` alias: shell alias vs npm-linked wrapper vs symlinked bin | Low | Alias is simplest; wrapper needed if we want config injection |
+
+### Concrete build tasks
+
+1. **`package.json`** for `feature-collab/plugins/feature-collab/` — 5 lines, declares skills dir
+2. **Pi settings** — `~/.pi/agent/settings.json` with Anthropic + OpenAI (Codex) + LM Studio (Qwen)
+3. **Beads extension** — `~/.pi/agent/extensions/beads.ts` — runs `bd prime` on SessionStart
+4. **`oil` alias/wrapper** — `~/.local/bin/oil` or shell alias
+5. **Verify**: `oil` → `/feature-collab:enhance` loads and runs
+
+---
+
+## Original Spike Research
 
 ---
 
