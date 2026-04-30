@@ -4,7 +4,7 @@ ANNOTATION GUIDE:
 - Claude: Uses {==highlights==} only
 -->
 
-# Spike: Claude Code Harness Local Setup & Drop-in Configuration
+# Spike: Pi Coding Harness — Local Setup & Claude Code Drop-in
 
 ## Status
 **Current Phase**: Report
@@ -14,206 +14,292 @@ ANNOTATION GUIDE:
 
 ## Question
 
-Two related but distinct research threads:
+1. **Thread A — What is Pi?** What can it do, what knobs exist, how does it extend?
+2. **Thread B — Drop-in**: How do you replicate the existing Claude Code setup (feature-collab skills, beads hooks, etc.) in Pi — and can they coexist?
 
-**Thread A — Harness internals**: What is the Claude Code "coding harness"? What components does it expose, what knobs exist to configure or extend it (hooks, settings, MCPs, skills, CLAUDE.md), and how does the local architecture work?
+---
 
-**Thread B — Drop-in configuration**: How do you configure a local Claude Code instance so that it acts as a "drop-in" replacement for a hosted coding agent — invoking skills with slash commands, reading from local skill/agent marketplaces, sharing CLAUDE.md and agent definitions across projects?
+## What Pi Is
+
+Pi (`@mariozechner/pi-coding-agent`) is an MIT-licensed open-source terminal coding harness by Mario Zechner (badlogic). It is intentionally minimal at the core — 4 built-in tools (read, write, edit, bash) — and everything else is an extension. 25+ AI providers. 1,919+ community packages.
+
+**Install:**
+```bash
+npm install -g @mariozechner/pi-coding-agent
+export ANTHROPIC_API_KEY=sk-ant-...
+pi   # run in any project directory
+```
+
+Or authenticate via `/login` to use an existing Anthropic subscription.
+
+---
+
+## Claude Code ↔ Pi: Side-by-Side Map
+
+| Concept | Claude Code | Pi |
+|---------|-------------|-----|
+| **Install** | Bundled CLI | `npm install -g @mariozechner/pi-coding-agent` |
+| **Run** | `claude` | `pi` |
+| **Global config dir** | `~/.claude/` | `~/.pi/agent/` |
+| **Project config dir** | `.claude/` | `.pi/` |
+| **Global settings** | `~/.claude/settings.json` | `~/.pi/agent/settings.json` |
+| **Project settings** | `.claude/settings.json` | `.pi/settings.json` |
+| **Global instructions** | `~/.claude/CLAUDE.md` | `AGENTS.md` or `SYSTEM.md` per project |
+| **Skills (global)** | `~/.claude/skills/<name>/SKILL.md` | `~/.pi/agent/skills/<name>/SKILL.md` |
+| **Skills (project)** | `.claude/skills/<name>/SKILL.md` | `.pi/skills/<name>/SKILL.md` |
+| **Hooks/lifecycle** | Shell scripts (28 events, settings.json) | TypeScript Extensions (lifecycle events) |
+| **Subagents** | `~/.claude/agents/<name>.md` | TypeScript Extensions (sub-agent API) |
+| **MCP** | `.mcp.json` + `claude mcp add` | Extensions (user builds their own) |
+| **Plugins/packages** | `.claude-plugin/plugin.json`, marketplace | npm package with `"pi"` key, `pi install` |
+| **Marketplace** | claude-plugins-official + local | `pi.dev/packages` (npm, 1,919+ packages) |
+| **Install package** | `/plugin install name@marketplace` | `pi install npm:package-name` |
+| **Local package** | `extraKnownMarketplaces` directory | `pi install /absolute/path/to/package` |
 
 ---
 
 ## Findings
 
-### Thread A: The Configuration Surface is Enormous
+### Skills: Directly Compatible
 
-Claude Code exposes **4 primary extension points** plus **2 secondary** ones:
+**{==This is the most important finding: Pi and Claude Code share the same Agent Skills standard (SKILL.md format).==}**
 
-**1. `settings.json` — master control** (80+ keys across 10 categories)
-- Model/behavior: `model`, `effortLevel`, `alwaysThinkingEnabled`, `agent`
-- Interface: `tui`, `viewMode`, `statusLine`, `language`, `theme`, `spinnerVerbs`
-- Permissions: `permissions.allow/deny/ask`, `permissions.additionalDirectories`, `permissions.defaultMode`
-- Sandbox: network allowlists/denylists, filesystem read/write controls, proxy
-- Environment: `env` (inject vars into every session), `apiKeyHelper`, credential scripts
-- Hooks: (see below)
-- Plugins: `enabledPlugins`, `extraKnownMarketplaces`
-- Worktree: `worktree.symlinkDirectories`, `worktree.sparsePaths`
-- Attribution: custom git commit/PR footers
-- MCP: MCPs are in `~/.claude.json`, not `settings.json`
+The pi-skills repo (`github.com/badlogic/pi-skills`) confirms skills work across Pi, Claude Code, Codex CLI, and Amp. The SKILL.md frontmatter is identical. This means:
 
-**2. Hooks — 28 lifecycle events**
-Every significant moment in a session fires an event. Key ones:
-- `SessionStart` / `SessionEnd` — setup/teardown
-- `UserPromptSubmit` — inject context before every prompt (what your `on-prompt.sh` does)
-- `PreToolUse` / `PostToolUse` — wrap every tool call; PreToolUse can modify input or deny
-- `Stop` — after every Claude response (what your `on-stop.sh` uses)
-- `PreCompact` / `PostCompact` — context management events
-- `SubagentStart` / `SubagentStop` — agent lifecycle
-- `FileChanged` — react to specific file changes
-- `ConfigChange` — react to settings changes
+- `~/.claude/skills/beads-workflow/SKILL.md` — can be symlinked to `~/.pi/agent/skills/beads-workflow/SKILL.md`
+- Feature-collab skills (SKILL.md files) — can be installed directly in Pi as a package
+- Claude Code-specific frontmatter fields (`context: fork`, `agent:`, skill-level `hooks:`) will be silently ignored by Pi
 
-Hook handlers can be: `command` (shell), `http` (webhook), `mcp_tool`, `prompt` (send to Claude), or `agent` (spawn subagent).
+**Claude Code note for skills**: CC requires skills in `~/.claude/skills/` because it only searches one directory level deep. Pi discovers skills recursively, so packages can nest them.
 
-PreToolUse hooks can intercept and **modify the tool's input** (`updatedInput`) or **deny it** without prompting the user — this is the most powerful hook capability.
+### Extensions: Pi's Replacement for Hooks + MCPs + Subagents
 
-**3. Skills (`~/.claude/skills/<name>/SKILL.md`)** — slash commands
-Full frontmatter schema: model override, effort override, tool allowlists, `context: fork` (isolated subagent), path-scoping, argument substitution, inline shell execution with `` !`cmd` ``.
+Pi deliberately omits built-in hooks, MCP support, and sub-agents — these are all done via TypeScript extensions.
 
-**4. Subagents (`~/.claude/agents/<name>.md`)** — specialized workers
-Each is a markdown file with YAML frontmatter defining: model, tools allowlist/denylist, permissionMode, maxTurns, preloaded skills, MCP server access, hooks, isolation (worktree), and the system prompt in the body.
+**Discovery paths:**
+- `~/.pi/agent/extensions/` (global)
+- `.pi/extensions/` (project-local)
+- `-e /path/to/extension.ts` (one-off, for testing)
 
-**5. MCP servers** — external tools/APIs
-Three transports: `stdio` (local process), `http` (streamable, current standard), `sse` (deprecated). Config lives in `.mcp.json` (project, shared) or `~/.claude.json` (user/local, private). Env var expansion built in.
+**What extensions can do:**
+- Register custom LLM-callable tools
+- Intercept lifecycle events (block, modify, or observe tool calls)
+- Add slash commands
+- Prompt the user interactively (select, confirm, input)
+- Persist state across sessions
+- Render custom TUI components
 
-**6. CLAUDE.md hierarchy** — persistent instructions
-7 load levels: managed policy → user global → user rules → project → project-local → project rules → subdirectory (lazy). All concatenate (no override). Path-scoped rules via `.claude/rules/*.md` with `paths:` frontmatter. `@import` syntax for composing from shared files.
+**Hot-reloading:** `/reload` picks up edits to existing extension files instantly. New top-level extension files require restart.
 
-**Key local files you already have:**
-- `~/.claude/settings.json` — richly configured (hooks, statusLine, permissions)
-- `~/.claude/CLAUDE.md` — global instructions
-- `~/.claude/hooks/on-prompt.sh` — UserPromptSubmit context injection pattern
-- `~/.claude/hooks/on-stop.sh` — Stop event side effects
-- `~/.claude/statusline-command.sh` — custom status bar
+**Your existing CC hooks → Pi extension equivalents:**
+
+| CC Hook | Pi Extension |
+|---------|-------------|
+| `UserPromptSubmit` → inject wip context | `on("prompt:before", ...)` — inject context before LLM call |
+| `Stop` → set wip WAITING | `on("response:after", ...)` |
+| `SessionStart` → `bd prime` | `on("session:start", ...)` |
+| `PreToolUse` → intercept Bash | `on("tool:before", ...)` with `tool.name === "bash"` |
+
+### Packages: Pi's Plugin System
+
+Pi packages are **npm packages** with a `"pi"` key in `package.json` plus a `"pi-package"` keyword. They bundle extensions + skills + prompts + themes.
+
+**Package structure:**
+```
+my-pi-package/
+  package.json           # "pi": {"extensions": ["./extensions"], "skills": ["./skills"]}
+  extensions/
+    main.ts              # TypeScript extension
+  skills/
+    my-skill/
+      SKILL.md
+  prompts/
+    my-prompt.md
+  themes/
+    my-theme.json
+```
+
+**Install from local directory:**
+```bash
+pi install /Users/reid/dev/fun_claude/feature-collab/plugins/feature-collab
+```
+
+No copy is made — the path is referenced directly. This means editing the source updates the installed package immediately.
+
+**Install from npm:**
+```bash
+pi install npm:pi-subagents         # sub-agent delegation
+pi install npm:pi-web-access        # web search + URL fetching
+pi install npm:pi-lens              # LSP + linters
+pi install npm:context-mode         # 98% context savings via code execution + knowledge base
+pi install npm:pi-crew              # coordinated AI teams
+```
+
+**Project-local install (shared with team via `.pi/`):**
+```bash
+pi install -l npm:pi-web-access
+```
+
+### Settings: Simpler Than Claude Code
+
+```json
+// ~/.pi/agent/settings.json
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
+  "theme": "dark",
+  "compaction.enabled": true,
+  "retry.enabled": true
+}
+```
+
+No 80-key surface. The extension system handles what Claude Code does via settings. Project `.pi/settings.json` overrides global with smart merge.
 
 ---
 
-### Thread B: The Drop-in Setup
+## Replication Strategy: feature-collab in Pi
 
-**Slash command routing:**
-```
-/my-skill          → ~/.claude/skills/my-skill/SKILL.md          (personal, all projects)
-/my-skill          → .claude/skills/my-skill/SKILL.md             (project-only)
-/plugin-name:skill → via installed plugin with name "plugin-name" (plugin namespace)
-```
+### Option A: Symlink Skills, Write Extensions (Full Drop-in)
 
-**Critical finding**: colon-namespaced commands like `/feature-collab:bugfix` require a **plugin** with `name: "feature-collab"` in `plugin.json`. You cannot get colon syntax from a subdirectory inside `~/.claude/skills/`.
-
-**Gap resolved**: Your `feature-collab:*` skills come from a **local marketplace** at `/Users/reid/dev/fun_claude/feature-collab/`. Structure:
-```
-feature-collab/
-  .claude-plugin/marketplace.json   ← declares this as a marketplace
-  plugins/
-    feature-collab/                 ← plugin named "feature-collab"
-      .claude-plugin/plugin.json
-      skills/                       ← all feature-collab:* skills live here
-    gh-checks/                      ← plugin named "gh-checks"
-      .claude-plugin/plugin.json
+**Step 1 — Install Pi:**
+```bash
+npm install -g @mariozechner/pi-coding-agent
 ```
 
-Registered in `~/.claude/settings.json` as `"feature-collab@feature-collab-marketplace": true` in `enabledPlugins`. The marketplace URL was added via `/plugin marketplace add` (stored in `~/.claude.json`).
+**Step 2 — Symlink skills:**
+```bash
+mkdir -p ~/.pi/agent/skills
+# Symlink each skill from the CC skills dir:
+for skill in ~/.claude/skills/*/; do
+  ln -s "$skill" ~/.pi/agent/skills/$(basename "$skill")
+done
+```
 
-Personal skills in `~/.claude/skills/`: `beads-workflow/` and `beads-plan-to-epic/` are directory-format (proper). `collab-manager` and `collab-builder` are **symlinks** into the feature-collab repo's `.gemini/skills/` directory — a local development pattern for testing skills before publishing to the marketplace.
+Or symlink the feature-collab plugin's skills directory as a Pi package:
+```bash
+# Add package.json to the feature-collab plugin directory (see Step 3)
+pi install /Users/reid/dev/fun_claude/feature-collab/plugins/feature-collab
+```
 
-**CLAUDE.md composition:**
-All files concatenate (deepest/most-specific file has final say). The full stack for a project at `~/dev/fun_claude/oil/`:
-1. `/Library/Application Support/ClaudeCode/CLAUDE.md` (managed, if exists)
-2. `~/.claude/CLAUDE.md`
-3. `~/.claude/rules/*.md`
-4. `~/dev/fun_claude/CLAUDE.md`
-5. `~/dev/fun_claude/oil/CLAUDE.md` (doesn't exist — oil inherits both parents)
-6. `~/dev/fun_claude/oil/.claude/rules/*.md` (if any)
+**Step 3 — Add `package.json` to feature-collab plugin:**
+```json
+{
+  "name": "feature-collab-pi",
+  "version": "1.0.0",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./skills"]
+  }
+}
+```
+Drop this in `/Users/reid/dev/fun_claude/feature-collab/plugins/feature-collab/`. Then `pi install /path/to/plugin` and skills are available.
 
-**Five tiers for sharing skills across projects:**
+**Step 4 — Write beads extension:**
+```typescript
+// ~/.pi/agent/extensions/beads.ts
+import { extension, on, exec } from "@mariozechner/pi-coding-agent";
 
-| Tier | Mechanism | Scope | Persistence |
-|------|-----------|-------|-------------|
-| 1 | `~/.claude/skills/<name>/SKILL.md` | All projects, no colon namespace | Permanent |
-| 2 | `~/.claude/rules/*.md` with symlinks | All projects, path-scoped rules | Permanent |
-| 3 | `claude --plugin-dir ~/.claude/my-plugin` | Session-only | Per-invocation |
-| 4 | Plugin installed to user scope | All projects, colon namespace | Permanent |
-| 5 | `extraKnownMarketplaces` + `enabledPlugins` in `settings.json` | All projects | Permanent |
+export default extension({
+  name: "beads",
+  description: "Beads task tracking integration"
+});
 
-**Custom subagents globally**: create `~/.claude/agents/<name>.md` — available everywhere, referenced as `agent: name` in skill frontmatter or auto-delegated based on `description`.
+on("session:start", async () => {
+  const result = await exec("bd prime");
+  // inject result as context — exact API TBD from extension docs
+});
+
+on("response:after", async () => {
+  await exec("wip status WAITING 2>/dev/null || true");
+});
+```
+
+**Step 5 — Verify skills appear:**
+```bash
+pi
+# Type / to see available slash commands
+```
+
+### Option B: Lightweight — Pi Alongside CC, Shared Skills Only
+
+Just symlink the skills directory and run Pi with Anthropic as provider. No extension rewrites. Use Pi for multi-model experiments; use Claude Code for the full harness.
+
+```bash
+# Symlink entire skills dir (read-only from Pi's perspective)
+ln -s ~/.claude/skills ~/.pi/agent/skills
+```
+
+Pi's recursive skill discovery means it finds all subdirectories. Skills work identically. You lose beads/wip integration but gain multi-provider access.
+
+---
+
+## What's in the Pi Marketplace Worth Installing
+
+| Package | What it does | Equivalent in CC |
+|---------|-------------|-----------------|
+| `pi-subagents` | Spawn isolated subagents within a session | Subagents / Agent tool |
+| `pi-web-access` | Web search, URL fetch, GitHub clone, PDF | WebFetch + WebSearch tools |
+| `pi-lens` | LSP integration + linters | (no direct CC equivalent) |
+| `context-mode` | Knowledge bases + smart context shrinking | CC auto-memory |
+| `pi-crew` | Coordinated AI teams | Agent teams (CC) |
+| `pi-board` | AI-first task/sprint manager | Beads (your current setup) |
+| `pi-multiagent` | Parallel execution via same-session delegation | Agent tool parallel dispatches |
 
 ---
 
 ## Recommendations
 
-### Priority 1: Audit the current feature-collab skill setup
+### Priority 1: Install Pi and verify skills work
 
-Run `ls ~/.claude/skills/` and `ls ~/.claude/` to understand the current structure. Determine if feature-collab skills are:
-- Installed plugins → document the structure, replicate pattern for new plugins
-- Flat files with colons in names → upgrade to proper plugin structure
-- Loaded via `--plugin-dir` → make persistent via `enabledPlugins` + `extraKnownMarketplaces`
-
-### Priority 2: Formalize the plugin structure for feature-collab
-
-Once structure is understood, package the feature-collab skills as a proper plugin with:
-```
-~/.claude/local-plugins/feature-collab/
-  .claude-plugin/
-    plugin.json   # {"name": "feature-collab", "version": "1.0.0"}
-  skills/
-    bugfix/SKILL.md
-    spike/SKILL.md
-    ...
-  agents/
-    code-explorer.md
-    code-architect.md
+```bash
+npm install -g @mariozechner/pi-coding-agent
+export ANTHROPIC_API_KEY=...   # or pi /login
+ln -s ~/.claude/skills ~/.pi/agent/skills  # share skills immediately
+cd /Users/reid/dev/fun_claude && pi
+# Test: /beads-workflow, /feature-collab:* (if package installed)
 ```
 
-Register in `~/.claude/settings.json`:
-```json
-{
-  "extraKnownMarketplaces": {
-    "local": {
-      "source": {"source": "directory", "path": "~/.claude/local-plugins"}
-    }
-  },
-  "enabledPlugins": {"feature-collab@local": true}
-}
-```
+Skills are the easiest win — zero rewriting, same format.
 
-### Priority 3: Extend hooks for the harness you want
+### Priority 2: Add package.json to feature-collab plugin, install in Pi
 
-Hooks you don't have yet but could add:
-- `PreToolUse` matcher `Write|Edit` — auto-snapshot before file writes
-- `SubagentStart` — inject per-agent context (e.g., which model is being used)
-- `PreCompact` — already have `bd prime`; could also checkpoint wip state
-- `FileChanged` matcher `.env` — refresh env on file change
+Add a 5-line `package.json` to the feature-collab plugin directory, then `pi install /path`. This gives Pi access to all `feature-collab:*` skills immediately, and since it's a live path reference, edits to skills are instantly reflected in both tools.
 
-### Priority 4: Set up path-scoped rules
+### Priority 3: Write a minimal beads extension (Phase 2)
 
-Move project-type-specific instructions out of CLAUDE.md into `~/.claude/rules/`:
-```
-~/.claude/rules/
-  typescript.md    # paths: src/**/*.ts — TypeScript-specific rules
-  swift.md         # paths: **/*.swift — Swift rules
-  python.md        # paths: **/*.py — Python rules
-```
+The beads session-start context injection (`bd prime`) is the most valuable CC hook to replicate. It's ~20 lines of TypeScript. Do this after verifying skills work.
 
-These only consume context when Claude is editing matching files.
+### Priority 4: Explore Pi marketplace packages
+
+After the basics work, `pi install npm:pi-subagents` and `pi install npm:pi-web-access` give Pi capabilities closer to CC's built-in Agent tool and WebFetch.
 
 ---
 
-## Trade-offs
+## Trade-offs: Pi vs Claude Code
 
-| Option | Pros | Cons |
-|--------|------|------|
-| Personal skills (`~/.claude/skills/`) | Immediate, no setup | No colon namespace, no bundling with agents |
-| Plugin structure | Colon namespace, agents + skills + MCPs bundled | More setup; requires plugin.json |
-| Per-project `.claude/skills/` | Project-specific, committed to git | Not global; others on project must also use CC |
-| `--plugin-dir` per session | Quick, no install | Not persistent; breaks in subagents/worktrees |
+| Dimension | Claude Code | Pi |
+|-----------|-------------|-----|
+| **Model choice** | Claude only | 25+ providers, swap mid-session |
+| **Extension model** | Shell scripts (hooks) | TypeScript (more powerful, steeper) |
+| **Skills** | Same format (SKILL.md) | Same format (SKILL.md) |
+| **Package ecosystem** | ~50 official + local marketplace | 1,919+ npm packages |
+| **Subagents** | Built-in (`.claude/agents/`) | Extension (TypeScript) |
+| **MCP** | Built-in (`.mcp.json`) | Extension (user builds) |
+| **Context management** | Auto-compaction built-in | Extension or `context-mode` package |
+| **Openness** | Anthropic-controlled | MIT, fork-friendly |
+| **Stability** | More opinionated, more stable | More flexible, more volatile |
+
+**Bottom line**: Pi and Claude Code are complementary, not competing. The skills layer is shared. Use Pi for multi-provider experiments and extension-building; use CC for the full harness (hooks, subagents, MCP) that's already wired up.
 
 ---
 
-## Follow-up Actions
+## Open Gaps
 
-- [x] Verify feature-collab structure — it's a local marketplace at `/Users/reid/dev/fun_claude/feature-collab/`
-- [ ] Prototype a minimal new plugin (1 skill + 1 agent) to validate the full flow end-to-end
-- [ ] Consider adding `SubagentStart` hook to log/audit agent spawning
-- [ ] Consider `~/.claude/rules/` path-scoped rules for multi-language projects
-- [ ] Consider `CLAUDE_ENV_FILE` pattern in SessionStart to inject dynamic env
-
-## Gaps Remaining
-
-1. ~~Exact format of `~/.claude/skills/`~~ — resolved: directory-format with SKILL.md
-2. ~~How `feature-collab:*` namespace is achieved~~ — resolved: local marketplace plugin
-3. Full `plugin.json` and `marketplace.json` schema details (needs live testing to verify all fields)
-4. Hook `if` field exact syntax
-5. Hook `once` and `asyncRewake` field behavior
-6. Full list of valid `outputStyle` values
-7. Agent teams system (separate from subagents — multiple parallel sessions)
-8. MCP Channels protocol
+1. **Exact Pi extension event API** — the TypeScript API for `on("session:start", ...)` needs verification against actual extension docs (URL 404'd; need raw GitHub source)
+2. **CC-specific SKILL.md frontmatter in Pi** — `context: fork`, `agent:`, skill-level `hooks:` will be ignored; need to verify no errors are thrown
+3. **Slash command namespace in Pi** — does Pi support `feature-collab:bugfix` slash command format, or just `featurecollab-bugfix`? The package name in `package.json` may determine this
+4. **Beads extension API** — exact TypeScript API for injecting context into a Pi session (vs just running a shell command)
+5. **`pi config` vs `settings.json`** — whether `pi config` is a separate config file or just edits `settings.json`
 
 ## Status
 **Current Phase**: Complete
