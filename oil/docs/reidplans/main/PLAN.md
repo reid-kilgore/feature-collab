@@ -85,11 +85,23 @@ Three transports: `stdio` (local process), `http` (streamable, current standard)
 /plugin-name:skill → via installed plugin with name "plugin-name" (plugin namespace)
 ```
 
-**Critical finding**: colon-namespaced commands like `/feature-collab:bugfix` require a **plugin** with `name: "feature-collab"` in `plugin.json`. You cannot get colon syntax from a subdirectory inside `~/.claude/skills/`. This means your current `feature-collab:*` skills are either:
-- (a) Loaded via `--plugin-dir` or installed as a proper plugin, OR
-- (b) Using an undocumented flat-file naming convention with colons in filenames
+**Critical finding**: colon-namespaced commands like `/feature-collab:bugfix` require a **plugin** with `name: "feature-collab"` in `plugin.json`. You cannot get colon syntax from a subdirectory inside `~/.claude/skills/`.
 
-**{==This is an open gap — run `ls ~/.claude/skills/` to determine the actual format==}**
+**Gap resolved**: Your `feature-collab:*` skills come from a **local marketplace** at `/Users/reid/dev/fun_claude/feature-collab/`. Structure:
+```
+feature-collab/
+  .claude-plugin/marketplace.json   ← declares this as a marketplace
+  plugins/
+    feature-collab/                 ← plugin named "feature-collab"
+      .claude-plugin/plugin.json
+      skills/                       ← all feature-collab:* skills live here
+    gh-checks/                      ← plugin named "gh-checks"
+      .claude-plugin/plugin.json
+```
+
+Registered in `~/.claude/settings.json` as `"feature-collab@feature-collab-marketplace": true` in `enabledPlugins`. The marketplace URL was added via `/plugin marketplace add` (stored in `~/.claude.json`).
+
+Personal skills in `~/.claude/skills/`: `beads-workflow/` and `beads-plan-to-epic/` are directory-format (proper). `collab-manager` and `collab-builder` are **symlinks** into the feature-collab repo's `.gemini/skills/` directory — a local development pattern for testing skills before publishing to the marketplace.
 
 **CLAUDE.md composition:**
 All files concatenate (deepest/most-specific file has final say). The full stack for a project at `~/dev/fun_claude/oil/`:
@@ -186,19 +198,17 @@ These only consume context when Claude is editing matching files.
 
 ## Follow-up Actions
 
-- [ ] Run `ls ~/.claude/skills/` to determine current feature-collab structure
-- [ ] If flat files: document whether colons in filenames are actually supported
-- [ ] If already a plugin: find plugin.json and document the exact structure
-- [ ] Prototype a minimal new plugin (1 skill + 1 agent) to validate the full flow
+- [x] Verify feature-collab structure — it's a local marketplace at `/Users/reid/dev/fun_claude/feature-collab/`
+- [ ] Prototype a minimal new plugin (1 skill + 1 agent) to validate the full flow end-to-end
 - [ ] Consider adding `SubagentStart` hook to log/audit agent spawning
 - [ ] Consider `~/.claude/rules/` path-scoped rules for multi-language projects
 - [ ] Consider `CLAUDE_ENV_FILE` pattern in SessionStart to inject dynamic env
 
 ## Gaps Remaining
 
-1. Exact format of `~/.claude/skills/` (directory vs flat-file)
-2. How `feature-collab:*` namespace is currently achieved
-3. Full `plugin.json` schema and marketplace registration flow (needs live testing)
+1. ~~Exact format of `~/.claude/skills/`~~ — resolved: directory-format with SKILL.md
+2. ~~How `feature-collab:*` namespace is achieved~~ — resolved: local marketplace plugin
+3. Full `plugin.json` and `marketplace.json` schema details (needs live testing to verify all fields)
 4. Hook `if` field exact syntax
 5. Hook `once` and `asyncRewake` field behavior
 6. Full list of valid `outputStyle` values
