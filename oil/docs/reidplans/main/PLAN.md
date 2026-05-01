@@ -7,10 +7,46 @@ ANNOTATION GUIDE:
 # Spike: Dirac Improvements → Oil
 
 ## Status
-**Current Phase**: Complete
-**Completed**: 2026-05-01
+**Current Phase**: Scope & Contract (enhance)
+**Waiting For**: User review
 
-## Question
+## Enhancement: dirac-edit + tilth integration for oil
+
+### Description
+Add a `dirac-edit` Pi extension to oil that provides word-anchor range editing, complementing tilth's existing symbol search and read tools. The agent says "edit from anchor Moderator to anchor Corona" rather than quoting old code verbatim. Removes `tilth_edit` from directTools to route all edits through the anchor layer.
+
+### In Scope
+- [ ] `~/.oil/extensions/dirac-edit.ts` — Pi extension with `dirac_read` and `dirac_edit` tools
+- [ ] `~/.oil/mcp.json` — remove `tilth_edit` from directTools
+
+### Explicitly Out of Scope
+- tree-sitter skeleton reads (tilth already handles outlines)
+- Opportunistic context prefetching
+- Publishing as npm package
+- Myers Diff re-anchoring (MVP uses line-shift math after edits)
+
+### Exit Criteria
+- [ ] `dirac_read` reads a file and returns content with word-anchor labels per line
+- [ ] Anchor state persists in module scope between `dirac_read` and `dirac_edit` calls
+- [ ] `dirac_edit` accepts `{start_anchor, end_anchor, replacement}[]` and applies range edits
+- [ ] After edit, anchor state is updated (line-shift for unchanged lines, fresh anchors for new lines)
+- [ ] `tilth_edit` removed from `~/.oil/mcp.json` directTools
+- [ ] Extension loads in oil without errors (`/reload` succeeds)
+- [ ] < 200 lines of production code added
+
+### Concepts Traced
+- **Pi registerTool API**: `pi.registerTool({ name, description, parameters: Type.Object({...}), execute(id, params, signal) {} })` — typebox for schema, module-level vars for cross-call state, `node:fs/promises` available
+- **tilth_edit**: hash-anchored (`N:hash│ content`) — already provides staleness detection; removed from directTools so agent uses dirac_edit instead
+- **tilth_read**: returns `N │ content` (full) or outline (large files) — dirac_read reads via fs independently to inject word anchors cleanly
+- **Re-anchoring**: after edit replacing lines [s, e] with N new lines, shift all anchors after line e by `N - (e - s + 1)`; assign fresh anchors to the N replacement lines
+
+### Files Changing
+- `~/.oil/extensions/dirac-edit.ts` — new (~120 lines)
+- `~/.oil/mcp.json` — remove `tilth_edit` from directTools array (1 line)
+
+---
+
+## Question (from spike)
 What techniques does Dirac (https://github.com/dirac-run/dirac) use — particularly batch edits, hashlines, and other context/diff innovations — and which are worth porting into oil (Pi-based)?
 
 ## Hypotheses
