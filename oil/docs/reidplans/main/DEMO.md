@@ -1,4 +1,193 @@
-# DEMO: Claude Code Harness Local Setup & Drop-in Configuration
+# DEMO: Dirac Improvements → Oil Spike
+
+## Spike Findings — Concrete Examples
+
+---
+
+## 1. The Problem: Pi's Current Edit Tool
+
+Pi uses exact-content search-replace. The LLM must quote the existing code verbatim in `oldText`:
+
+```json
+// Pi edit tool call (current)
+{
+  "tool": "edit",
+  "path": "payments.py",
+  "edits": [
+    {
+      "oldText": "def complex_payment_processor(transaction_data):\n    logger.info(\"Starting processing\")\n    logger.info(\"Payment successful\")\n    return {\"status\": \"success\"}",
+      "newText": "def complex_payment_processor(transaction_data, strict_mode=True):\n    logger.info(\"Starting processing\")\n    if strict_mode:\n        validate_transaction(transaction_data)\n    logger.info(\"Payment successful\")\n    return {\"status\": \"success\"}"
+    }
+  ]
+}
+```
+
+**Token cost**: ~50 lines of old code repeated + ~55 lines new code = ~105 lines of output tokens.
+
+**Failure modes**:
+- `oldText` not unique → edit silently applies to wrong location
+- Stale content (file changed since read) → fuzzy matcher may match wrong block
+- Long functions require quoting many lines to achieve uniqueness
+
+---
+
+## 2. Dirac's Word-Anchor Approach
+
+When Dirac presents a file to the LLM, each line is prefixed with a single-token English word anchor:
+
+```
+# payments.py — as shown to LLM by dirac_read
+Moderator§def complex_payment_processor(transaction_data):
+Qualifier§    logger.info("Starting processing")
+Ripple§    logger.info("Payment successful")
+Corona§    return {"status": "success"}
+```
+
+The LLM edits by range: `start_anchor → end_anchor → replacement`. No old code repeated:
+
+```json
+// Dirac-style edit tool call
+{
+  "tool": "dirac_edit",
+  "file_path": "payments.py",
+  "edits": [
+    {
+      "start_anchor": "Moderator",
+      "end_anchor": "Corona",
+      "replacement": "def complex_payment_processor(transaction_data, strict_mode=True):\n    logger.info(\"Starting processing\")\n    if strict_mode:\n        validate_transaction(transaction_data)\n    logger.info(\"Payment successful\")\n    return {\"status\": \"success\"}"
+    }
+  ]
+}
+```
+
+**Token cost**: 2 anchor words + ~55 lines new code = ~57 lines of output tokens. **~46% reduction** for this example. The blog post reports ~50% avg.
+
+---
+
+## 3. After Edit: Myers Diff Re-anchors Only Changed Lines
+
+The State Manager diffs the new file and assigns fresh anchors to added/shifted lines. New file returned to LLM:
+
+```
+# payments.py — anchor state after edit
+Moderator§def complex_payment_processor(transaction_data, strict_mode=True):
+Qualifier§    logger.info("Starting processing")
+Veranda§    if strict_mode:                          ← new anchor assigned
+Canopy§        validate_transaction(transaction_data) ← new anchor assigned
+Ripple§    logger.info("Payment successful")          ← unchanged, same anchor
+Corona§    return {"status": "success"}               ← unchanged, same anchor
+```
+
+Only 2 lines needed new anchors (the inserted lines). No full re-read required.
+
+---
+
+## 4. File Skeleton: Reading Without Token Bloat
+
+For a 500-line file, Dirac's `dirac_read` returns a skeleton by default:
+
+```
+# payments.py — skeleton view (dirac_read default)
+Moderator§def complex_payment_processor(transaction_data, strict_mode=True): [line 1-45]
+Firewall§def validate_transaction(transaction_data): [line 47-89]
+Nebula§class PaymentError(Exception): [line 91-110]
+Pinnacle§def process_batch(transactions: List[dict]) -> List[dict]: [line 112-200]
+```
+
+LLM can request expansion of a specific range:
+```json
+{ "tool": "dirac_read", "file_path": "payments.py", "expand": "Firewall" }
+```
+
+Returns only lines 47-89 — not all 500 lines.
+
+---
+
+## 5. Porting to Pi: The Extension Architecture
+
+```typescript
+// ~/.oil/extensions/dirac-edit.ts (prototype design)
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { diffLines } from "diff"; // Myers Diff, off-the-shelf npm
+
+const ANCHOR_POOL = ["Moderator", "Qualifier", "Ripple", "Corona", "Firewall", ...]; // ~1,700 words
+
+// State: per-file anchor maps, lives in-process (module scope)
+const anchorState = new Map<string, Map<string, number>>(); // file → anchor → line index
+
+export default function(pi: ExtensionAPI) {
+  pi.registerTool("dirac_read", {
+    description: "Read file with word-anchor labels for cheap range-based editing",
+    parameters: { file_path: { type: "string" }, skeleton: { type: "boolean", default: true } },
+    execute: async ({ file_path, skeleton }) => {
+      const content = await readFile(file_path);
+      const lines = content.split("\n");
+      const fileAnchors = new Map<string, number>();
+      const labeled = lines.map((line, i) => {
+        const anchor = ANCHOR_POOL[i % ANCHOR_POOL.length]; // simplified assignment
+        fileAnchors.set(anchor, i);
+        return `${anchor}§${line}`;
+      });
+      anchorState.set(file_path, fileAnchors);
+      return labeled.join("\n");
+    }
+  });
+
+  pi.registerTool("dirac_edit", {
+    description: "Edit file by anchor range — no old code quoting needed",
+    parameters: {
+      file_path: { type: "string" },
+      edits: { type: "array", items: {
+        start_anchor: { type: "string" }, end_anchor: { type: "string" },
+        replacement: { type: "string" }
+      }}
+    },
+    execute: async ({ file_path, edits }) => {
+      // Look up line ranges from anchor state, apply replacements, re-anchor via Myers Diff
+      // ... ~40 lines of implementation
+    }
+  });
+}
+```
+
+**What makes this work without forking Pi**:
+- `pi.registerTool()` adds LLM-callable tools with any schema
+- Module-level `anchorState` persists within a session (Pi loads extensions as ES modules)
+- No Pi core changes needed — the tools sit alongside Pi's native `edit` tool
+
+**Hard part**: Proper anchor pool management (uniqueness per file, pool exhaustion fallback to 2-token combinations) is ~40 more lines. The Myers Diff reconciliation after edits is the trickiest part to get right.
+
+---
+
+## 6. Gap Summary
+
+| Capability | Pi/oil today | With dirac-edit extension |
+|-----------|-------------|--------------------------|
+| Edit token cost | ~100% (quotes old+new) | ~50% (anchor + new only) |
+| Uniqueness failures | Possible on non-unique blocks | Eliminated (anchor is injected identity) |
+| Stale file detection | Fuzzy match (silent risk) | Anchor validation + error response |
+| File reading | Full content, no structure | Skeleton by default + expand |
+| Multi-file batch | One file per call | One file per call (same — Pi parallel calls cover this) |
+
+---
+
+## 7. Tilth Overlap Check
+
+Before building skeleton reads, verify tilth already covers this:
+
+```bash
+# In oil, after tilth is wired via pi-mcp-adapter:
+# tilth_read returns structural outline for large files (already)
+# tilth_search finds symbols with source context (already)
+```
+
+If `tilth_read`'s outline mode plus `tilth_search` cover the "show me structure without reading 500 lines" use case, the skeleton read extension may not be worth building separately.
+
+---
+
+# DEMO: Claude Code Harness Local Setup & Drop-in Configuration (previous spike)
+
+## Spike Findings — Executable Reference
 
 ## Spike Findings — Executable Reference
 

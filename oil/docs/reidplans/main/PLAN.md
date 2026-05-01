@@ -4,7 +4,122 @@ ANNOTATION GUIDE:
 - Claude: Uses {==highlights==} only
 -->
 
-# Pi → Oil: Walking Skeleton
+# Spike: Dirac Improvements → Oil
+
+## Status
+**Current Phase**: Complete
+**Completed**: 2026-05-01
+
+## Question
+What techniques does Dirac (https://github.com/dirac-run/dirac) use — particularly batch edits, hashlines, and other context/diff innovations — and which are worth porting into oil (Pi-based)?
+
+## Hypotheses
+1. Dirac's "hashlines" reduce context usage by referencing stable line hashes rather than repeating full file content on each edit.
+2. Batch edit strategies let models express multi-file changes atomically, reducing round trips and edit-apply errors.
+3. Some of these improvements may already exist in Pi or can be layered via Pi extensions without forking Pi itself.
+
+## Scope
+- **Investigate**: Dirac's source — edit protocol, hashline mechanism, batch edit format, context management, any diff-format innovations
+- **Compare**: Against Pi's current edit/tool model to identify gaps
+- **Produce**: Report with concrete porting paths (extension vs. Pi fork vs. prompt-only)
+- **Do NOT**: Write production code, modify oil or Pi files
+
+## Exit Criteria
+- [ ] Dirac's batch edit protocol understood with examples
+- [ ] Hashline mechanism explained (what it is, how it saves tokens)
+- [ ] Gap analysis: what Pi/oil already does vs. what Dirac adds
+- [ ] Porting options per feature: extension hook / prompt engineering / needs Pi fork
+- [ ] DEMO.md with executable examples or concrete before/after comparisons
+- [ ] No production code written (spike-scratch/ only)
+
+## Findings
+
+### 1. Dirac's Word-Anchor Edit Protocol
+
+Dirac injects a single-token English word (from a ~1,700-word pool) plus `§` delimiter before each line when presenting files to the LLM:
+
+```
+Moderator§def complex_payment_processor(transaction_data):
+Qualifier§    logger.info("Starting processing")
+Corona§    return {"status": "success"}
+```
+
+The LLM then edits by specifying `{start_anchor, end_anchor, replacement}[]` as a list parameter — no old code repeated, no search block required. A backend State Manager runs Myers Diff after each edit to re-anchor only the changed lines and returns updated assignments to the LLM.
+
+**Token cost**: ~50% reduction vs. search-replace for the same edits. Per the blog post: `edit_file` ~540 tokens vs. `replace_in_file` ~1,080 tokens for a 50-line function change.
+
+### 2. File Skeletons (AST-native)
+
+Dirac shows a **structural skeleton** by default — function/class signatures + their anchor labels — not full file content. Tree-sitter WASM (14 languages) is used as a structural index to determine what slices to fetch; the LLM never sees AST output directly.
+
+### 3. Opportunistic Prefetching
+
+Dirac proactively pushes predicted-next-needed context before the model asks. This is coupled with the anchor state staying coherent across prefetched reads.
+
+### 4. List Parameters Everywhere
+
+All Dirac tools accept list parameters, so a single tool call can address multiple files or operations. This explicitly overcomes LLM reluctance to fire many parallel tool calls simultaneously.
+
+### 5. Pi's Current Model — What's Already There
+
+Pi already has:
+- **Batch edits per file** — `{oldText, newText}[]` array, applied atomically, already avoids multiple round trips for multi-hunk changes in one file
+- **Auto-compaction** — LLM summarization at 16K reserve tokens, preserves 20K recent context
+- **MCP proxy pattern** — single `mcp` tool (~200 tokens) avoids bloat from registering all MCP tools up front
+- **Clean reads** — no line numbers injected, truncation at 2K lines/50KB
+
+### 6. Gaps: Pi vs. Dirac
+
+| Capability | Pi/oil | Dirac | Gap |
+|-----------|--------|-------|-----|
+| Edit identifies ranges | `oldText` exact-match (content-dependent) | Word-anchor (position-independent) | **Yes — high value** |
+| Stale file detection | Fuzzy match (silent wrong-location risk) | Anchor validation + error response | **Yes** |
+| File presentation | Full text, no structure | Skeleton by default | **Yes — medium value** |
+| Multi-file batch | One file per call (model parallelizes) | List param covers multiple files | Negligible — Pi parallel calls work |
+| Context prefetching | Auto-compaction + manual | Opportunistic push | Low priority |
+
+## Recommendations
+
+### Priority 1 — Word-anchor edit as a Pi extension (HIGH value, feasible)
+
+Build a `dirac-edit` Pi extension that adds two tools:
+- `dirac_read` — reads file, assigns word-anchor labels per line, writes `.dirac-anchors.json` sidecar, returns annotated content
+- `dirac_edit` — accepts `{start_anchor, end_anchor, replacement}[]`, resolves against sidecar, replaces range, re-anchors via Myers Diff, updates sidecar
+
+**Implementation path**: ~80 lines TypeScript, no Pi fork needed. State lives in `.dirac-anchors.json` per file (written by read, consumed by edit). The `diff` npm package provides Myers Diff off-the-shelf. Module-level in-process state is even simpler if Pi extensions share module scope within a session.
+
+Lives in `~/.oil/extensions/dirac-edit.ts` or as an installable package.
+
+### Priority 2 — File skeleton reads (MEDIUM value)
+
+Extend `dirac_read` to return a structural outline (function/class signatures + anchor labels) by default, with an `expand` parameter to get full content for a specific anchor range. Requires `tree-sitter-wasm` (~3MB npm package). Can ship independently of the anchor edit tool.
+
+Tilth's outline mode already does something similar — check if tilth_read via pi-mcp-adapter covers this need before building.
+
+### Priority 3 — Skip opportunistic prefetching
+
+Too complex and already partially covered by Pi's auto-compaction. Not worth porting.
+
+## Trade-offs
+
+| Option | Pros | Cons |
+|--------|------|------|
+| Build dirac-edit extension | ~50% edit token reduction, no uniqueness failures, no Pi fork | Maintains anchor sidecar files, two new tools model must learn |
+| Prompt-only improvements | Zero implementation effort | Can't eliminate uniqueness problem or stale-file risk |
+| Fork Pi and patch core edit tool | Seamless integration | Maintenance burden on Pi upgrades |
+
+{==Recommended path: build the Pi extension first. If it proves valuable, propose upstreaming to Pi core.==}
+
+## Follow-up Actions
+- [ ] Build `~/.oil/extensions/dirac-edit.ts` as a spike prototype in `spike-scratch/`
+- [ ] Check if tilth_read outline mode already covers skeleton reads (via pi-mcp-adapter)
+- [ ] Evaluate the ~1,700-word single-token anchor pool — can use the list from Can Bölük's original hash-anchors work or generate from tiktoken
+- [ ] If prototype works well, consider publishing as `pi-dirac-edit` npm package
+
+---
+<!-- Previous spike content below — preserved for reference -->
+
+# Pi → Oil: Walking Skeleton (previous spike)
 
 ## Status
 **Current Phase**: Implementation
