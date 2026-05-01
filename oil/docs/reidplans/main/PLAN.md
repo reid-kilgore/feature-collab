@@ -7,8 +7,8 @@ ANNOTATION GUIDE:
 # Spike: Dirac Improvements → Oil
 
 ## Status
-**Current Phase**: Scope & Contract (enhance)
-**Waiting For**: User review
+**Current Phase**: Implement
+**Waiting For**: In progress (dark factory)
 
 ## Enhancement: dirac-edit + tilth integration for oil
 
