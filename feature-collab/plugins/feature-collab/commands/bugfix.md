@@ -103,49 +103,6 @@ Initial request: $ARGUMENTS
 
 When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "bugfix",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'lock scope' to proceed" counts; follow-up clarifications count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — increment when the escalation path in Phase 2 (systematic-debug + 2 cycles + user escalation) reaches the user
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 3 Demo, before PR handoff):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
-
----
-
 ## Phase 1: Reproduce & Scope
 
 **Goal**: Identify the bug, reproduce it with failing tests, lock scope to just the fix.
@@ -294,13 +251,9 @@ All state saved to disk:
    **Waiting For**: User review
    ```
 
-2. Launch `demo-builder` agent:
-   - Verify DEMO.md (re-run all captures)
-   - Add final summary
+2. **Demo (conditional)**: If the bug had API surface, launch `api-walkthrough` agent to author a Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` that captures the regression scenario and fix verification (the .bru post-response scripts assert correctness so re-running the collection later is a regression test). For non-API bugs (CLI, data, build), launch `demo-builder` agent for showboat-based capture. For pure UI fixes with no backend surface, skip and confirm with user.
 
-3. If this is a web bug, launch `browser-verifier` agent for visual confirmation.
-
-4. Update PLAN.md with final status:
+3. Update PLAN.md with final status:
 
 ```markdown
 ## Status
@@ -314,13 +267,13 @@ All state saved to disk:
 - **Proof**: See DEMO.md
 ```
 
-5. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
+4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-6. Prompt user:
+5. Prompt user:
    > "Bug fixed and verified. See DEMO.md for proof. Run `mdannotate PLAN.md` to annotate and review, or say **'done'**."
 
-7. Offer retrospective:
+6. Offer retrospective:
    > "For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ### Context Checkpoint

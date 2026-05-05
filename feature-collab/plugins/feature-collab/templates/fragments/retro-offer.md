@@ -1,1 +1,0 @@
-For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript.

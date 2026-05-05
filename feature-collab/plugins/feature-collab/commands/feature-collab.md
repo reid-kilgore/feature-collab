@@ -72,7 +72,6 @@ BEFORE transitioning between any phases:
 | "This phase is just a formality" | Every phase exists for a reason. Run it fully. |
 | "I'll skip scope-guardian, scope looks clean" | You can't assess scope drift without checking. Launch the agent. |
 | "The user wants a rename/relabel" (when they said "underneath", "behind", "opaque", "never know about") | These are abstraction-boundary signals, not naming signals. Propose a separate encapsulating entity. Confirm: "So X should only interact with [outer] and never reference [inner]?" |
-| "CodeRabbit review isn't necessary for this change" | The workflow says it runs. Don't skip phases. |
 | "I'll combine these phases to save time" | Phases have different quality gates. Don't merge them. |
 | "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
 | "I'll capture demos at the end, after everything works" | Capture during implementation, not after. Deferred demos become fabricated demos. |
@@ -81,7 +80,6 @@ BEFORE transitioning between any phases:
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 | "The agent says it's done and the fix looks good" | When an agent touches allocation/money/auth code, open the agent's output file and skim its reasoning — not just the summary. Summaries describe intent; reasoning reveals concerns the agent may have dismissed. A false-assurance summary sat unread for hours in the CRIT incident. |
-| "CodeRabbit suggested this improvement so I'll add it" | CR feedback must pass a scope gate before being actioned. Classify each finding as `in-scope-of-PLAN` / `out-of-scope-defer` / `blocking-correctness`. Out-of-scope items require user approval before implementation. Actioning out-of-scope CR feedback without re-checking PLAN.md caused 2 wasted commits + reversions. |
 
 ### Red Flags — STOP
 
@@ -125,7 +123,7 @@ BEFORE transitioning between any phases:
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
 - **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
-- **Phase 9 is proof**: Showboat + rodney demo as proof of work
+- **Phase 8 is proof**: Bruno walkthrough collection (or showboat fallback for non-API features)
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
 ## Document Paths
@@ -175,7 +173,7 @@ wip note <item> "Phase N: [phase name] — [brief status]"
 wip add-branch <item> <new-branch-name>
 ```
 
-**At completion** (Phase 9):
+**At completion** (Phase 8):
 ```bash
 wip status <item> IN_REVIEW
 wip note <item> "feature-collab complete — PR ready for human review"
@@ -357,7 +355,7 @@ ANNOTATION GUIDE:
 *To be filled after verification*
 
 ## Exit Criteria
-*To be filled in Phase 1, assessed in Phase 7*
+*To be filled in Phase 1, assessed in Phase 7 (Exit Criteria)*
 
 ---
 
@@ -423,7 +421,7 @@ ANNOTATION GUIDE:
 - [ ] Demo complete: all demo scenarios captured via showboat
 
 ## Demo Scenarios
-What should the proof-of-work demonstrate? Define these NOW — they become the spec for demo-builder in Phase 9.
+What should the proof-of-work demonstrate? Define these NOW — they become the spec for the api-walkthrough (or demo-builder fallback) in Phase 8.
 
 1. [Scenario name]: [What to show] — [Command or action to capture]
 2. [Scenario name]: [What to show] — [Command or action to capture]
@@ -773,7 +771,7 @@ All state has been saved to disk:
    - Curl test results (via `showboat exec`)
    - Key code walkthroughs showing implementation (via `showboat exec` with sed/grep)
 
-   Do NOT defer all demo work to Phase 9. Captures during implementation are more valuable than reconstructed captures after the fact. Phase 9 adds final polish and verification, it should not be building the demo from scratch.
+   Do NOT defer all demo work to Phase 8. Captures during implementation are more valuable than reconstructed captures after the fact. Phase 8 adds final polish and verification, it should not be building the demo from scratch.
 
 7. **CRITICAL: Test-Runner Authority**
    - Main thread MUST NOT claim tests pass without test-runner verification
@@ -797,51 +795,7 @@ All state has been saved to disk:
 
 ---
 
-## Phase 6: CodeRabbit Review (Dark Factory)
-
-**Goal**: Run CodeRabbit locally and incorporate its feedback.
-
-**Dark Factory**: Continues autonomously from Phase 5.
-
-**Actions**:
-
-1. Update status:
-   ```markdown
-   ## Status
-   **Current Phase**: CodeRabbit Review (Dark Factory)
-   **Waiting For**: Autonomous — CodeRabbit analysis
-   ```
-
-2. Launch `code-reviewer` agent to run CodeRabbit locally:
-   - Run `npx coderabbitai review` (or the project-configured CodeRabbit CLI command)
-   - Collect all findings: bugs, style issues, suggestions, security concerns
-
-3. Launch `code-architect` agent to address actionable CodeRabbit findings:
-   - Fix bugs and security issues flagged by CodeRabbit
-   - Apply style/pattern suggestions that align with project conventions
-   - Skip suggestions that conflict with the existing architecture or are out of scope
-   - Document any skipped findings with rationale in PLAN.md
-
-4. Launch `test-runner` agent to verify no regressions after fixes.
-
-5. Launch `code-reviewer` agent to re-run CodeRabbit and confirm findings are resolved.
-
-6. Update PLAN.md with CodeRabbit Review Results:
-   ```markdown
-   ## CodeRabbit Review
-   - **Findings**: [count] total
-   - **Fixed**: [count]
-   - **Skipped (with rationale)**: [count]
-   - **Remaining**: 0 actionable
-   ```
-
-7. **WIP**: `wip note <item> "Phase 6: CodeRabbit review complete"`
-
-8. Proceed directly to Phase 7 (no user checkpoint).
-
----
-
-## Phase 7: Security Review (Dark Factory)
+## Phase 6: Security Review (Dark Factory)
 
 **Goal**: Verify implementation meets security standards
 
@@ -872,17 +826,17 @@ All state has been saved to disk:
    - Re-run `code-security` to verify fixes
    - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
 
-5. **WIP**: `wip note <item> "Phase 7: Security review clear"`
+5. **WIP**: `wip note <item> "Phase 6: Security review clear"`
 
-6. Proceed directly to Phase 8 (no user checkpoint).
+6. Proceed directly to Phase 7 (no user checkpoint).
 
 ---
 
-## Phase 8: Exit Criteria Assessment (Dark Factory)
+## Phase 7: Exit Criteria Assessment (Dark Factory)
 
 **Goal**: Adversarial assessment of whether we're actually done
 
-**Dark Factory**: Continues autonomously from Phase 7.
+**Dark Factory**: Continues autonomously from Phase 6.
 
 **Actions**:
 
@@ -911,33 +865,15 @@ All state has been saved to disk:
 
 5. **User override handling**: If the user explicitly overrides a NOT_READY finding from criteria-assessor, code-reviewer, or code-security (e.g., "that's not an issue", "ignore that", "proceed anyway"):
    - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
-   - Ask: "Should I suppress this finding for future sessions? (y/n)"
-   - If yes, ask for a brief reason, then write the suppression:
+   - Note the override in PLAN.md so future readers see what was waived and why.
 
-   ```bash
-   SLUG=$(git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//' || basename $(git rev-parse --show-toplevel))
-   mkdir -p "$HOME/.claude/feature-collab/suppressions"
-   SUPPRESSION_FILE="$HOME/.claude/feature-collab/suppressions/${SLUG}.json"
-   # Read existing entries (or start with []), append new entry, write back
-   # Entry schema: {"finding_type": "...", "pattern": "...", "reason": "...", "agent": "...", "date": "YYYY-MM-DD", "expires": "YYYY-MM-DD"}
-   # Set expires = today + 90 days
-   ```
+6. **WIP**: `wip note <item> "Phase 7: Exit criteria READY"`
 
-   Only the orchestrator writes suppressions. Never suppress broad categories — the `pattern` must be specific enough to identify the particular finding.
-
-6. **Suppression summary**: At the end of Phase 8, before proceeding to Phase 9, report:
-   > "Suppressions active for this project: N total, M applied this session"
-   > List each active (non-expired) suppression: `- [finding_type] / [pattern] (expires: [date], reason: [reason])`
-
-   If no suppressions file exists for this project, skip this summary.
-
-7. **WIP**: `wip note <item> "Phase 8: Exit criteria READY"`
-
-8. **If READY**: Proceed to Phase 9
+7. **If READY**: Proceed to Phase 8
 
 ---
 
-## Phase 9: Demo & Documentation
+## Phase 8: Demo & Documentation
 
 **Goal**: Build proof-of-work, finalize documents, prepare for PR
 
@@ -952,30 +888,25 @@ All state has been saved to disk:
    **Waiting For**: Proof generation
    ```
 
-2. **API Demo (conditional):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
+2. **API Demo (conditional, default for backend changes):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent traces each endpoint and authors a runnable Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections like `rollfi-sandbox`). The collection includes a login or auth-sanity request that captures the token via `script:post-response`, plus one `.bru` per endpoint that chains captured IDs through env vars. The Bruno collection IS the proof-of-work — no separate DEMO.md needed for API changes.
 
-   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
-
-3. Launch `demo-builder` agent:
+3. **Non-API demo (conditional fallback):** Only when this feature has NO API surface (CLI tool, data pipeline, build tooling, internal refactor with observable side-effects), launch `demo-builder` agent:
    - Run `uvx showboat verify DEMO.md` to re-run all captures and confirm they still pass
    - Add final summary to DEMO.md
    - Capture final test run, curl results, any key outputs
 
-4. **If this is a web feature**, launch `browser-verifier` agent:
-   - Create rodney walkthrough script
-   - Run the walkthrough, capture screenshots
-   - Add screenshots to DEMO.md via `uvx showboat image`
+   For pure UI changes with no backend surface, skip the demo phase entirely — ask the user to confirm.
 
-5. Prune PLAN.md to final summary (<200 lines):
+4. Prune PLAN.md to final summary (<200 lines):
    - Keep: Status, Final Summary, key decisions
    - Move details to DECISIONS.md
    - Archive exploration notes if valuable
 
-6. Ensure DECISIONS.md is complete (architectural decision records)
+5. Ensure DECISIONS.md is complete (architectural decision records)
 
-7. Generate CHANGELOG.md for PR description
+6. Generate CHANGELOG.md for PR description
 
-8. Update Final Summary:
+7. Update Final Summary:
 
 ```markdown
 ## Final Summary
@@ -1004,7 +935,7 @@ See DEMO.md for re-executable proof that the feature works.
 **Completed**: [date]
 ```
 
-9. **Pre-commit gates** (before commit splitting or push):
+8. **Pre-commit gates** (before commit splitting or push):
 
    **Debug marker sweep**: Grep for debug/WIP markers: `TDD RED STATE`, `TODO REMOVE`, `FIXME`, `console.log` in test files, `debugger` statements. Strip or flag before committing.
 
@@ -1012,7 +943,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    **Eslint gate**: Run `npx eslint --no-fix` on all changed files. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
 
-10. **Bisectable Commit Splitting**
+9. **Bisectable Commit Splitting**
 
    Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
 
@@ -1050,7 +981,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
 
-11. **Push and create PR**:
+10. **Push and create PR**:
 
    Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
 
@@ -1078,7 +1009,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
 
-12. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+11. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 
 12. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
 
@@ -1087,51 +1018,6 @@ See DEMO.md for re-executable proof that the feature works.
 
 14. Present the PR URL to the user and offer retrospective:
     > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
-
----
-
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "feature-collab",
-  "started_at": "<ISO timestamp — set at Phase 0>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (0→1, 1→2, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input (checkpoints count; follow-up clarifications count; "say X to continue" prompts count)
-- `agent_dispatches` — increment each time an agent is launched (parallel wave of N agents = N increments)
-- `dark_factory_escalations` — increment when the 5-failure escalation in Phase 5 or 3-cycle escalation in Phase 8 is triggered and the user is interrupted
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not just each dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 9, before PR handoff):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
-
----
 
 ---
 
@@ -1167,7 +1053,6 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 | 3 | Interactive | None | Auto |
 | 4 | Interactive | **CRITICAL** | "implement" (starts dark factory) |
 | 5 | **Dark Factory** | None (escalate after 5 failures) | Auto |
-| 6 | **Dark Factory** | CodeRabbit review + fix | Auto |
-| 7 | **Dark Factory** | None | Auto |
-| 8 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
-| 9 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |
+| 6 | **Dark Factory** | None | Auto |
+| 7 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
+| 8 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |

@@ -98,49 +98,6 @@ Initial request: $ARGUMENTS
 
 When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "refactor",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'refactor' to proceed" counts; follow-up clarifications count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — increment when the 5-cycle escalation in Phase 2 is triggered and the user is interrupted
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 3 Demo, before PR handoff):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
-
----
-
 ## Phase 1: Characterize
 
 **Goal**: Run existing tests, snapshot current behavior, define refactor goals.

@@ -25,33 +25,6 @@ You will receive:
 - **Compliance report**: Grades on skill selection, plan discipline, agent dispatch, process adherence, user corrections, wasted effort
 - **Experience report**: Grades on fulfillment, efficiency, flow, communication, plus sentiment analysis and frustration/affirmation counts
 - **Technical quality report**: Grades on architecture/pattern adherence, test quality, scope/churn, missed opportunities, plus a "PR review" summary
-- **Metrics file** (optional): `~/.feature-collab/metrics/{date}-{branch}.json` — workflow efficiency counters written by the orchestrator at completion
-
-### Workflow Efficiency Analysis (run this before synthesizing the three reports)
-
-Check whether a metrics file exists for the branch being retro'd:
-
-```bash
-ls ~/.feature-collab/metrics/ 2>/dev/null
-```
-
-If a matching file exists, read it. Then read all prior metrics files for the same `workflow_type`:
-
-```bash
-# example: all prior enhance sessions
-ls ~/.feature-collab/metrics/ | grep -v {current-date-branch}
-```
-
-For each numeric field (`phases_executed`, `user_interventions`, `agent_dispatches`, `dark_factory_escalations`, `scope_guardian_flags`, `criteria_not_ready_count`), compute the mean across prior sessions of the same `workflow_type`. Then check the current session's values against those means.
-
-**Anomaly thresholds**:
-- Any field is more than 2x the mean for its type → flag as anomalous
-- Any field is the highest ever recorded for its type → flag as anomalous
-- `dark_factory_escalations > 0` → always flag (this should be rare)
-
-Include a **Workflow Efficiency** section in the output (see Output Format below). If no metrics file exists for this session, omit the section silently.
-
-**Correlate anomalies with qualitative reports**: A high `user_interventions` count corroborated by the experience report's frustration count is a confirmed friction point. A high `agent_dispatches` count with no quality complaints is likely normal scope complexity. Name the correlation explicitly.
 
 ## Analysis
 
@@ -123,23 +96,6 @@ Technical quality findings have a unique property: they identify issues that may
 ### Nice to Have (minor optimizations)
 1. [Specific, actionable recommendation] — **Encodable**: [target file or "Behavioral"]
 
-## Workflow Efficiency
-<!-- Omit this section entirely if no metrics file exists for this session -->
-**Workflow type:** {workflow_type} | **Duration:** {started_at} → {completed_at}
-
-| Field | This Session | Type Mean | Anomalous? |
-|-------|-------------|-----------|------------|
-| phases_executed | {n} | {mean} | {yes/no} |
-| user_interventions | {n} | {mean} | {yes/no} |
-| agent_dispatches | {n} | {mean} | {yes/no} |
-| dark_factory_escalations | {n} | {mean} | {yes/no} |
-| scope_guardian_flags | {n} | {mean} | {yes/no} |
-| criteria_not_ready_count | {n} | {mean} | {yes/no} |
-
-**Anomalies:** [list any flagged fields with the specific ratio, e.g. "user_interventions: 3x mean (5 vs 1.7 avg across 4 prior enhance sessions)"; or "none"]
-
-**Correlation with qualitative reports:** [one sentence — do the anomalies match what the compliance/experience reports found? or do they diverge?]
-
 ## Metrics
 | Metric | Compliance | Experience | Technical |
 |--------|-----------|------------|-----------|
@@ -192,14 +148,6 @@ JSON schema:
   "encoded_count": 2,
   "key_themes": ["theme1", "theme2", "theme3"],
   "session_duration_estimate": "~45 min",
-  "metrics": {
-    "phases_executed": null,
-    "user_interventions": null,
-    "agent_dispatches": null,
-    "dark_factory_escalations": null,
-    "scope_guardian_flags": null,
-    "criteria_not_ready_count": null
-  },
   "encoding_scores": {
     "triggered": 0,
     "triggered_violated": 0,
@@ -217,7 +165,6 @@ Field derivation:
 - `encoded_count`: count recommendations tagged `Encodable: [file]` (not `Behavioral`)
 - `key_themes`: 3–5 short strings capturing the top cross-cutting issues (e.g., `"orchestrator overreach"`, `"tautological tests"`, `"scope creep"`)
 - `session_duration_estimate`: derive from transcript time range; use `"unknown"` if not available in the input
-- `metrics`: copy the numeric fields from the session's metrics file verbatim; set all fields to `null` if no metrics file exists
 
 Use the Write tool to write the file. Do not fail silently — if the write fails, note it at the end of the retro output.
 

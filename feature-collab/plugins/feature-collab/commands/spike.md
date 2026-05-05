@@ -93,49 +93,6 @@ Initial request: $ARGUMENTS
 
 ---
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "spike",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input (direction changes, scope questions, and "say 'done'" prompts all count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — spikes have no dark factory; leave at 0
-- `scope_guardian_flags` — spikes do not dispatch scope-guardian; leave at 0
-- `criteria_not_ready_count` — spikes do not dispatch criteria-assessor; leave at 0
-
-**Write metrics at workflow completion** (Phase 2 Report, before PR/merge):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
-
----
-
 ## Phase 1: Explore
 
 **Goal**: Investigate the question using code-explorer agents and executable examples.

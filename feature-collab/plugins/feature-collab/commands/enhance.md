@@ -53,7 +53,6 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 | "I'll use `jest.fn()` for the mock" | Use `jest.fn<ActualFunctionType>()` with the real function's type signature. Untyped mocks silently accept wrong parameter counts — JS drops extra args, so tests pass by accident. TypeScript catches arity mismatches at compile time only if the mock is properly typed. |
 | "Adding this related thing keeps it cohesive" | Check scope. If it's not in scope, it's a Fast Follow. |
 | "The agent says it's done and the fix looks good" | When an agent touches allocation/money/auth code, open the agent's output file and skim its reasoning — not just the summary. Summaries describe intent; reasoning reveals concerns the agent may have dismissed. |
-| "CodeRabbit suggested this improvement so I'll add it" | CR feedback must pass a scope gate before being actioned. Classify each finding as `in-scope-of-PLAN` / `out-of-scope-defer` / `blocking-correctness`. Out-of-scope items require user approval before implementation. |
 | "I'll note the deferral in PLAN.md" | When a plan item is explicitly deferred, create a tracking ticket (Linear issue or bd task) immediately. A deferred item in PLAN.md without a ticket is forgotten — PLAN.md is pruned at session end, and the deferral evaporates. |
 | "I recommend currency.js for this" | Never assert library recommendations without verification. Check npm weekly downloads, last publish date, and open issues count before presenting. If you haven't verified, say 'I haven't checked the maintenance status' explicitly. |
 | "The new utility function is cleaner" | When concept-tracing reveals an existing function that the new code would duplicate, add it to PLAN.md Follow-up section and note the duplication. Don't leave two functions doing the same thing without flagging it. |
@@ -138,51 +137,6 @@ Initial request: $ARGUMENTS
 
 ---
 
-## Metrics Tracking
-
-The orchestrator tracks workflow efficiency metrics for this session. These feed into retro baselines and anomaly detection.
-
-**Schema** — maintain this object in working memory throughout the session:
-
-```json
-{
-  "workflow_type": "enhance",
-  "started_at": "<ISO timestamp — set at skill start>",
-  "phases_executed": 0,
-  "user_interventions": 0,
-  "agent_dispatches": 0,
-  "dark_factory_escalations": 0,
-  "scope_guardian_flags": 0,
-  "criteria_not_ready_count": 0,
-  "completed_at": null
-}
-```
-
-**Increment rules**:
-- `phases_executed` — increment at each phase boundary (1→2, 2→3, etc.)
-- `user_interventions` — increment each time the orchestrator asks the user a question or waits for user input ("say 'implement' to begin" counts; follow-up clarifications count)
-- `agent_dispatches` — increment each time an agent is launched (parallel agents = N increments)
-- `dark_factory_escalations` — increment when the 5-failure escalation in Phase 2 is triggered and the user is interrupted
-- `scope_guardian_flags` — increment each time scope-guardian returns a flag or finding (not every dispatch — only dispatches that produce actionable flags)
-- `criteria_not_ready_count` — increment each time criteria-assessor returns NOT READY
-
-**Write metrics at workflow completion** (Phase 5, before PR handoff):
-
-```bash
-mkdir -p ~/.feature-collab/metrics
-BRANCH=$(git branch --show-current)
-DATE=$(date +%Y-%m-%d)
-cat > ~/.feature-collab/metrics/${DATE}-${BRANCH}.json << 'EOF'
-{ <metrics object with completed_at set to current ISO timestamp> }
-EOF
-```
-
-**Metrics are mandatory even when phases are skipped.** Set skipped phases to 0, not null. Skipping the metrics write makes skipped phases invisible to retros — the whole point of tracking is to detect when the workflow is heavier than what the task actually needs.
-
-Individual agents do not need to know about metrics — this is orchestrator-only bookkeeping.
-
----
-
 ## Phase 1: Scope & Contract
 
 **Goal**: Define what's being added, write contracts, write failing tests.
@@ -259,7 +213,7 @@ ANNOTATION GUIDE:
 
 9. Launch `test-runner` agent to confirm RED state (tests should fail).
 
-10. If APIs are being changed, initialize `$DOCS_DIR/DEMO.md` with endpoint inventory and `$DOCS_DIR/bruno/` directory for API collection files.
+10. If APIs are being changed, list the changed/new endpoints in PLAN.md so the api-walkthrough agent (Phase 4) knows what to trace. The Bruno collection itself lives in `~/Library/Application Support/bruno/<collection>/`, not in this repo.
 
 
 12. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
@@ -296,7 +250,7 @@ ANNOTATION GUIDE:
    - Flag if approaching 200-line limit
    - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 5.
+5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 4.
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
@@ -339,49 +293,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 ---
 
-## Phase 3: CodeRabbit Review (Dark Factory)
-
-**Goal**: Run CodeRabbit locally and incorporate its feedback. Runs autonomously.
-
-**Actions**:
-
-1. Update PLAN.md status:
-   ```markdown
-   ## Status
-   **Current Phase**: CodeRabbit Review
-   **Waiting For**: In progress (dark factory)
-   ```
-
-2. Launch `code-reviewer` agent to run CodeRabbit locally:
-   - Run `npx coderabbitai review` (or the project-configured CodeRabbit CLI command)
-   - Collect all findings: bugs, style issues, suggestions, security concerns
-
-3. Launch `code-architect` agent to address actionable CodeRabbit findings:
-   - Fix bugs and security issues flagged by CodeRabbit
-   - Apply style/pattern suggestions that align with project conventions
-   - Skip suggestions that conflict with the existing architecture or are out of scope
-   - Document any skipped findings with rationale in PLAN.md
-
-4. Launch `test-runner` agent to verify no regressions after fixes.
-
-5. Launch `code-reviewer` agent to re-run CodeRabbit and confirm findings are resolved.
-
-6. Update PLAN.md with CodeRabbit Review Results:
-   ```markdown
-   ## CodeRabbit Review
-   - **Findings**: [count] total
-   - **Fixed**: [count]
-   - **Skipped (with rationale)**: [count]
-   - **Remaining**: 0 actionable
-   ```
-
-7. **WIP**: `wip note <item> "Phase 3: CodeRabbit review complete"`
-
-8. Proceed to Phase 4.
-
----
-
-## Phase 4: Verify (Dark Factory)
+## Phase 3: Verify (Dark Factory)
 
 **Goal**: Final verification pass. Runs autonomously.
 
@@ -402,33 +314,15 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 5. **User override handling**: If the user explicitly overrides a NOT_READY finding from criteria-assessor, code-reviewer, or code-security (e.g., "that's not an issue", "ignore that", "proceed anyway"):
    - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
-   - Ask: "Should I suppress this finding for future sessions? (y/n)"
-   - If yes, ask for a brief reason, then write the suppression:
+   - Note the override in PLAN.md so future readers see what was waived and why.
 
-   ```bash
-   SLUG=$(git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//' || basename $(git rev-parse --show-toplevel))
-   mkdir -p "$HOME/.claude/feature-collab/suppressions"
-   SUPPRESSION_FILE="$HOME/.claude/feature-collab/suppressions/${SLUG}.json"
-   # Read existing entries (or start with []), append new entry, write back
-   # Entry schema: {"finding_type": "...", "pattern": "...", "reason": "...", "agent": "...", "date": "YYYY-MM-DD", "expires": "YYYY-MM-DD"}
-   # Set expires = today + 90 days
-   ```
+6. **WIP**: `wip note <item> "Phase 3: Exit criteria READY"`
 
-   Only the orchestrator writes suppressions. Never suppress broad categories — the `pattern` must be specific enough to identify the particular finding.
-
-6. **Suppression summary**: At the end of Phase 4, before proceeding to Phase 5, report:
-   > "Suppressions active for this project: N total, M applied this session"
-   > List each active (non-expired) suppression: `- [finding_type] / [pattern] (expires: [date], reason: [reason])`
-
-   If no suppressions file exists for this project, skip this summary.
-
-7. **WIP**: `wip note <item> "Phase 4: Exit criteria READY"`
-
-8. Proceed to Phase 5 when READY.
+7. Proceed to Phase 4 when READY.
 
 ---
 
-## Phase 5: Demo
+## Phase 4: Demo
 
 **Goal**: Present proof of enhancement to user.
 
@@ -441,11 +335,9 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. **API Demo (conditional):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new API endpoints. The agent traces each endpoint, generates ASCII workflow diagrams, Bruno `.bru` collection files, and writes DEMO.md.
+2. **API Demo (conditional, default for backend changes):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent authors a Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections). The collection captures auth via a login + `script:post-response` chain, then one `.bru` per endpoint with chained env-var IDs. The Bruno collection IS the proof — no separate DEMO.md.
 
-   Place Bruno files in `$DOCS_DIR/bruno/` and reference them from DEMO.md.
-
-   If no API endpoints were changed (e.g., schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per rule 5.
+   For non-API changes (schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per rule 5.
 
 3. Update PLAN.md:
 
@@ -540,6 +432,6 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 All state has been saved to disk:
 - PLAN.md: Final status
 - CONTRACTS.md: Type definitions
-- DEMO.md: API walkthrough + Bruno collection (if API changes)
+- Bruno collection at `~/Library/Application Support/bruno/<collection>/` (if API changes)
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**

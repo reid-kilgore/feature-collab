@@ -1,1 +1,0 @@
-**Violating the letter of the rules is violating the spirit of the rules.**
