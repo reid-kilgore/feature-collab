@@ -1,8 +1,10 @@
 # Feature-Collab Cruft Audit & Bruno-First Demo Refactor
 
 ## Status
-**Current Phase**: PR1 (cuts) + PR2 (api-walkthrough rewrite) complete
-**Waiting For**: User review + commit/push
+**Current Phase**: PR1 (cuts) + PR2 (api-walkthrough rewrite) complete and pushed (`d75be7c`)
+**Status**: HANDED OFF — see [HANDOFF.md](./HANDOFF.md) for resume instructions
+**Last Updated**: 2026-05-05T19:37:05Z
+**Waiting For**: User direction on follow-up audits (refactor / release / linear / handoff-pickup consolidation)
 
 ## Progress
 
