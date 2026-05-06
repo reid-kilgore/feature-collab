@@ -75,7 +75,7 @@ BEFORE transitioning between any phases:
 | "I'll combine these phases to save time" | Phases have different quality gates. Don't merge them. |
 | "The user seems impatient, I'll skip the demo" | The demo is proof-of-work. It's not optional. |
 | "I'll capture demos at the end, after everything works" | Capture during implementation, not after. Deferred demos become fabricated demos. |
-| "Test-runner already captured showboat output" | Test-runner captures test results. Demo-builder captures the full proof-of-work with walkthroughs. Both are needed. |
+| "Test-runner already captured everything we need" | Test-runner captures test pass/fail status. The api-walkthrough Bruno collection captures full proof-of-work for API features. Both are needed. |
 | "Do you have the dev server running?" | Start it yourself. Read package.json to find the command. |
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
@@ -123,7 +123,7 @@ BEFORE transitioning between any phases:
 - **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
 - **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
 - **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
-- **Phase 8 is proof**: Bruno walkthrough collection (or showboat fallback for non-API features)
+- **Phase 8 is proof**: Bruno walkthrough collection (API features) or test output (non-API)
 - **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
 ## Document Paths
@@ -133,7 +133,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
   CONTRACTS.md
   TEST_SPEC.md
   DETAILS.md
@@ -148,7 +147,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/DEMO.md`, etc.
+All references to PLAN.md, CONTRACTS.md, etc. throughout this skill mean `$DOCS_DIR/PLAN.md`, `$DOCS_DIR/CONTRACTS.md`, etc.
 
 ## WIP Tracking
 
@@ -253,15 +252,12 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 - Checkpoint trigger: 50 tool calls or phase boundary
 ```
 
-4. Launch `demo-builder` agent to initialize proof-of-work document: `showboat init DEMO.md "Feature: [name]"`
-
-
-6. **WIP**: Detect and activate wip item:
+4. **WIP**: Detect and activate wip item:
    ```bash
    wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting feature-collab: [feature name]"
    ```
 
-7. Proceed immediately to Phase 1
+5. Proceed immediately to Phase 1
 
 ---
 
@@ -418,13 +414,13 @@ ANNOTATION GUIDE:
 ### Should Have
 - [ ] Test coverage > 80%
 - [ ] No TODO comments without tickets
-- [ ] Demo complete: all demo scenarios captured via showboat
+- [ ] Demo complete: Bruno collection (API features) or test output (non-API)
 
 ## Demo Scenarios
-What should the proof-of-work demonstrate? Define these NOW — they become the spec for the api-walkthrough (or demo-builder fallback) in Phase 8.
+What should the proof-of-work demonstrate? Define these NOW — they become the spec for the api-walkthrough agent in Phase 8.
 
-1. [Scenario name]: [What to show] — [Command or action to capture]
-2. [Scenario name]: [What to show] — [Command or action to capture]
+1. [Scenario name]: [What to show]
+2. [Scenario name]: [What to show]
 ```
 
 6. **CHECKPOINT**:
@@ -440,7 +436,7 @@ What should the proof-of-work demonstrate? Define these NOW — they become the 
 Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md $DOCS_DIR/SESSION_STATE.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/SESSION_STATE.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -449,7 +445,6 @@ git commit -m "docs: planning artifacts for $(git branch --show-current)"
 All state has been saved to disk:
 - PLAN.md: Scope boundaries and exit criteria
 - SESSION_STATE.md: Current phase
-- DEMO.md: Initialized
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
 
@@ -712,7 +707,7 @@ All state has been saved to disk:
 - CONTRACTS.md: Type definitions
 - TEST_SPEC.md: Test specifications
 
-**If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window. The dark factory phases (5-8) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
+**If your context feels heavy, now is a good time to `/clear` then `/pickup` to continue with a fresh context window. The dark factory phases (5-8) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
 
 ---
 
@@ -751,29 +746,21 @@ All state has been saved to disk:
 3. After each implementation batch, run `test-runner` agent:
    - Updates scorecard
    - Reports pass/fail status
-   - Captures results with showboat: `uvx showboat exec DEMO.md bash "npm test"`
    - **Test-runner is authoritative** - do not dispute its findings
 
-4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
+4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), ask them to file the issue manually. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
 5. **Scorecard-driven iteration**:
    ```
    Loop until scorecard all green:
-     1. test-runner reports status (captures to DEMO.md via showboat)
+     1. test-runner reports status
      2. Identify failing tests
      3. Delegate fix to code-architect
-     5. test-runner verifies (captures to DEMO.md via showboat)
-     6. scope-guardian checks for drift (every 2-3 cycles)
+     4. test-runner verifies
+     5. scope-guardian checks for drift (every 2-3 cycles)
    ```
 
-6. **MANDATORY demo capture during dark factory**: After the FIRST green test run and after the FINAL green test run, launch `demo-builder` agent to capture proof-of-work:
-   - Test suite output (via `showboat exec`)
-   - Curl test results (via `showboat exec`)
-   - Key code walkthroughs showing implementation (via `showboat exec` with sed/grep)
-
-   Do NOT defer all demo work to Phase 8. Captures during implementation are more valuable than reconstructed captures after the fact. Phase 8 adds final polish and verification, it should not be building the demo from scratch.
-
-7. **CRITICAL: Test-Runner Authority**
+6. **CRITICAL: Test-Runner Authority**
    - Main thread MUST NOT claim tests pass without test-runner verification
    - Main thread MUST NOT skip curl tests
    - Main thread MUST NOT override test-runner findings
@@ -824,7 +811,7 @@ All state has been saved to disk:
 4. **If issues found**:
    - Fix them automatically via `code-architect`
    - Re-run `code-security` to verify fixes
-   - Capture results: `uvx showboat exec DEMO.md bash "npm test"` (ensure no regressions)
+   - Re-run `test-runner` to confirm no regressions
 
 5. **WIP**: `wip note <item> "Phase 6: Security review clear"`
 
@@ -855,7 +842,7 @@ All state has been saved to disk:
    - Independently verifies each criterion using the Verification Gate
    - Runs tests itself — does NOT trust test-runner's previous reports
    - Checks code matches claims
-   - Verifies Demo Scenarios from Phase 1 are covered in DEMO.md
+   - Verifies Demo Scenarios from Phase 1 are addressed
    - Returns READY or NOT READY verdict
 
 4. **If NOT READY**:
@@ -888,25 +875,20 @@ All state has been saved to disk:
    **Waiting For**: Proof generation
    ```
 
-2. **API Demo (conditional, default for backend changes):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent traces each endpoint and authors a runnable Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections like `rollfi-sandbox`). The collection includes a login or auth-sanity request that captures the token via `script:post-response`, plus one `.bru` per endpoint that chains captured IDs through env vars. The Bruno collection IS the proof-of-work — no separate DEMO.md needed for API changes.
+2. **API Demo (conditional, default for backend changes):** If this feature changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent traces each endpoint and authors a runnable Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections like `rollfi-sandbox`). The collection includes a login or auth-sanity request that captures the token via `script:post-response`, plus one `.bru` per endpoint that chains captured IDs through env vars. The Bruno collection IS the proof-of-work.
 
-3. **Non-API demo (conditional fallback):** Only when this feature has NO API surface (CLI tool, data pipeline, build tooling, internal refactor with observable side-effects), launch `demo-builder` agent:
-   - Run `uvx showboat verify DEMO.md` to re-run all captures and confirm they still pass
-   - Add final summary to DEMO.md
-   - Capture final test run, curl results, any key outputs
+   For features with NO API surface (CLI tool, data pipeline, build tooling, internal refactor, pure UI), skip the demo phase — ask the user to confirm.
 
-   For pure UI changes with no backend surface, skip the demo phase entirely — ask the user to confirm.
-
-4. Prune PLAN.md to final summary (<200 lines):
+3. Prune PLAN.md to final summary (<200 lines):
    - Keep: Status, Final Summary, key decisions
    - Move details to DECISIONS.md
    - Archive exploration notes if valuable
 
-5. Ensure DECISIONS.md is complete (architectural decision records)
+4. Ensure DECISIONS.md is complete (architectural decision records)
 
-6. Generate CHANGELOG.md for PR description
+5. Generate CHANGELOG.md for PR description
 
-7. Update Final Summary:
+6. Update Final Summary:
 
 ```markdown
 ## Final Summary
@@ -928,14 +910,14 @@ All state has been saved to disk:
 [Summary of security measures]
 
 ### Proof of Work
-See DEMO.md for re-executable proof that the feature works.
+See Bruno collection (API features) or test output (non-API).
 
 ## Status
 **Current Phase**: Complete
 **Completed**: [date]
 ```
 
-8. **Pre-commit gates** (before commit splitting or push):
+7. **Pre-commit gates** (before commit splitting or push):
 
    **Debug marker sweep**: Grep for debug/WIP markers: `TDD RED STATE`, `TODO REMOVE`, `FIXME`, `console.log` in test files, `debugger` statements. Strip or flag before committing.
 
@@ -943,7 +925,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    **Eslint gate**: Run `npx eslint --no-fix` on all changed files. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
 
-9. **Bisectable Commit Splitting**
+8. **Bisectable Commit Splitting**
 
    Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
 
@@ -957,7 +939,7 @@ See DEMO.md for re-executable proof that the feature works.
    - Layer 3 (Core Logic): models, services, utilities + their tests
    - Layer 4 (Integration): controllers, handlers, API routes + their tests
    - Layer 5 (Presentation): UI components, views, styles + their tests
-   - Layer 6 (Documentation): PLAN.md, DEMO.md, CHANGELOG, README, docs/
+   - Layer 6 (Documentation): PLAN.md, CHANGELOG, README, docs/
 
    **Soft-reset to main**:
    ```bash
@@ -981,7 +963,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
 
-10. **Push and create PR**:
+9. **Push and create PR**:
 
    Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
 
@@ -999,7 +981,7 @@ See DEMO.md for re-executable proof that the feature works.
 
    ## Test plan
    - [ ] All tests passing (verified by test-runner)
-   - [ ] DEMO.md proof-of-work attached
+   - [ ] Bruno collection or test output as proof-of-work
    - [ ] Exit criteria met (verified by criteria-assessor)
 
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -1009,14 +991,12 @@ See DEMO.md for re-executable proof that the feature works.
 
    If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
 
-11. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
+10. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 
-12. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this feature or depend on its output.
-
-13. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR up for review"`
+11. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "feature-collab complete — PR up for review"`
     > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
-14. Present the PR URL to the user and offer retrospective:
+12. Present the PR URL to the user and offer retrospective:
     > "PR is up: [URL]. For a session retrospective, `/clear` then `/retro` — this gives unbiased agents a clean read of the transcript."
 
 ---
@@ -1055,4 +1035,4 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 | 5 | **Dark Factory** | None (escalate after 5 failures) | Auto |
 | 6 | **Dark Factory** | None | Auto |
 | 7 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
-| 8 | Interactive | Final + Demo | Review DEMO.md, `mdannotate PLAN.md` |
+| 8 | Interactive | Final + Demo | Review Bruno collection, `mdannotate PLAN.md` |

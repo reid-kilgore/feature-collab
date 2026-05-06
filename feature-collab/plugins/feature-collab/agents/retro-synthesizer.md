@@ -140,7 +140,7 @@ JSON schema:
 {
   "date": "YYYY-MM-DD",
   "branch": "branch-name",
-  "workflow_type": "feature-collab | spike | enhance | bugfix | refactor | unknown",
+  "workflow_type": "feature-collab | spike | enhance | bugfix | hotfix | unknown",
   "compliance_score": "A | B | C | D | F",
   "experience_score": "A | B | C | D | F",
   "technical_findings_count": 3,
@@ -220,7 +220,7 @@ Include this table in the retro output between Trends and Encoding Recommendatio
 | # | Encoding | Source Retro | File | Score |
 |---|----------|-------------|------|-------|
 | E1 | Spike-to-implement hard gate | spike-autopilot | spike.md | {score} |
-| E2 | Compaction requires /pickup re-invocation | spike-autopilot | feature-collab.md, enhance.md, bugfix.md, refactor.md, hotfix.md, release.md | {score} |
+| E2 | Compaction requires /pickup re-invocation | spike-autopilot | feature-collab.md, enhance.md, bugfix.md, hotfix.md | {score} |
 | E3 | Ban `as` casts on repository return types | PAS-1151 | enhance.md | {score} |
 | E4 | CI flaky-test re-trigger policy | PAS-1151 | enhance.md | {score} |
 | E5 | Pre-commit typecheck gate | PAS-1151 | enhance.md | {score} |

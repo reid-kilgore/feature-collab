@@ -42,7 +42,6 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 |--------|---------|
 | "It's just slightly over 200 lines" | The limit exists for a reason. Escalate to /feature-collab. |
 | "I can quickly check the code myself" | Delegate to an agent. You orchestrate. |
-| "This feature is too simple for a demo" | Demo-builder takes 30 seconds. A simple curl is one of the best demo cases. |
 | "Criteria-assessor is being pedantic" | Tell the user. Don't silently override. |
 | "This doesn't need contracts for something this small" | Contracts prevent rework. Small scope ≠ skip process. |
 | "Tests should be green now" | Launch test-runner. "Should" isn't verified. |
@@ -108,7 +107,6 @@ All project documents live in a branch-specific directory:
 ```
 docs/reidplans/$(git branch --show-current)/
   PLAN.md
-  DEMO.md
   CONTRACTS.md
   TEST_SPEC.md
 ```
@@ -119,7 +117,7 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 mkdir -p "$DOCS_DIR"
 ```
 
-All references to PLAN.md, DEMO.md, etc. throughout this skill mean `$DOCS_DIR/<file>`.
+All references to PLAN.md, CONTRACTS.md, etc. throughout this skill mean `$DOCS_DIR/<file>`.
 
 ## WIP Tracking
 
@@ -248,9 +246,9 @@ ANNOTATION GUIDE:
 4. Launch `scope-guardian` agent:
    - Verify implementation stays within scope
    - Flag if approaching 200-line limit
-   - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), dispatch `linear-issues` agent to file the issue. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
+   - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), ask them to file the issue manually. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-5. **Implementation proof capture** (if APIs changed): After tests go green, capture key API request/response examples for DEMO.md. Captures during implementation are more valuable than reconstructed captures in Phase 4.
+5. **Implementation proof capture** (if APIs changed): After tests go green, note the key changed endpoints in PLAN.md for the api-walkthrough agent in Phase 4.
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
@@ -265,7 +263,7 @@ ANNOTATION GUIDE:
 Dispatch a haiku agent to commit all planning documents before implementation begins. Untracked docs don't survive environment resets.
 
 ```bash
-git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md $DOCS_DIR/DEMO.md 2>/dev/null
+git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
@@ -335,7 +333,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **Waiting For**: User review
    ```
 
-2. **API Demo (conditional, default for backend changes):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent authors a Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections). The collection captures auth via a login + `script:post-response` chain, then one `.bru` per endpoint with chained env-var IDs. The Bruno collection IS the proof — no separate DEMO.md.
+2. **API Demo (conditional, default for backend changes):** If this enhancement changed or added API endpoints, launch an `api-walkthrough` agent with the list of changed/new endpoints. The agent authors a Bruno walkthrough collection at `~/Library/Application Support/bruno/<collection>/` (sibling to existing collections). The collection captures auth via a login + `script:post-response` chain, then one `.bru` per endpoint with chained env-var IDs. The Bruno collection IS the proof.
 
    For non-API changes (schema-only, internal refactor, UI-only), skip the demo phase — ask the user to confirm per rule 5.
 
@@ -350,7 +348,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 - **What was added**: [description]
 - **Tests**: All passing (N/N)
 - **Lines added**: [count] (within 200-line limit)
-- **Proof**: See DEMO.md (if API changes) or test output
+- **Proof**: See Bruno collection (if API changes) or test output
 ```
 
 5. **Bisectable Commit Splitting**
@@ -364,7 +362,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    **3-layer split** (enhance-sized changes don't warrant more than 3 commits):
    - Layer 1 (Infrastructure): config files, package.json, tsconfig, CI, Dockerfiles
    - Layer 2 (Implementation + Tests): all production code and its tests
-   - Layer 3 (Documentation): PLAN.md, DEMO.md, CHANGELOG, README, docs/
+   - Layer 3 (Documentation): PLAN.md, CHANGELOG, README, docs/
 
    **Soft-reset to main**:
    ```bash
@@ -404,7 +402,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
    ## Test plan
    - [ ] All tests passing (verified by test-runner)
-   - [ ] DEMO.md with Bruno API collection (if API changes)
+   - [ ] Bruno API collection (if API changes)
 
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
    EOF
@@ -419,8 +417,6 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
    **Post-PR plan sync**: If review feedback changes the interface or design (e.g., optional→required, new parameter, renamed field), update PLAN.md and CONTRACTS.md before committing the fix. Stale planning artifacts mislead future readers about what was actually shipped.
 
-8. **Downstream ticket updates**: After PR is created, check if any related Linear tickets need context from decisions made in this PR. Launch `linear-issues` agent to update downstream tickets that reference this enhancement or depend on its output.
-
 8. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR up for review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
@@ -432,6 +428,6 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 All state has been saved to disk:
 - PLAN.md: Final status
 - CONTRACTS.md: Type definitions
-- Bruno collection at `~/Library/Application Support/bruno/<collection>/` (if API changes)
+- Bruno collection (if API changes): `~/Library/Application Support/bruno/<collection>/`
 
 **If your context feels heavy, now is a good time to `/clear` and then `/pickup` to continue with a fresh context window.**
