@@ -49,6 +49,39 @@ Verify the file count matches expected scope. If the branch has diverged signifi
 
 When dispatching agents sequentially on the same codebase (e.g., a fix-review agent after an implementer), **explicitly scope which files each agent may modify.** Without scoping, a review agent can clobber work the implementer already completed. Tell the agent: "You may only modify files X, Y, Z. All other files are read-only for this task."
 
+### Scope Expansion Handler (Mid-Session Scope Growth)
+
+```
+SCREENSHOT-ONLY ITERATION IS FORBIDDEN.
+NEW USER-INTRODUCED CONCEPTUAL SCOPE MUST RE-ENTER THE TEST GATE.
+```
+
+When the user introduces NEW conceptual scope mid-session (especially during Phase 5+ iteration) — a new view, a new aggregation, a new display layer, a new visual concept, an extension of the data model — scope has effectively re-opened. The existing PLAN.md no longer covers the work. Iterating on screenshot feedback alone is a regression-cascade hazard: each fix can silently break a prior fix because no test pins the surface.
+
+**Detection signals** (any one triggers the handler):
+- User describes a UI/visual concept not present in the locked scope or PLAN.md
+- User asks for a new aggregation, breakdown, grouping, or summary not in CONTRACTS.md
+- User asks for a new component or screen not enumerated in `Files to Create/Modify`
+- User changes the shape of data displayed in ways that affect calculation or enrichment
+- Three or more rounds of screenshot-driven correction on the same surface ("absolute nonsense", "definitely wrong", "we lost X")
+
+**Required handler sequence** — execute IN ORDER, no shortcuts:
+
+1. **Pause iteration.** Stop dispatching iteration/fix agents on the affected surface.
+2. **Write a PLAN.md addendum.** New section: `## Scope Addendum: <name> (added <timestamp>)`. Enumerate the new surface: components, data shape changes, calculation/enrichment changes, files expected to touch. Persist immediately — do not rely on conversation context.
+3. **Re-run contract definition for the new surface.** Update CONTRACTS.md with the new types, function signatures, and any backend response shape changes. If the new surface implies cross-package changes (FE+BE+shared), call this out explicitly.
+4. **Re-run test-gap-finder** (adversarial) on the new surface against the addendum.
+5. **Re-run test-implementer** for the new surface. Tests must be RED before any implementation work resumes.
+6. **Confirm RED state via test-runner** before resuming iteration.
+7. Only then dispatch implementation/iteration agents — and only against the now-failing tests.
+
+**Forbidden during iteration on user-interactive surfaces:**
+- Closing an iteration round on screenshot feedback alone
+- Body-text-only assertions (`expect(document.body.textContent).toContain(...)`) as the sole coverage for new display logic — use role/label queries that pin DOM placement
+- Untested pure utility functions in the new surface (aggregation, merge, enrichment helpers must have unit tests before iteration completes)
+
+**Why:** A single locked scope with thorough tests gives bumpy-but-stable iteration. Locked scope + new untested surface + screenshot iteration + permissive assertions + skipped typecheck removes five backstops simultaneously. Each is normally backstopped by another; remove all five and regressions cascade. The handler reinstates the test gate so the new surface gets the same safeguards as the original scope.
+
 ### Verification Gate (Phase Transitions)
 
 BEFORE transitioning between any phases:
@@ -80,21 +113,19 @@ BEFORE transitioning between any phases:
 | "Should I start the server for you?" | Yes, obviously. Don't ask — that's your job. Investigate and start it. |
 | "The DB is empty so the demo would just show empty states" | Seed the database. Run the seed script or insert test data yourself. Empty DB is not an excuse to skip demos. |
 | "The agent says it's done and the fix looks good" | When an agent touches allocation/money/auth code, open the agent's output file and skim its reasoning — not just the summary. Summaries describe intent; reasoning reveals concerns the agent may have dismissed. A false-assurance summary sat unread for hours in the CRIT incident. |
+| "User just wants this visual tweak — I'll iterate on screenshots, no need to re-plan" | New conceptual scope from the user re-opens scope, even if it sounds small. Trigger the Scope Expansion Handler: addendum → contracts → test-gap-finder → test-implementer (RED) → resume. Screenshot-only iteration without a test gate is the regression-cascade pattern. |
+| "Same display bug keeps coming back — let me try one more fix" | Three rounds on the same surface means no test pins the invariant. Stop iterating. Trigger the Scope Expansion Handler and write a test for the invariant the user keeps re-reporting before any further fix. |
 
 ### Red Flags — STOP
 
-- Reading code directly instead of delegating to an agent
-- Running tests or commands directly instead of via test-runner
 - **Using Edit or Write on source files** — that's code-architect's job, even for "mechanical" code review fixes
 - Claiming a phase is complete without citing agent evidence
-- Skipping a phase because "it's obvious"
 - Merging dark factory phases together
 - Expressing satisfaction about implementation quality (that's criteria-assessor's job)
-- Thinking "I know enough to skip exploration"
 - Silently overriding criteria-assessor or skipping user-requested phases
-- Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
 - Dispatching work to a branch with an open PR without explicit user instruction — run `gh pr list --head <branch>` first
 - **Dispatching two agents that may stage files or commit on the same git checkout simultaneously** — use `git worktree` for isolation, or run agents sequentially. 4 agents were killed and ~45 min was wasted from shared working directory collisions in a single session.
+- **Iterating on a new user-introduced surface via screenshot feedback alone, without re-running test-gap-finder + test-implementer** — that's the Scope Expansion Handler trigger. Pause, write the addendum, re-enter the test gate, then resume. Three rounds of "looks wrong" on the same view = no invariant is pinned by a test.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -110,21 +141,6 @@ BEFORE transitioning between any phases:
 | Implement/refactor/debug | Sonnet | code-architect, test-implementer, systematic-debug |
 | Plan/synthesize/assess | Opus | criteria-assessor, retro-synthesizer, architecture selection |
 | CI monitoring | Haiku | gh-checks agent (single agent with poll loop, NOT sleep+check background tasks) |
-
-## Core Principles
-
-- **PLAN.md is the single source of truth**: Read it immediately, create if missing, update every phase
-- **Contracts before architecture**: Define types, routes, and function signatures BEFORE designing implementation
-- **Tests before implementation**: TDD RED-GREEN - write failing tests, then make them pass
-- **Scope is locked**: After Phase 1, scope changes require explicit unlock
-- **Main thread orchestrates, agents execute**: Keep main thread thin, delegate heavy work
-- **Test-runner is authoritative**: Never bypass or override test-runner's findings
-- **Curl tests are MANDATORY**: Never skip API verification with curl commands
-- **Main thread orchestrates only**: Never read code, run tests, or run commands directly. Delegate ALL substantive work to agents. Main thread updates PLAN.md, talks to the user, and dispatches agents.
-- **Phases 0-4 are interactive**: User judgment required for scope, contracts, architecture
-- **Phases 5-8 are dark factory**: After user says "implement", run autonomously to completion
-- **Phase 8 is proof**: Bruno walkthrough collection (API features) or test output (non-API)
-- **WIP tracking**: Update `wip` status at every phase boundary and track all branches created
 
 ## Document Paths
 
@@ -188,18 +204,7 @@ If `wip get` fails (no item found), skip wip tracking silently — the user may 
 
 ## Context Compaction
 
-When conversation is compacted, **the current skill must be fully re-invoked** — do not continue from the compressed summary alone. The summary is lossy; the skill prompt is not.
-
-Your compaction summary **must** include:
-
-1. **Current phase** from PLAN.md Status section
-2. **What you were waiting for** (user input, agent results, etc.)
-3. **Instruction to re-invoke** `/pickup` to continue with full prompt reload
-
-Example:
-> "Feature development at Phase 5 (Implementation), 7/15 tests passing. On resume: invoke `/pickup` to continue — this reloads the full skill prompt and reads PLAN.md for state."
-
-**Why this matters**: After compaction, the iron law, delegation rules, and plan discipline are no longer in context. Without re-invocation, the orchestrator degrades — it starts reading code directly, skipping delegation, and losing process guardrails. PLAN.md is the critical recovery artifact; without it, re-invocation has nothing to restore from.
+After compaction, re-invoke the skill via `/pickup`. PLAN.md and SESSION_STATE.md are the recovery artifacts. Skill re-invocation restores discipline; the two artifacts restore design + process state.
 
 ## CriticMarkup Format
 
@@ -225,32 +230,7 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
    mkdir -p "$DOCS_DIR"
    ```
 2. Check if SESSION_STATE.md exists
-3. Create/update SESSION_STATE.md:
-
-```markdown
-# Session State
-
-## Current State
-**Phase**: 0 (Setup)
-**Status**: INITIALIZING
-**Last Updated**: [timestamp]
-
-## If You're a New Session
-
-### Do NOT
-- Re-explore codebase (done in Phase 2)
-- Re-design architecture (done in Phase 4)
-- Re-discuss scope (locked in Phase 1)
-
-### Do
-1. Read this file first
-2. Read PLAN.md current section
-3. Continue from current phase
-
-## Session Boundaries
-- Max tool calls this session: 100
-- Checkpoint trigger: 50 tool calls or phase boundary
-```
+3. Create/update SESSION_STATE.md: See `templates/SESSION_STATE.skeleton.md`. Copy and fill. Set Phase to 0, Status to INITIALIZING.
 
 4. **WIP**: Detect and activate wip item:
    ```bash
@@ -271,94 +251,7 @@ Initial request: $ARGUMENTS
 
 1. Create todo list with all 10 phases
 
-2. **Create or update PLAN.md** in the doc directory (`$DOCS_DIR/PLAN.md`) with initial structure:
-
-```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
-
-# Feature: [Feature Name]
-
-## Sections Needing Review
-<!-- _Links to sections that the agent wants to call particular attention to_. May be highlighted with CriticMarkup -->
-- [Overview](#overview)
-- [Questions](#questions)
-- [Codebase Context](#codebase-context)
-- [Contracts](#contracts)
-- [Verification Results](#verification-results)
-
-## Status
-**Current Phase**: Discovery
-**Waiting For**: User review
-
-## Scope Boundaries (LOCKED after Phase 1)
-
-### In Scope (MVP)
-- [ ] Item 1 - [justification]
-- [ ] Item 2
-
-### Explicitly Out of Scope
-- Item A - [why not now]
-
-### Fast Follows (Future PRs)
-| ID | Item | Rationale | Dependency |
-|----|------|-----------|------------|
-| FF-001 | Feature X | Not needed for MVP | Core PR |
-
-### Scope Lock Status
-**Status**: UNLOCKED
-**Lock requires**: User confirmation at Phase 1 checkpoint
-
-## Overview
-[Brief description of feature and purpose]
-
-## Constraints
-[Any constraints or requirements]
-
-## Questions
-
-### Immediate (Block Progress)
-- [ ] Q: [question]
-
-### Open (Resolve Later)
-- [ ] Q: [question]
-
----
-*Sections below populated in subsequent phases*
-
-## Codebase Context
-*To be filled after exploration*
-
-## Contracts
-*To be filled in Phase 2 (see CONTRACTS.md)*
-
-## Verification Plan
-*To be filled in Phase 2 (see TEST_SPEC.md)*
-
-## Architecture
-*To be filled after architecture design*
-
-## Tasks
-*To be filled after architecture design*
-
-## Security Review Results
-*To be filled after security review*
-
-## Verification Results
-*To be filled after verification*
-
-## Exit Criteria
-*To be filled in Phase 1, assessed in Phase 7 (Exit Criteria)*
-
----
-
-## Annotation Log
-| Date | Phase | Annotation | Response |
-|------|-------|------------|----------|
-```
+2. **Create or update PLAN.md** in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
 3. **Concept Extraction & Work Graph**: Before touching code, decompose the feature request into every concept, assumption, and unspoken dependency it implies. List them explicitly:
    ```markdown
@@ -467,59 +360,7 @@ All state has been saved to disk:
 
 2. **Enumerate existing mechanics**: Before proposing a new UI affordance or API surface, enumerate existing mechanisms that achieve similar goals. "Does this capability already exist under a different name or in a different form?" A Skip button was proposed without discovering that Delete already handled the exclusion use case — 2 commits + tests discarded.
 
-3. **Create CONTRACTS.md** in the doc directory (`$DOCS_DIR/CONTRACTS.md`):
-
-```markdown
-# Feature Contracts
-
-## Types
-
-### New Types
-\`\`\`typescript
-interface NotificationDelivery {
-  id: string;
-  notificationId: string;
-  channel: 'push' | 'email' | 'sms';
-  status: 'pending' | 'sent' | 'failed';
-}
-\`\`\`
-
-### Modified Types
-\`\`\`typescript
-interface Notification {
-  // existing fields...
-  deliveries?: NotificationDelivery[]; // NEW
-}
-\`\`\`
-
-## Routes/Endpoints
-
-### New Routes
-| Method | Path | Input | Output | Auth |
-|--------|------|-------|--------|------|
-| POST | /api/notifications | CreateNotificationInput | Notification | Required |
-
-### Modified Routes
-| Route | Change |
-|-------|--------|
-| GET /api/notifications | Now includes delivery status |
-
-## Function Signatures
-
-### New Functions
-\`\`\`typescript
-// notification.delivery.service.ts
-function createNotificationWithDelivery(
-  input: CreateNotificationInput,
-  repos: { notificationRepo, deliveryRepo }
-): Promise<Result<Notification, NotificationError>>
-\`\`\`
-
-### Modified Functions
-| Function | File | Change |
-|----------|------|--------|
-| createNotification | notification.service.ts | Add delivery creation |
-```
+3. **Create CONTRACTS.md** in the doc directory (`$DOCS_DIR/CONTRACTS.md`): See `templates/CONTRACTS.skeleton.md`. Copy and fill.
 
 4. **Launch code-verifier agent** to generate TEST_SPEC.md:
    - Reads CONTRACTS.md
@@ -636,59 +477,7 @@ All state has been saved to disk:
    - Design to make tests pass
    - Ensure interfaces match test imports
 
-3. Review approaches, select one, update PLAN.md:
-
-```markdown
-## Architecture
-
-### Test-Driven Constraints
-[What tests require - interfaces, return types, behaviors]
-
-### Approach
-[Chosen approach with rationale]
-
-### Alternatives Considered
-| Approach | Pros | Cons | Why Not |
-|----------|------|------|---------|
-
-### Component Design
-[Components, responsibilities, interfaces]
-
-### Files to Create/Modify
-| File | Action | Purpose |
-|------|--------|---------|
-
-*Full implementation details in DETAILS.md*
-
-## Tasks
-
-### Work Graph
-
-\`\`\`dot
-digraph tasks {
-    rankdir=LR;
-    node [shape=box];
-    "implement repository" [color=green];
-    "implement service" [color=green];
-    "implement routes" [color=green];
-    "write integration tests" [color=red];
-    "implement repository" -> "implement service" [label="imports types"];
-    "implement routes" -> "write integration tests";
-    "implement service" -> "write integration tests";
-}
-\`\`\`
-
-### Dispatch Waves
-1. **Wave 1 (parallel)**: implement repository, implement routes
-2. **Wave 2**: implement service (needs repository types)
-3. **Wave 3**: write integration tests (needs service + routes)
-
-### Task List
-- [ ] Create notification.repository.ts + CRUD methods
-- [ ] Wire up routes + middleware
-- [ ] Implement createNotificationWithDelivery + error handling
-- [ ] Integration tests
-```
+3. Review approaches, select one, and update the Approach, Key Decisions, and Codebase Context sections of PLAN.md with the chosen architecture. Include a Tasks section with work graph (DOT notation), dispatch waves, and task list.
 
 4. Update DETAILS.md with code samples
 
@@ -749,6 +538,8 @@ All state has been saved to disk:
    - **Test-runner is authoritative** - do not dispute its findings
 
 4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), ask them to file the issue manually. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
+
+   **User-introduced scope expansion**: If during Phase 5 iteration the user introduces a NEW conceptual surface (a new view, aggregation, breakdown, calculation, or display layer not in the locked scope), trigger the **Scope Expansion Handler** (see Orchestrator Discipline). Do not iterate on the new surface via screenshot feedback alone — re-enter contract → test-gap-finder → test-implementer (RED) → test-runner gate before resuming implementation/iteration agents. This applies equally if the same display bug recurs three or more times: the recurrence itself signals an unpinned invariant that the test gate must catch.
 
 5. **Scorecard-driven iteration**:
    ```
@@ -917,79 +708,11 @@ See Bruno collection (API features) or test output (non-API).
 **Completed**: [date]
 ```
 
-7. **Pre-commit gates** (before commit splitting or push):
+7. **Pre-commit gates**: Dispatch `pre-commit-gates` agent before commit splitting.
 
-   **Debug marker sweep**: Grep for debug/WIP markers: `TDD RED STATE`, `TODO REMOVE`, `FIXME`, `console.log` in test files, `debugger` statements. Strip or flag before committing.
+8. **Bisectable Commit Splitting**: Dispatch `commit-splitter` agent. Restructures commits into bisectable layers.
 
-   **Typecheck gate**: The orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
-
-   **Eslint gate**: Run `npx eslint --no-fix` on all changed files. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
-
-8. **Bisectable Commit Splitting**
-
-   Dispatch a single haiku agent to restructure commits into clean, independently-buildable layers before the PR goes up. The agent must:
-
-   **Pre-flight check**: Count lines in `git diff main...HEAD`. If fewer than 50 lines, skip splitting entirely — one commit is fine. Otherwise proceed.
-
-   **Stash guard**: Run `git stash` if there are uncommitted changes (restore with `git stash pop` at the end).
-
-   **Classify changed files** from `git diff main...HEAD --name-only` into layers:
-   - Layer 1 (Infrastructure): config files, package.json, tsconfig, CI, Dockerfiles
-   - Layer 2 (Types & Interfaces): type definition files, shared interfaces, schemas
-   - Layer 3 (Core Logic): models, services, utilities + their tests
-   - Layer 4 (Integration): controllers, handlers, API routes + their tests
-   - Layer 5 (Presentation): UI components, views, styles + their tests
-   - Layer 6 (Documentation): PLAN.md, CHANGELOG, README, docs/
-
-   **Soft-reset to main**:
-   ```bash
-   git reset --soft $(git merge-base HEAD main)
-   ```
-
-   **Commit each layer separately** (skip layers with no files). Commit message format:
-   ```
-   <layer-type>: <descriptive summary>
-
-   Extracted from: <original commit messages, one per line>
-   ```
-
-   **Typecheck after each commit** (TypeScript projects only):
-   ```bash
-   npx tsc --noEmit
-   ```
-   If typecheck fails on any layer commit, abort: hard-reset to the pre-split state (`git reset --hard <pre-split-sha>`), squash everything into one commit with the original messages preserved, and report the failure in the agent output so the orchestrator can surface it to the user.
-
-   **File classification edge cases**: If a file has circular dependencies across layers (e.g., a service file that also defines types), assign it to its primary dependency layer (the lowest-numbered layer it belongs to).
-
-   The agent reports back: how many commits were created, which layers were populated, and whether typecheck passed on each.
-
-9. **Push and create PR**:
-
-   Dispatch a haiku agent to push the branch and create the PR. This is not optional — the workflow ships code.
-
-   **Pre-push PR state check**: Before pushing, verify the branch's PR (if any) is not already merged or closed:
-   ```bash
-   PR_STATE=$(gh pr view --json state -q '.state' 2>/dev/null || echo "NONE")
-   ```
-   If `PR_STATE` is `MERGED` or `CLOSED`, do NOT push to this branch. Instead: create a new branch off main, cherry-pick or rewrite the changes, push the new branch, and open a new PR referencing the original.
-
-   ```bash
-   git push -u origin $(git branch --show-current)
-   gh pr create --title "<concise title>" --body "$(cat <<'EOF'
-   ## Summary
-   <bullet points from PLAN.md Final Summary>
-
-   ## Test plan
-   - [ ] All tests passing (verified by test-runner)
-   - [ ] Bruno collection or test output as proof-of-work
-   - [ ] Exit criteria met (verified by criteria-assessor)
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
-   EOF
-   )"
-   ```
-
-   If the PR creation fails (e.g., merge conflict with main), rebase first, re-run typecheck, then retry.
+9. **Push and create PR**: Dispatch `pr-creator` agent with PLAN.md Final Summary as PR body source.
 
 10. **Plan closure**: Dispatch a haiku agent to update PLAN.md — set phase to "Complete", set completion date, and check off all In Scope items that were delivered. An unclosed plan misleads future readers into thinking work is still in progress. This is not optional.
 

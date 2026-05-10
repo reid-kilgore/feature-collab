@@ -141,43 +141,7 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
-
-```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
-
-# Enhancement: [Title]
-
-## Status
-**Current Phase**: Scope & Contract
-**Waiting For**: User review
-
-## Description
-[What's being added and why]
-
-## Scope
-
-### In Scope
-- [ ] [Specific deliverable 1]
-- [ ] [Specific deliverable 2]
-
-### Explicitly Out of Scope
-- [Things deliberately excluded]
-
-## Contracts
-[Types, interfaces, function signatures — see CONTRACTS.md]
-
-## Exit Criteria
-- [ ] All new tests passing
-- [ ] All existing tests still passing
-- [ ] Enhancement works as specified
-- [ ] Code follows existing patterns
-- [ ] < 200 lines of production code added
-```
+1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
 2. **Concept Extraction**: Before touching code, decompose the enhancement into every concept, assumption, and unspoken dependency it implies. List them in PLAN.md:
    ```markdown

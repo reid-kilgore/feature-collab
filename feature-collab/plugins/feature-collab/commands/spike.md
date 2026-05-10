@@ -105,43 +105,7 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
-
-```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
-
-# Spike: [Question/Topic]
-
-## Status
-**Current Phase**: Explore
-**Waiting For**: Investigation in progress
-
-## Question
-[What we're trying to learn or decide]
-
-## Hypotheses
-1. [Hypothesis 1]
-2. [Hypothesis 2]
-
-## Scope
-- **Investigate**: [what to look at]
-- **Produce**: Findings section below + runnable prototypes in spike-scratch/
-- **Do NOT**: Write production code, modify existing code
-
-## Exit Criteria
-- [ ] Question answered with evidence
-- [ ] Findings documented in PLAN.md with supporting evidence
-- [ ] Runnable prototypes (if any) in spike-scratch/<spike-name>/
-- [ ] Recommendations documented with trade-offs
-- [ ] No production code written (spike-scratch/ only)
-
-## Findings
-*To be filled during exploration*
-```
+1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
 2. Launch 2-3 `code-explorer` agents in parallel:
    - Each explores a different angle of the question

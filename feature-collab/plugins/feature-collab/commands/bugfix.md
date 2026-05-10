@@ -108,48 +108,7 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 
 **Actions**:
 
-1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
-
-```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
-
-# Bugfix: [Bug Title]
-
-## Status
-**Current Phase**: Reproduce & Scope
-**Waiting For**: User review
-
-## Bug Description
-[What's broken — symptoms, error messages, affected code]
-
-## Reproduction Steps
-1. [Step to reproduce]
-2. [Expected vs actual behavior]
-
-## Root Cause Analysis
-[After investigation — what's actually wrong and why]
-
-## Scope (LOCKED after Phase 1)
-
-### In Scope
-- [ ] Fix: [specific fix description]
-- [ ] Test: Failing test that reproduces the bug
-
-### Explicitly Out of Scope
-- Any refactoring of surrounding code
-- Any feature additions
-- Any "while we're here" improvements
-
-## Exit Criteria
-- [ ] Failing tests reproduce the bug
-- [ ] Fix makes the test pass
-- [ ] All existing tests still pass
-- [ ] No regressions introduced
-```
+1. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
 2. **Before designing any fix**, launch a `code-explorer` agent to find existing tests for the affected code path. A single grep for test assertions on the affected function/model reveals what the expected behavior IS before you decide what it SHOULD be. Skipping this step caused a guard logic reversal in a prior session — the fix contradicted the existing test expectations.
 

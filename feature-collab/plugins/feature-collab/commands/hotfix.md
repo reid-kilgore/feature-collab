@@ -107,53 +107,7 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 
 1. Launch `code-explorer` agent to determine the production branch (check remote branches and tags).
 
-2. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`):
-
-```markdown
-<!--
-ANNOTATION GUIDE:
-- You: Use any CriticMarkup to comment, add, or delete text
-- Claude: Uses {==highlights==} only
--->
-
-# Hotfix: [Issue Title]
-
-## Status
-**Current Phase**: Triage
-**Waiting For**: User review
-
-## URGENCY: HIGH
-
-## Issue
-- **Symptom**: [What users are seeing]
-- **Impact**: [Who/what is affected]
-- **Production branch/tag**: [branch or tag name]
-
-## Root Cause
-[After investigation]
-
-## Hotfix Plan
-- **Branch**: hotfix/[name]
-- **Base**: [production branch/tag]
-- **Fix**: [one-line description]
-- **Cherry-pick to**: main
-
-## Scope (STRICT)
-
-### In Scope
-- [ ] Fix the specific production issue
-- [ ] Failing test reproducing the issue
-
-### Explicitly Out of Scope
-- EVERYTHING else
-
-## Exit Criteria
-- [ ] Failing test reproduces the issue
-- [ ] Fix makes the test pass
-- [ ] All existing tests pass on hotfix branch
-- [ ] Fix cherry-picked to main cleanly
-- [ ] All tests pass on main after cherry-pick
-```
+2. Create PLAN.md in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
 3. Create hotfix branch:
    ```bash
