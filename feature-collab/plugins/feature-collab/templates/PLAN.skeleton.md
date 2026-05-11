@@ -90,7 +90,7 @@ Pointer only. Full contracts in `CONTRACTS.md`.
 
 ## Codebase Context
 
-Durable reference for later phases. Populated in Phase 1 by concept-tracing agents; should NOT be re-derived in later phases. If something here is wrong, fix it in place rather than re-running exploration.
+Durable reference for later states. Populated in DISCOVERY by concept-tracing agents; should NOT be re-derived in later states. If something here is wrong, fix it in place rather than re-running exploration.
 
 ### Impact map
 Every file expected to be touched, plus why. Add rows as scope sharpens; do not delete (use strikethrough if a file drops out, so the history is visible).

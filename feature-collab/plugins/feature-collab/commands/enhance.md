@@ -30,7 +30,7 @@ The orchestrator dispatches agents. It does not use `Edit` or `Write` on source 
 2. **Never silently override criteria-assessor.** If you disagree with NOT READY, tell the user why in one sentence.
 3. **Execute mandatory skill phases even when trivial.** Don't skip phases because the feature is "too simple." If you believe a phase is genuinely inapplicable, see rule 5.
 4. **Persist user decisions to PLAN.md immediately.** Don't rely on conversation context surviving compactions.
-5. **Never skip phases without user permission.** If a phase seems inapplicable (e.g., test-gap-finder for a schema-only change), ask: "Phase [X] seems inapplicable because [reason] — skip it? (y/n)". Do not proceed past the phase until the user confirms. Silent phase-skipping is the #1 compliance violation across retros.
+5. **Never skip phases without user permission.** If a phase seems inapplicable (e.g., test-gap-finder for a schema-only change), ask: "[STATE_NAME] seems inapplicable because [reason] — skip it? (y/n)". Do not proceed past the phase until the user confirms. Silent phase-skipping is the #1 compliance violation across retros.
 
 ### Pre-PR Divergence Check
 
@@ -124,7 +124,7 @@ All references to PLAN.md, CONTRACTS.md, etc. throughout this skill mean `$DOCS_
 ```bash
 # At start: detect and activate wip item
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting enhance: [description]"
-# At phase transitions: wip note <item> "Phase N: [status]"
+# At state transitions: wip note <item> "[STATE_NAME]: [status]"
 # When creating branches: wip add-branch <item> <branch>
 # At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
@@ -135,7 +135,7 @@ Initial request: $ARGUMENTS
 
 ---
 
-## Phase 1: Scope & Contract
+## DISCOVERY: Scope & Contract
 
 **Goal**: Define what's being added, write contracts, write failing tests.
 
@@ -175,17 +175,17 @@ Initial request: $ARGUMENTS
 
 9. Launch `test-runner` agent to confirm RED state (tests should fail).
 
-10. If APIs are being changed, list the changed/new endpoints in PLAN.md so the api-walkthrough agent (Phase 4) knows what to trace. The Bruno collection itself lives in `~/Library/Application Support/bruno/<collection>/`, not in this repo.
+10. If APIs are being changed, list the changed/new endpoints in PLAN.md so the api-walkthrough agent (SHIPPING) knows what to trace. The Bruno collection itself lives in `~/Library/Application Support/bruno/<collection>/`, not in this repo.
 
 
-12. **WIP**: `wip note <item> "Phase 1: Contracts defined, tests written (TDD RED)"`
+12. **WIP**: `wip note <item> "DISCOVERY: Contracts defined, tests written (TDD RED)"`
 
 13. **CHECKPOINT**:
     > "Contracts defined, tests written and failing (TDD RED). Review [Contracts](#contracts) and [Scope](#scope). Say **'implement'** to begin implementation."
 
 ---
 
-## Phase 2: Implement (Dark Factory)
+## IMPLEMENTATION: Implement (Dark Factory)
 
 **Goal**: Make all tests pass. Runs autonomously after user approval.
 
@@ -212,15 +212,15 @@ Initial request: $ARGUMENTS
    - Flag if approaching 200-line limit
    - If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), ask them to file the issue manually. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-5. **Implementation proof capture** (if APIs changed): After tests go green, note the key changed endpoints in PLAN.md for the api-walkthrough agent in Phase 4.
+5. **Implementation proof capture** (if APIs changed): After tests go green, note the key changed endpoints in PLAN.md for the api-walkthrough agent in SHIPPING.
 
 6. **Escalation**: If 5 fix cycles fail, escalate to user.
 
 8. **CONTRACTS reconciliation**: If the implementation diverged from CONTRACTS.md (e.g., a parameter was dropped, a function signature changed, a tx mechanism was simplified), update CONTRACTS.md to match reality and verify all test function calls match actual implementation signatures (parameter count and types). Tests written against a stale contract pass by accident in JS (extra args are silently dropped) and create phantom correctness.
 
-9. **WIP**: `wip note <item> "Phase 2: Implementation complete, tests green"`
+9. **WIP**: `wip note <item> "IMPLEMENTATION: Implementation complete, tests green"`
 
-10. Proceed to Phase 3 when all tests pass.
+10. Proceed to CRITERIA_REVIEW when all tests pass.
 
 ### Commit Planning Artifacts
 
@@ -255,7 +255,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
 ---
 
-## Phase 3: Verify (Dark Factory)
+## CRITERIA_REVIEW: Verify (Dark Factory)
 
 **Goal**: Final verification pass. Runs autonomously.
 
@@ -278,13 +278,13 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
    - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
    - Note the override in PLAN.md so future readers see what was waived and why.
 
-6. **WIP**: `wip note <item> "Phase 3: Exit criteria READY"`
+6. **WIP**: `wip note <item> "CRITERIA_REVIEW: Exit criteria READY"`
 
-7. Proceed to Phase 4 when READY.
+7. Proceed to SHIPPING when READY.
 
 ---
 
-## Phase 4: Demo
+## SHIPPING: Demo
 
 **Goal**: Present proof of enhancement to user.
 
@@ -381,7 +381,7 @@ All state saved to disk. **If context feels heavy, `/clear` then `/pickup` to co
 
    **Post-PR plan sync**: If review feedback changes the interface or design (e.g., optional→required, new parameter, renamed field), update PLAN.md and CONTRACTS.md before committing the fix. Stale planning artifacts mislead future readers about what was actually shipped.
 
-8. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "enhance complete — PR up for review"`
+8. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "SHIPPING: enhance complete — PR up for review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
 9. Present the PR URL to the user and offer retrospective:

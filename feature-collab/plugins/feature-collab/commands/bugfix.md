@@ -87,7 +87,7 @@ All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 ```bash
 # At start: detect and activate wip item
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting bugfix: [description]"
-# At phase transitions: wip note <item> "Phase N: [status]"
+# At state transitions: wip note <item> "[STATE_NAME]: [status]"
 # When creating branches: wip add-branch <item> <branch>
 # At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
@@ -102,7 +102,7 @@ Initial request: $ARGUMENTS
 
 When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
 
-## Phase 1: Reproduce & Scope
+## DISCOVERY: Reproduce & Scope
 
 **Goal**: Identify the bug, reproduce it with failing tests, lock scope to just the fix.
 
@@ -113,8 +113,8 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 2. **Before designing any fix**, launch a `code-explorer` agent to find existing tests for the affected code path. A single grep for test assertions on the affected function/model reveals what the expected behavior IS before you decide what it SHOULD be. Skipping this step caused a guard logic reversal in a prior session — the fix contradicted the existing test expectations.
 
 3. Launch `code-explorer` agent to investigate using the **systematic debugging methodology** (see `/feature-collab:systematic-debug`):
-   - **Phase 1 — Root Cause Investigation**: Read error carefully, reproduce consistently, review recent changes, gather diagnostic evidence across system boundaries
-   - **Phase 2 — Pattern Analysis**: Find working examples, compare working vs broken, identify violated assumptions
+   - **Step 1 — Root Cause Investigation**: Read error carefully, reproduce consistently, review recent changes, gather diagnostic evidence across system boundaries
+   - **Step 2 — Pattern Analysis**: Find working examples, compare working vs broken, identify violated assumptions
    - Agent MUST return: the specific mechanism causing the failure, the specific condition triggering it, and a hypothesis log
 
    If the first investigation is inconclusive, launch `systematic-debug` agent for deeper analysis before proceeding.
@@ -127,7 +127,7 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 
 5. Launch `test-runner` agent to confirm the test fails (TDD RED state).
 
-6. **WIP**: `wip note <item> "Phase 1: Bug reproduced, failing test written"`
+6. **WIP**: `wip note <item> "DISCOVERY: Bug reproduced, failing test written"`
 
 ### Commit Planning Artifacts
 
@@ -150,7 +150,7 @@ All state saved to disk:
 
 ---
 
-## Phase 2: Fix & Verify (Dark Factory)
+## IMPLEMENTATION: Fix & Verify (Dark Factory)
 
 **Goal**: Fix the bug, verify all tests pass. Runs autonomously after user approval.
 
@@ -179,18 +179,18 @@ All state saved to disk:
 
 6. **Escalation**: If test-runner reports failures and code-architect can't fix in 3 cycles, launch `systematic-debug` agent to apply the full 4-phase methodology before trying more fixes. If still failing after systematic debug + 2 more cycles, escalate to user with full context including the hypothesis log.
 
-7. **WIP**: `wip note <item> "Phase 2: Bug fixed, all tests green"`
+7. **WIP**: `wip note <item> "IMPLEMENTATION: Bug fixed, all tests green"`
 
 8. Launch `criteria-assessor` agent (lightweight):
-   - Verify exit criteria from Phase 1 are met
+   - Verify exit criteria from DISCOVERY are met
    - Confirm reproduction test passes, all other tests pass, no regressions
    - If NOT READY, fix and re-assess (max 3 cycles)
 
-9. When all tests pass and criteria met, proceed to Phase 3.
+9. When all tests pass and criteria met, proceed to SHIPPING.
 
 ---
 
-## Phase 3: Demo
+## SHIPPING: Demo
 
 **Goal**: Present proof of fix to user.
 
@@ -219,7 +219,7 @@ All state saved to disk:
 - **Proof**: See Bruno collection or test output
 ```
 
-4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "bugfix complete — PR ready for human review"`
+4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "SHIPPING: bugfix complete — PR ready for human review"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
 5. Prompt user:

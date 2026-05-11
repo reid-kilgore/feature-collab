@@ -89,7 +89,7 @@ All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 ```bash
 # At start: detect and activate wip item
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting spike: [question]"
-# At phase transitions: wip note <item> "Phase N: [status]"
+# At state transitions: wip note <item> "[STATE_NAME]: [status]"
 # At completion: wip note <item> "spike complete — ready for PR/merge"
 # DONE status is set only after branch is merged (not by this skill)
 # If wip get fails, skip tracking silently
@@ -99,7 +99,7 @@ Initial request: $ARGUMENTS
 
 ---
 
-## Phase 1: Explore
+## DISCOVERY: Explore
 
 **Goal**: Investigate the question using code-explorer agents and executable examples.
 
@@ -136,7 +136,7 @@ All state saved to disk:
 
 ---
 
-## Phase 2: Report
+## SHIPPING: Report
 
 **Goal**: Compile findings into a readable, actionable report.
 
@@ -195,7 +195,7 @@ If the user asks to implement findings mid-spike ("build it", "go implement", "k
 1. **Stop the spike.** Do not write production code under the spike skill.
 2. **Commit spike artifacts** (PLAN.md, any spike-scratch/ files).
 3. **Invoke the appropriate implementation skill**: `/feature-collab` for multi-component work (>200 lines), `/enhance` for small additions (<200 lines).
-4. The spike's PLAN.md Findings carry forward as Phase 1 context — no research duplication.
+4. The spike's PLAN.md Findings carry forward as DISCOVERY context — no research duplication.
 
 This is not optional. "The user told me to" does not override the spike's iron law (no production code). The correct response to "build it" is to transition skills, not to start editing source files.
 
@@ -203,17 +203,17 @@ This is not optional. "The user told me to" does not override the spike's iron l
 
 Spikes often lead to implementation. When the user wants to act on spike findings:
 
-1. **The spike's PLAN.md Findings and any spike-scratch/ prototypes become Phase 1 context** for `/feature-collab` or `/enhance`. The concept extraction and codebase research is already done — the next skill should consume it, not redo it.
+1. **The spike's PLAN.md Findings and any spike-scratch/ prototypes become DISCOVERY context** for `/feature-collab` or `/enhance`. The concept extraction and codebase research is already done — the next skill should consume it, not redo it.
 
 2. Suggest the right next skill:
    > "This spike answered [question]. To implement, I'd suggest:
    > - `/enhance` if it's <200 lines and straightforward
    > - `/feature-collab` if it spans multiple components or is >200 lines
    >
-   > The spike findings (PLAN.md) will carry forward as Phase 1 context — no research duplication."
+   > The spike findings (PLAN.md) will carry forward as DISCOVERY context — no research duplication."
 
-3. When `/feature-collab` or `/enhance` starts after a spike, Phase 1 should:
+3. When `/feature-collab` or `/enhance` starts after a spike, DISCOVERY should:
    - Read the spike's PLAN.md Findings and any spike-scratch/ prototypes
    - Skip redundant exploration — the spike already traced concepts through the codebase
-   - Focus Phase 1 on scope locking and contracts, not re-exploration
+   - Focus DISCOVERY on scope locking and contracts, not re-exploration
    - Reference spike findings in the new PLAN.md's Codebase Context section

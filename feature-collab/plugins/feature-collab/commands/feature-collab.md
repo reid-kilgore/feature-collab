@@ -56,7 +56,7 @@ SCREENSHOT-ONLY ITERATION IS FORBIDDEN.
 NEW USER-INTRODUCED CONCEPTUAL SCOPE MUST RE-ENTER THE TEST GATE.
 ```
 
-When the user introduces NEW conceptual scope mid-session (especially during Phase 5+ iteration) — a new view, a new aggregation, a new display layer, a new visual concept, an extension of the data model — scope has effectively re-opened. The existing PLAN.md no longer covers the work. Iterating on screenshot feedback alone is a regression-cascade hazard: each fix can silently break a prior fix because no test pins the surface.
+When the user introduces NEW conceptual scope mid-session (especially during IMPLEMENTATION iteration) — a new view, a new aggregation, a new display layer, a new visual concept, an extension of the data model — scope has effectively re-opened. The existing PLAN.md no longer covers the work. Iterating on screenshot feedback alone is a regression-cascade hazard: each fix can silently break a prior fix because no test pins the surface.
 
 **Detection signals** (any one triggers the handler):
 - User describes a UI/visual concept not present in the locked scope or PLAN.md
@@ -169,7 +169,7 @@ All references to PLAN.md, CONTRACTS.md, etc. throughout this skill mean `$DOCS_
 
 Track progress and branches via the `wip` CLI throughout the workflow. These are orchestration commands and run in the main thread.
 
-**At skill start** (Phase 0):
+**At skill start** (INIT):
 ```bash
 # Detect current wip item from branch name
 wip get "$(git branch --show-current)"
@@ -178,9 +178,9 @@ wip status <item> ACTIVE
 wip note <item> "Starting feature-collab: [feature name]"
 ```
 
-**At every phase transition**:
+**At every state transition**:
 ```bash
-wip note <item> "Phase N: [phase name] — [brief status]"
+wip note <item> "[STATE_NAME]: [state name] — [brief status]"
 ```
 
 **When creating any branch** (walking skeleton, stacked PRs, etc.):
@@ -188,7 +188,7 @@ wip note <item> "Phase N: [phase name] — [brief status]"
 wip add-branch <item> <new-branch-name>
 ```
 
-**At completion** (Phase 8):
+**At completion** (SHIPPING):
 ```bash
 wip status <item> IN_REVIEW
 wip note <item> "feature-collab complete — PR ready for human review"
@@ -218,7 +218,7 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
 
 ---
 
-## Phase 0: Session Setup
+## INIT: Session Setup
 
 **Goal**: Initialize documents and establish context for resumability
 
@@ -230,18 +230,18 @@ Address annotations explicitly and update plan accordingly. Keep a log at the bo
    mkdir -p "$DOCS_DIR"
    ```
 2. Check if SESSION_STATE.md exists
-3. Create/update SESSION_STATE.md: See `templates/SESSION_STATE.skeleton.md`. Copy and fill. Set Phase to 0, Status to INITIALIZING.
+3. Create/update SESSION_STATE.md: See `templates/SESSION_STATE.skeleton.md`. Copy and fill. Set current_state to INIT, Status to INITIALIZING.
 
 4. **WIP**: Detect and activate wip item:
    ```bash
    wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting feature-collab: [feature name]"
    ```
 
-5. Proceed immediately to Phase 1
+5. Proceed immediately to DISCOVERY
 
 ---
 
-## Phase 1: Discovery & Scope Lock
+## DISCOVERY: Discovery & Scope Lock
 
 **Goal**: Understand requirements and LOCK scope boundaries
 
@@ -249,7 +249,7 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 
-1. Create todo list with all 10 phases
+1. Create todo list with all 9 states
 
 2. **Create or update PLAN.md** in the doc directory (`$DOCS_DIR/PLAN.md`): See `templates/PLAN.skeleton.md`. Copy and fill.
 
@@ -290,7 +290,7 @@ Initial request: $ARGUMENTS
    - **Risk register**: What might break, what's fragile, what has no test coverage
    - **3-sentence direction**: Explain the change's approach and impact as if telling a coworker quickly what you plan to do
 
-   **Research exit gate**: Phase 1 exploration is complete when you can name every file that will be touched, explain why, and identify what might break. If you can't, launch more agents.
+   **Research exit gate**: DISCOVERY exploration is complete when you can name every file that will be touched, explain why, and identify what might break. If you can't, launch more agents.
 
 6. Define **Exit Criteria** (what does "done" mean?):
 
@@ -310,7 +310,7 @@ Initial request: $ARGUMENTS
 - [ ] Demo complete: Bruno collection (API features) or test output (non-API)
 
 ## Demo Scenarios
-What should the proof-of-work demonstrate? Define these NOW — they become the spec for the api-walkthrough agent in Phase 8.
+What should the proof-of-work demonstrate? Define these NOW — they become the spec for the api-walkthrough agent in SHIPPING.
 
 1. [Scenario name]: [What to show]
 2. [Scenario name]: [What to show]
@@ -321,8 +321,8 @@ What should the proof-of-work demonstrate? Define these NOW — they become the 
 
 7. When user says "lock scope":
    - Update Scope Lock Status to LOCKED with timestamp
-   - **WIP**: `wip note <item> "Phase 1: Scope locked"`
-   - Proceed to Phase 2
+   - **WIP**: `wip note <item> "DISCOVERY: Scope locked"`
+   - Proceed to CONTRACTS
 
 ### Commit Planning Artifacts
 
@@ -343,7 +343,7 @@ All state has been saved to disk:
 
 ---
 
-## Phase 2: Contract Definition
+## CONTRACTS: Contract Definition
 
 **Goal**: Define ALL contracts (types, routes, function signatures) and tests BEFORE architecture
 
@@ -354,7 +354,7 @@ All state has been saved to disk:
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Contract Definition
+   **Current State**: CONTRACTS
    **Waiting For**: Contract drafting
    ```
 
@@ -385,10 +385,10 @@ All state has been saved to disk:
 
 10. Update PLAN.md with Verification Plan summary and Draft Scorecard
 
-11. **WIP**: `wip note <item> "Phase 2: Contracts defined, tests written (TDD RED)"`
+11. **WIP**: `wip note <item> "CONTRACTS: Contracts defined, tests written (TDD RED)"`
 
 12. **CHECKPOINT**:
-   > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to walking skeleton."
+   > "Contracts defined in CONTRACTS.md. Tests written and confirmed failing (TDD RED). See [Verification Plan](#verification-plan). Say **'continue'** to proceed to SECURITY_REVIEW."
 
 ### Context Checkpoint
 
@@ -402,7 +402,7 @@ All state has been saved to disk:
 
 ---
 
-## Phase 3: Walking Skeleton
+## SECURITY_REVIEW: Walking Skeleton
 
 **Goal**: Implement the thinnest possible end-to-end slice that proves architecture works
 
@@ -413,7 +413,7 @@ All state has been saved to disk:
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Walking Skeleton
+   **Current State**: SECURITY_REVIEW
    **Waiting For**: Implementation
    ```
 
@@ -445,25 +445,25 @@ All state has been saved to disk:
 **Skeleton Verified**: YES
 ```
 
-6. **WIP**: `wip note <item> "Phase 3: Walking skeleton verified"`
+6. **WIP**: `wip note <item> "SECURITY_REVIEW: Walking skeleton verified"`
 
-7. Proceed automatically to Phase 4:
+7. Proceed automatically to ARCHITECTURE:
    > "Walking skeleton verified. Target test passing. Proceeding to architecture design."
 
 ---
 
-## Phase 4: Architecture Design
+## ARCHITECTURE: Architecture Design
 
 **Goal**: Design complete architecture to make ALL tests pass
 
-**Key constraint**: Architecture must satisfy failing tests from Phase 2.
+**Key constraint**: Architecture must satisfy failing tests from CONTRACTS.
 
 **Actions**:
 
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Architecture Design
+   **Current State**: ARCHITECTURE
    **Waiting For**: Agent analysis
    ```
 
@@ -481,7 +481,7 @@ All state has been saved to disk:
 
 4. Update DETAILS.md with code samples
 
-5. **WIP**: `wip note <item> "Phase 4: Architecture complete, awaiting user approval"`
+5. **WIP**: `wip note <item> "ARCHITECTURE: Architecture complete, awaiting user approval"`
 
 6. **CHECKPOINT** (CRITICAL - do not skip):
    > "Architecture complete. Please review [Architecture](#architecture) and [Tasks](#tasks). When satisfied, say **'implement'** to begin the dark factory — I'll implement, test, review security, and verify exit criteria autonomously, then present you with proof of work."
@@ -496,24 +496,24 @@ All state has been saved to disk:
 - CONTRACTS.md: Type definitions
 - TEST_SPEC.md: Test specifications
 
-**If your context feels heavy, now is a good time to `/clear` then `/pickup` to continue with a fresh context window. The dark factory phases (5-8) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
+**If your context feels heavy, now is a good time to `/clear` then `/pickup` to continue with a fresh context window. The dark factory states (VERIFICATION_PLANNING through SHIPPING) may take a while — I'll save state after each major task group. If context gets heavy during implementation, I'll prompt you to /clear.**
 
 ---
 
-## Phase 5: Implementation (Dark Factory)
+## VERIFICATION_PLANNING: Implementation (Dark Factory)
 
 **Goal**: Make all tests pass (TDD GREEN phase)
 
-**DO NOT START WITHOUT EXPLICIT USER APPROVAL FROM PHASE 4**
+**DO NOT START WITHOUT EXPLICIT USER APPROVAL FROM ARCHITECTURE**
 
-**Dark Factory**: This phase runs autonomously. No user checkpoints until complete. State is fully on disk.
+**Dark Factory**: This state runs autonomously. No user checkpoints until complete. State is fully on disk.
 
 **Actions**:
 
 1. Update PLAN.md status:
    ```markdown
    ## Status
-   **Current Phase**: Implementation (Dark Factory)
+   **Current State**: VERIFICATION_PLANNING
    **Waiting For**: Autonomous — will report when complete
    ```
 
@@ -539,7 +539,7 @@ All state has been saved to disk:
 
 4. **Scope check**: After each major implementation batch, launch `scope-guardian` agent to verify no scope drift. If scope-guardian returns one or more `SCOPE_SHOVE_CANDIDATE` blocks, surface each one to the user with the A/B choice as written. If the user picks (B), ask them to file the issue manually. If the user picks (A), expand scope and proceed. Never resolve shove candidates silently.
 
-   **User-introduced scope expansion**: If during Phase 5 iteration the user introduces a NEW conceptual surface (a new view, aggregation, breakdown, calculation, or display layer not in the locked scope), trigger the **Scope Expansion Handler** (see Orchestrator Discipline). Do not iterate on the new surface via screenshot feedback alone — re-enter contract → test-gap-finder → test-implementer (RED) → test-runner gate before resuming implementation/iteration agents. This applies equally if the same display bug recurs three or more times: the recurrence itself signals an unpinned invariant that the test gate must catch.
+   **User-introduced scope expansion**: If during VERIFICATION_PLANNING iteration the user introduces a NEW conceptual surface (a new view, aggregation, breakdown, calculation, or display layer not in the locked scope), trigger the **Scope Expansion Handler** (see Orchestrator Discipline). Do not iterate on the new surface via screenshot feedback alone — re-enter contract → test-gap-finder → test-implementer (RED) → test-runner gate before resuming implementation/iteration agents. This applies equally if the same display bug recurs three or more times: the recurrence itself signals an unpinned invariant that the test gate must catch.
 
 5. **Scorecard-driven iteration**:
    ```
@@ -563,28 +563,28 @@ All state has been saved to disk:
    - Proposed next approach
    - Ask user for guidance before continuing
 
-9. **WIP**: `wip note <item> "Phase 5: All tests green"`
+9. **WIP**: `wip note <item> "VERIFICATION_PLANNING: All tests green"`
 
 10. When scorecard shows all green, proceed directly to consolidation check.
 
 11. **Consolidation check**: After code-architect fan-out (multiple agents implementing across files), dispatch a haiku agent to grep for ≥3 callsites of ≥10-line repeated blocks and propose a shared helper. If no duplicates found, proceed. If duplicates found, dispatch code-architect to extract the helper, then re-run test-runner.
 
-12. Proceed to Phase 6 (no user checkpoint).
+12. Proceed to IMPLEMENTATION (no user checkpoint).
 
 ---
 
-## Phase 6: Security Review (Dark Factory)
+## IMPLEMENTATION: Security Review (Dark Factory)
 
 **Goal**: Verify implementation meets security standards
 
-**Dark Factory**: Continues autonomously from Phase 5.
+**Dark Factory**: Continues autonomously from VERIFICATION_PLANNING.
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Security Review (Dark Factory)
+   **Current State**: IMPLEMENTATION
    **Waiting For**: Autonomous — security analysis
    ```
 
@@ -604,28 +604,28 @@ All state has been saved to disk:
    - Re-run `code-security` to verify fixes
    - Re-run `test-runner` to confirm no regressions
 
-5. **WIP**: `wip note <item> "Phase 6: Security review clear"`
+5. **WIP**: `wip note <item> "IMPLEMENTATION: Security review clear"`
 
-6. Proceed directly to Phase 7 (no user checkpoint).
+6. Proceed directly to CRITERIA_REVIEW (no user checkpoint).
 
 ---
 
-## Phase 7: Exit Criteria Assessment (Dark Factory)
+## CRITERIA_REVIEW: Exit Criteria Assessment (Dark Factory)
 
 **Goal**: Adversarial assessment of whether we're actually done
 
-**Dark Factory**: Continues autonomously from Phase 6.
+**Dark Factory**: Continues autonomously from IMPLEMENTATION.
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Exit Criteria Assessment (Dark Factory)
+   **Current State**: CRITERIA_REVIEW
    **Waiting For**: Autonomous — assessment
    ```
 
-2. Compile exit criteria from Phase 1 and all subsequent phases
+2. Compile exit criteria from DISCOVERY and all subsequent states
 
 3. Launch `scope-guardian` agent for final scope audit (was implementation in scope?). If scope-guardian returns any `SCOPE_SHOVE_CANDIDATE` blocks at this stage, surface each one to the user with the A/B choice before proceeding to criteria-assessor.
 
@@ -633,7 +633,7 @@ All state has been saved to disk:
    - Independently verifies each criterion using the Verification Gate
    - Runs tests itself — does NOT trust test-runner's previous reports
    - Checks code matches claims
-   - Verifies Demo Scenarios from Phase 1 are addressed
+   - Verifies Demo Scenarios from DISCOVERY are addressed
    - Returns READY or NOT READY verdict
 
 4. **If NOT READY**:
@@ -645,24 +645,24 @@ All state has been saved to disk:
    - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
    - Note the override in PLAN.md so future readers see what was waived and why.
 
-6. **WIP**: `wip note <item> "Phase 7: Exit criteria READY"`
+6. **WIP**: `wip note <item> "CRITERIA_REVIEW: Exit criteria READY"`
 
-7. **If READY**: Proceed to Phase 8
+7. **If READY**: Proceed to SHIPPING
 
 ---
 
-## Phase 8: Demo & Documentation
+## SHIPPING: Demo & Documentation
 
 **Goal**: Build proof-of-work, finalize documents, prepare for PR
 
-**This phase returns to interactive mode — user reviews the proof.**
+**This state returns to interactive mode — user reviews the proof.**
 
 **Actions**:
 
 1. Update status:
    ```markdown
    ## Status
-   **Current Phase**: Demo & Documentation
+   **Current State**: SHIPPING
    **Waiting For**: Proof generation
    ```
 
@@ -704,7 +704,7 @@ All state has been saved to disk:
 See Bruno collection (API features) or test output (non-API).
 
 ## Status
-**Current Phase**: Complete
+**Current State**: Complete
 **Completed**: [date]
 ```
 
@@ -748,14 +748,14 @@ PRs merge in order: #1 → main, #2 → main, #3 → main...
 
 ## Quick Reference
 
-| Phase | Mode | Checkpoint | User Action |
+| State | Mode | Checkpoint | User Action |
 |-------|------|------------|-------------|
-| 0 | Interactive | None | Auto |
-| 1 | Interactive | Scope review | "lock scope" |
-| 2 | Interactive | Contracts/tests | "continue" |
-| 3 | Interactive | None | Auto |
-| 4 | Interactive | **CRITICAL** | "implement" (starts dark factory) |
-| 5 | **Dark Factory** | None (escalate after 5 failures) | Auto |
-| 6 | **Dark Factory** | None | Auto |
-| 7 | **Dark Factory** | None (escalate after 3 cycles) | Auto |
-| 8 | Interactive | Final + Demo | Review Bruno collection, `mdannotate PLAN.md` |
+| INIT | Interactive | None | Auto |
+| DISCOVERY | Interactive | Scope review | "lock scope" |
+| CONTRACTS | Interactive | Contracts/tests | "continue" |
+| SECURITY_REVIEW | Interactive | None | Auto |
+| ARCHITECTURE | Interactive | **CRITICAL** | "implement" (starts dark factory) |
+| VERIFICATION_PLANNING | **Dark Factory** | None (escalate after 5 failures) | Auto |
+| IMPLEMENTATION | **Dark Factory** | None | Auto |
+| CRITERIA_REVIEW | **Dark Factory** | None (escalate after 3 cycles) | Auto |
+| SHIPPING | Interactive | Final + Demo | Review Bruno collection, `mdannotate PLAN.md` |

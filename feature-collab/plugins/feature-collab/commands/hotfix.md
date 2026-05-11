@@ -84,7 +84,7 @@ All references to PLAN.md throughout this skill mean `$DOCS_DIR/PLAN.md`.
 # At start: detect and activate wip item
 wip get "$(git branch --show-current)" && wip status <item> ACTIVE && wip note <item> "Starting hotfix: [issue]"
 # When creating hotfix branch: wip add-branch <item> hotfix/[name]
-# At phase transitions: wip note <item> "Phase N: [status]"
+# At state transitions: wip note <item> "[STATE_NAME]: [status]"
 # At completion: wip status <item> IN_REVIEW  (agent-managed — hooks won't overwrite)
 # DONE status is set only after branch is merged (not by this skill)
 # When branch is merged: wip branch-status <item> <branch> MERGED && wip status <item> DONE
@@ -99,7 +99,7 @@ Initial request: $ARGUMENTS
 
 When conversation is compacted, invoke `/pickup` to continue — do not continue from the compressed summary alone. Your summary must include: current phase, what you were waiting for, and the instruction to re-invoke via `/pickup`.
 
-## Phase 1: Triage
+## DISCOVERY: Triage
 
 **Goal**: Identify the issue, create hotfix branch, write failing test on prod branch.
 
@@ -117,7 +117,7 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 4. **WIP**: Track the new branch:
    ```bash
    wip add-branch <item> hotfix/[name]
-   wip note <item> "Phase 1: Hotfix branch created from [production-branch]"
+   wip note <item> "DISCOVERY: Hotfix branch created from [production-branch]"
    ```
 
 5. Launch `code-explorer` agent to trace the issue.
@@ -126,7 +126,7 @@ When conversation is compacted, invoke `/pickup` to continue — do not continue
 
 6. Launch `test-runner` agent to confirm the test fails (TDD RED state).
 
-7. **WIP**: `wip note <item> "Phase 1: Issue triaged, failing test on hotfix branch"`
+7. **WIP**: `wip note <item> "DISCOVERY: Issue triaged, failing test on hotfix branch"`
 
 ### Commit Planning Artifacts
 
@@ -149,7 +149,7 @@ All state saved to disk:
 
 ---
 
-## Phase 2: Fix & Verify (Dark Factory)
+## IMPLEMENTATION: Fix & Verify (Dark Factory)
 
 **Goal**: Fix on hotfix branch, run tests, cherry-pick to main. Runs autonomously.
 
@@ -185,17 +185,17 @@ All state saved to disk:
 7. Launch `scope-guardian` agent to verify minimal change.
 
 8. Launch `criteria-assessor` agent (lightweight):
-   - Verify exit criteria from Phase 1 are met
+   - Verify exit criteria from DISCOVERY are met
    - Confirm fix works on both branches, all tests pass
    - If NOT READY, fix and re-assess (max 2 cycles — hotfixes have lower threshold)
 
-9. **WIP**: `wip note <item> "Phase 2: Hotfix applied, cherry-picked to main"`
+9. **WIP**: `wip note <item> "IMPLEMENTATION: Hotfix applied, cherry-picked to main"`
 
 10. **Escalation**: If 3 fix cycles fail (lower threshold for hotfixes), escalate immediately.
 
 ---
 
-## Phase 3: Demo
+## SHIPPING: Demo
 
 **Goal**: Present proof of fix and readiness to deploy.
 
@@ -231,7 +231,7 @@ All state saved to disk:
 - [ ] Ready for deploy
 ```
 
-4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "hotfix complete — ready to deploy/merge"`
+4. **WIP**: `wip status <item> IN_REVIEW && wip note <item> "SHIPPING: hotfix complete — ready to deploy/merge"`
    > `IN_REVIEW` tells hooks not to overwrite with ACTIVE/WAITING — preserves the status until a human acts.
 
 5. Prompt user:
