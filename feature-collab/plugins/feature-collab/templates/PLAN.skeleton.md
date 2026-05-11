@@ -111,6 +111,13 @@ What's fragile, what's untested, what might break.
 
 ---
 
+## Carry-Forward Notes
+
+Append-only. Populated automatically when an `iterate` transition fires. The re-entered state MUST read these before any action.
+
+| Date | Trigger ID | Iterated from → to | Missed | Re-entered state MUST | Evidence |
+|------|-----------|--------------------|--------|------------------------|----------|
+
 ## Annotation Log
 | Date | Phase | Annotation | Response |
 |------|-------|------------|----------|

@@ -60,6 +60,13 @@ State transitions that have been confirmed. The Verification Gate (see skill) bl
 - Checkpoint trigger: 50 calls or phase boundary
 - Last checkpoint: [ts]
 
+## Andon Counter
+
+Tracks (trigger_id, target_state) pairs to enforce convergence. If any pair reaches 3 firings, escalate to human regardless of trigger type.
+
+| trigger_id | target_state | count |
+|-----------|--------------|-------|
+
 ## If You're a New Session
 
 Do NOT:

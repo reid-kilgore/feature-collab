@@ -46,20 +46,20 @@ Read these files in order (skip any that don't exist, but PLAN.md is required):
 3. **SESSION_STATE.md** — session metadata
 If HANDOFF.md doesn't exist, fall back to SESSION_STATE.md and PLAN.md alone. The workflow can still resume — you'll just need to infer state from PLAN.md.
 
-## Step 3: Load Supporting Documents (Phase-Dependent)
+## Step 3: Load Supporting Documents (State-Dependent)
 
-Based on the current phase from PLAN.md Status, read the relevant supporting docs:
+Based on the current state from PLAN.md Status, read the relevant supporting docs:
 
-| Current Phase | Also Read |
+| Current State | Also Read |
 |--------------|-----------|
-| 0-1 (Discovery) | Nothing else needed |
-| 2 (Contracts) | CONTRACTS.md, TEST_SPEC.md |
-| 3 (Walking Skeleton) | CONTRACTS.md, TEST_SPEC.md |
-| 4 (Architecture) | CONTRACTS.md, TEST_SPEC.md, DETAILS.md |
-| 5 (Implementation) | CONTRACTS.md, TEST_SPEC.md, DETAILS.md |
-| 6 (Security) | DETAILS.md |
-| 7 (Exit Criteria) | TEST_SPEC.md, DETAILS.md |
-| 8 (Documentation) | DECISIONS.md |
+| INIT / DISCOVERY | Nothing else needed |
+| CONTRACTS | CONTRACTS.md, TEST_SPEC.md |
+| SECURITY_REVIEW | CONTRACTS.md, TEST_SPEC.md |
+| ARCHITECTURE | CONTRACTS.md, TEST_SPEC.md |
+| VERIFICATION_PLANNING | CONTRACTS.md, TEST_SPEC.md |
+| IMPLEMENTATION | CONTRACTS.md, TEST_SPEC.md |
+| CRITERIA_REVIEW | TEST_SPEC.md |
+| SHIPPING | (as needed) |
 
 ## Step 4: Restore the Todo List
 
@@ -76,7 +76,7 @@ If there's no HANDOFF.md, create the standard 9-phase todo list and mark phases 
 
 Before continuing, summarize to the user what you understand:
 
-> "Resuming **[feature name]** from Phase [N] ([phase name]).
+> "Resuming **[feature name]** from state [state name].
 >
 > **Previous session**: [what was accomplished]
 > **Current state**: [where things stand]
@@ -96,14 +96,14 @@ Invoke `/feature-collab` to continue the workflow. The feature-collab skill will
 2. Read the current phase from Status
 3. Continue from where the previous session left off
 
-**IMPORTANT**: Do NOT re-do completed phases. The feature-collab skill's Phase 0 checks for existing state and will skip completed work. Trust the documents.
+**IMPORTANT**: Do NOT re-do completed states. The feature-collab skill's INIT state checks for existing state and will skip completed work. Trust the documents.
 
 ## What NOT to Do
 
-- **Don't re-explore the codebase** — Phase 1 exploration is already captured in PLAN.md's Codebase Context
-- **Don't re-design architecture** — Phase 4 design is in DETAILS.md
-- **Don't re-discuss scope** — scope was locked in Phase 1
-- **Don't re-write tests** — tests were written in Phase 2
+- **Don't re-explore the codebase** — DISCOVERY exploration is captured in PLAN.md's Codebase Context
+- **Don't re-design architecture** — ARCHITECTURE design is in PLAN.md's Approach + Codebase Context sections
+- **Don't re-discuss scope** — scope was locked in DISCOVERY
+- **Don't re-write tests** — tests were written in VERIFICATION_PLANNING
 - **Don't ignore HANDOFF.md warnings** — the previous agent wrote them for a reason
 - **Don't skip loading todos** — the task list drives progress tracking
 
@@ -120,5 +120,5 @@ If the documents are inconsistent or seem stale:
 
 - **No HANDOFF.md exists**: The previous session ended without a clean handoff. Read PLAN.md and SESSION_STATE.md, infer the current state, and ask the user to confirm before continuing.
 - **PLAN.md doesn't exist**: This is a fresh start, not a resume. Tell the user and suggest using `/feature-collab` directly instead.
-- **Phase 0 (Setup)**: Nothing to resume — just run `/feature-collab` from the start.
-- **Phase 8 (Complete)**: The feature is done. Tell the user and ask what they want to do next.
+- **INIT state**: Nothing to resume — just run `/feature-collab` from the start.
+- **SHIPPING state (Complete)**: The feature is done. Tell the user and ask what they want to do next.

@@ -116,6 +116,28 @@ BEFORE transitioning between any phases:
 | "User just wants this visual tweak — I'll iterate on screenshots, no need to re-plan" | New conceptual scope from the user re-opens scope, even if it sounds small. Trigger the Scope Expansion Handler: addendum → contracts → test-gap-finder → test-implementer (RED) → resume. Screenshot-only iteration without a test gate is the regression-cascade pattern. |
 | "Same display bug keeps coming back — let me try one more fix" | Three rounds on the same surface means no test pins the invariant. Stop iterating. Trigger the Scope Expansion Handler and write a test for the invariant the user keeps re-reporting before any further fix. |
 
+## Anti-pattern Rules
+
+These rules are derived from observed failure modes across 24 retros. Each maps to a real recurring violation; treat them as enforceable, not aspirational.
+
+1. **Never present rule-bypass as a numbered option.** Bypass requires explicit prose, not menu-item parity. Numbered framing normalizes the violation.
+2. **Retro is too late.** Any rule recurring 2+ consecutive retros gets promoted from prose to hook enforcement.
+3. **Planning docs are living.** Rename or schema shift during IMPLEMENTATION triggers re-sync to ARCHITECTURE docs in the same session, not "next session."
+4. **Agents must escalate, not skip.** Unexpected state requires explicit escalation note in agent output. Caught by H5.
+5. **CI status is independent of user signal.** Never use "user said deployed" as proxy. The CI cron (H4) is the source of truth.
+6. **Surface pattern ≠ root cause.** "JSDoc says X" can mean "remove the branch." Pattern-matching without root-cause investigation fires `AGENT_MISDIAGNOSIS`.
+
+## Iterate Compensation Protocol
+
+When the Transition Decider fires an `iterate` transition:
+
+1. **Trigger named from catalog** — refuse the iterate without a valid `trigger_id` from `andon-catalog.md`.
+2. **Append carry-forward note** to PLAN.md `## Carry-Forward Notes` table: date, trigger_id, source → target state, what was missed, what the re-entered state MUST do, evidence pointer.
+3. **Strike-through invalidated outputs** in intervening states. Don't delete — keep the history visible so future agents can see what was unmade.
+4. **Increment `andon_count[(trigger_id, target_state)]`** in SESSION_STATE.md.
+5. **If count ≥ 3 for any pair**: escalate to human regardless of trigger type. Convergence guard prevents infinite loops.
+6. **Re-entered state reads carry-forward notes before any action** — no exceptions. The notes are why the iterate fired; ignoring them repeats the same failure.
+
 ### Red Flags — STOP
 
 - **Using Edit or Write on source files** — that's code-architect's job, even for "mechanical" code review fixes

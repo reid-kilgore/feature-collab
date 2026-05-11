@@ -60,20 +60,19 @@ DOCS_DIR="docs/reidplans/$(git branch --show-current)"
 
 Read ALL of these files from `$DOCS_DIR/` (skip any that don't exist):
 
-1. **PLAN.md** — current phase, status, scope, scorecard, exit criteria
+1. **PLAN.md** — current state, status, scope, scorecard, exit criteria, approach
 2. **SESSION_STATE.md** — session metadata
 3. **CONTRACTS.md** — types, routes, signatures
 4. **TEST_SPEC.md** — test specifications
-5. **DETAILS.md** — implementation details
-6. **DECISIONS.md** — architectural decisions
+5. **DECISIONS.md** — architectural decisions
 
 Also read the current todo list using TaskList.
 
-## Step 2: Determine Current Phase and State
+## Step 2: Determine Current State
 
 From PLAN.md's Status section, identify:
 
-- **Current phase** (0-8)
+- **Current state** (INIT, DISCOVERY, CONTRACTS, SECURITY_REVIEW, ARCHITECTURE, VERIFICATION_PLANNING, IMPLEMENTATION, CRITERIA_REVIEW, SHIPPING)
 - **What was being worked on** (the specific task or sub-task)
 - **What was being waited for** (user input, test results, agent output, etc.)
 - **Blockers or open questions** that need resolution
@@ -91,7 +90,7 @@ Create or overwrite `$DOCS_DIR/HANDOFF.md` with the following structure:
 
 ## Current State
 
-**Phase**: [N] ([phase name])
+**current_state**: [state name from the 9 canonical states]
 **Sub-phase**: [what specifically was in progress]
 **Waiting For**: [what needs to happen next]
 
@@ -113,9 +112,9 @@ Create or overwrite `$DOCS_DIR/HANDOFF.md` with the following structure:
 
 | ID | Status | Task |
 |----|--------|------|
-| 1  | completed | Phase 0: Session Setup |
-| 2  | completed | Phase 1: Discovery & Scope Lock |
-| 3  | in_progress | Phase 2: Contract Definition |
+| 1  | completed | INIT: Session Setup |
+| 2  | completed | DISCOVERY: Scope & Context |
+| 3  | in_progress | CONTRACTS: Contract Definition |
 | ... | ... | ... |
 
 ## Key Learnings & Context
@@ -158,7 +157,7 @@ Update SESSION_STATE.md to reflect the handoff:
 # Session State
 
 ## Current State
-**Phase**: [N] ([phase name])
+**current_state**: [state name from the 9 canonical states]
 **Status**: HANDED OFF
 **Last Updated**: [timestamp]
 **Handoff Reason**: [reason]
@@ -172,9 +171,9 @@ Update SESSION_STATE.md to reflect the handoff:
 4. Use `/pickup` to re-enter the workflow
 
 ### Do NOT
-- Re-explore codebase (done in Phase 1)
-- Re-design architecture (done in Phase 4)
-- Re-discuss scope (locked in Phase 1)
+- Re-explore codebase (done in DISCOVERY)
+- Re-design architecture (done in ARCHITECTURE)
+- Re-discuss scope (locked in DISCOVERY)
 - Skip reading HANDOFF.md
 ```
 
@@ -184,7 +183,7 @@ Add a reference to HANDOFF.md in PLAN.md's Status section:
 
 ```markdown
 ## Status
-**Current Phase**: [phase name]
+**current_state**: [state name from the 9 canonical states]
 **Status**: HANDED OFF — see HANDOFF.md for resume instructions
 **Last Updated**: [timestamp]
 ```
@@ -199,7 +198,7 @@ If PLAN.md doesn't already list HANDOFF.md in its documents, add it.
 4. Report to user:
 
 > "Handoff complete. All context saved to HANDOFF.md. A new session can pick up with `/pickup`. Key state:
-> - **Phase**: [N] ([name])
+> - **current_state**: [state name]
 > - **Next step**: [brief description]
 > - **[X] todos pending**"
 
