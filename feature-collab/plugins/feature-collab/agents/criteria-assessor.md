@@ -146,40 +146,43 @@ npm test  # or project-specific command
 - If yes, is that change described in PLAN.md? If no PLAN.md reference, flag NOT READY.
 - A rewritten docstring that changes semantics (e.g., "duration = recorded hours" → "spans the full period") is a contract change, not a documentation update.
 
+## Exit Criteria Not Tracked Detection
+
+Before producing the final report:
+
+1. **Extract all Exit Criteria lines** from PLAN.md's `## Exit Criteria` section. Each line prefixed with `- [ ]` or `- [x]` is a criterion.
+2. **Match each criterion to the output table** in "Exit Criteria" section above.
+3. **If any criterion has no corresponding row**, set `EXIT_CRITERIA_NOT_TRACKED: FIRED` in the Andon Triggers section and list which criteria are missing. Return verdict as NOT READY.
+4. **If all criteria have rows**, set `EXIT_CRITERIA_NOT_TRACKED: not fired`.
+
+This ensures every claim in PLAN.md is independently verified.
+
 ## Output Format
 
 ```markdown
-## Exit Criteria Assessment
+## Compliance Report
 
 ### Overall Verdict: READY / NOT READY
 
-### Failed Criteria
+### Exit Criteria
 
-These criteria are NOT met and MUST be fixed before shipping:
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| All tests pass | met / not_met / partial / n/a | `tests/unit/notification.spec.ts` — 47/47 passing |
+| Curl tests executed | met / not_met / partial / n/a | Bruno collection execution (or file:line) |
+| Security review: no critical/high | met / not_met / partial / n/a | security-review.md complete, no findings |
 
-| Criterion | Evidence of Failure | Required Fix |
-|-----------|---------------------|--------------|
-| All tests pass | `tests/unit/notification.spec.ts:45` fails with timeout | Fix async handling in test |
-| Curl tests executed | POST /api/notifications curl not run | Execute and verify all curls |
+### TEST_SPEC Scenarios
 
-### Observations (PASSED — with notes for follow-up)
+| Scenario ID | Status | Test Reference |
+|-------------|--------|----------------|
+| E2E: create notification | covered | `tests/e2e/notification.spec.ts:23` |
+| E2E: notification persists | covered | `tests/e2e/notification.spec.ts:45` |
+| E2E: malformed input | uncovered | **NOT TESTED** |
 
-These criteria ARE met but have observations worth noting. DO NOT use this section to soft-pass criteria that actually fail — if a criterion isn't fully met, it goes in Failed Criteria above.
+### Andon Triggers
 
-| Criterion | Observation | Recommendation |
-|-----------|-------------|----------------|
-| Error handling | Generic catch blocks in service | Add specific error types (follow-up) |
-| Documentation | PLAN.md at 198 lines | Acceptable but monitor |
-
-### Verified Criteria
-
-These criteria are genuinely met with evidence:
-
-| Criterion | Evidence |
-|-----------|----------|
-| Schema migrated | `npx prisma migrate status` shows all applied |
-| Unit tests pass | `npm test` exits 0, 47/47 passing |
-| Security review clean | No critical/high findings |
+- `EXIT_CRITERIA_NOT_TRACKED`: [fired / not fired]. [If fired: which criteria from PLAN.md Exit Criteria section have no row above?]
 
 ### Disputed Assessments
 
@@ -194,15 +197,16 @@ If the implementer marked something PASS but I found it FAIL:
 [Specific actions needed before this can be marked complete]
 
 1. Fix the failing E2E test at line 23
-2. Execute all curl tests from TEST_SPEC.md
+2. Execute and verify all curl tests from TEST_SPEC.md
 3. Remove console.log at notification.service.ts:45
 
 ### Assessment Summary
 
-- **Criteria checked**: N
-- **Passed**: N
-- **Failed**: N
-- **Concerns**: N
+- **Exit criteria checked**: N
+- **TEST_SPEC scenarios checked**: N
+- **Criteria met**: N
+- **Scenarios covered**: N
+- **Criteria not tracked**: [FIRED / not fired]
 
 **Verdict**: [READY/NOT READY] - [one sentence explanation]
 ```

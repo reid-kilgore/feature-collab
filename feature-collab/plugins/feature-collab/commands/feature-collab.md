@@ -124,7 +124,10 @@ These rules are derived from observed failure modes across 24 retros. Each maps 
 2. **Retro is too late.** Any rule recurring 2+ consecutive retros gets promoted from prose to hook enforcement.
 3. **Planning docs are living.** Rename or schema shift during IMPLEMENTATION triggers re-sync to ARCHITECTURE docs in the same session, not "next session."
 4. **Agents must escalate, not skip.** Unexpected state requires explicit escalation note in agent output. Caught by H5.
-5. **CI status is independent of user signal.** Never use "user said deployed" as proxy. The CI cron (H4) is the source of truth.
+5. **CI status is independent of user signal.** Never use "user said deployed" as proxy. H4 cron is the source of truth.
+   > **CI monitor setup**: To wire H4 to a cron, run:
+   > `(crontab -l 2>/dev/null; echo "*/5 * * * * cd /path/to/repo && /path/to/plugin/hooks/h4-ci-monitor.sh") | crontab -`.
+   > The pickup skill reads `~/.feature-collab/ci-state/<branch>.json` on session start.
 6. **Surface pattern ≠ root cause.** "JSDoc says X" can mean "remove the branch." Pattern-matching without root-cause investigation fires `AGENT_MISDIAGNOSIS`.
 
 ## Iterate Compensation Protocol
@@ -337,6 +340,15 @@ What should the proof-of-work demonstrate? Define these NOW — they become the 
 1. [Scenario name]: [What to show]
 2. [Scenario name]: [What to show]
 ```
+
+### Walking Skeleton Decision
+
+DISCOVERY exit requires a **paper integration walk**: trace one happy-path call from UI to DB to response, naming every layer touched, every existing function called, every contract crossed.
+
+- **If every seam is a known pattern**: walking skeleton is skipped. Proceed directly to CONTRACTS state.
+- **If any seam is "dunno yet" after research**: walking skeleton is REQUIRED. Before exiting DISCOVERY, dispatch a code-architect agent to build a minimal end-to-end thread that exercises the unknown seam. The thread doesn't need to do real work — it just needs to prove the integration shape.
+
+Default behavior: skip. The paper walk decides.
 
 6. **CHECKPOINT**:
    > "I've updated PLAN.md with scope boundaries and exit criteria. Please review [Scope Boundaries](#scope-boundaries) and confirm the scope is correct. When ready, say **'lock scope'** to lock scope and proceed to contract definition."
@@ -672,9 +684,12 @@ All state has been saved to disk:
    - Tell the user: "criteria-assessor flagged X, but proceeding because you overrode it."
    - Note the override in PLAN.md so future readers see what was waived and why.
 
-6. **WIP**: `wip note <item> "CRITERIA_REVIEW: Exit criteria READY"`
+6. **Code review** (if time permits and user requests):
+   > **Reviewer fresh-context rule**: code-reviewer MUST be dispatched as a fresh subagent (never a fork). No inherited context. Avoids confirmation bias from the implementation thread.
 
-7. **If READY**: Proceed to SHIPPING
+7. **WIP**: `wip note <item> "CRITERIA_REVIEW: Exit criteria READY"`
+
+8. **If READY**: Proceed to SHIPPING
 
 ---
 

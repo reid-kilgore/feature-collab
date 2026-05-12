@@ -49,6 +49,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/h5-graceful-skip-detector.sh"
+          }
+        ]
+      }
     ]
   }
 }
