@@ -39,6 +39,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/h6-current-state-write-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/h-test-spec-commit-lock.sh"
+          }
+        ]
       }
     ]
   }

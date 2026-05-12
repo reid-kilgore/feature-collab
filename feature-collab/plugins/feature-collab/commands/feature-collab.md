@@ -593,6 +593,11 @@ All state has been saved to disk:
 
 12. Proceed to IMPLEMENTATION (no user checkpoint).
 
+> **TEST_SPEC commit lock**: Before transition-decider can write
+> `current_state: IMPLEMENTATION`, TEST_SPEC.md must be committed
+> on the branch (enforced by hook `h-test-spec-commit-lock.sh`).
+> Front-loads test design; prevents test-drift-to-match-impl.
+
 ---
 
 ## IMPLEMENTATION: Security Review (Dark Factory)
