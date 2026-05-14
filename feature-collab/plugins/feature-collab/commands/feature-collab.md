@@ -151,6 +151,8 @@ When the Transition Decider fires an `iterate` transition:
 - Dispatching work to a branch with an open PR without explicit user instruction — run `gh pr list --head <branch>` first
 - **Dispatching two agents that may stage files or commit on the same git checkout simultaneously** — use `git worktree` for isolation, or run agents sequentially. 4 agents were killed and ~45 min was wasted from shared working directory collisions in a single session.
 - **Iterating on a new user-introduced surface via screenshot feedback alone, without re-running test-gap-finder + test-implementer** — that's the Scope Expansion Handler trigger. Pause, write the addendum, re-enter the test gate, then resume. Three rounds of "looks wrong" on the same view = no invariant is pinned by a test.
+- **Running `git commit` or `git push` from the main thread** — always dispatch a haiku commit-agent. No exceptions for "small fix," "recovery," or "agent failed."
+- **Passing `--no-verify`, `HUSKY=0`, `--no-gpg-sign`, or any hook-bypass flag** unless the user explicitly requested it in this session. Bypass approval does NOT carry forward — if the user approved one bypass, the next commit still requires explicit approval. If a commit agent fails: read its output, fix the root cause, and redispatch. Do not route around it.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -750,7 +752,7 @@ See Bruno collection (API features) or test output (non-API).
 **Completed**: [date]
 ```
 
-7. **Pre-commit gates**: Dispatch `pre-commit-gates` agent before commit splitting.
+7. **Pre-commit gates** (same-turn requirement): Run `npx tsc --noEmit` and `npx eslint --no-fix` on all changed files in the same orchestrator turn that dispatches the commit agent. If any file edits happened after the last gate run, re-run the gate — "I ran it earlier this session" is not an exception. This gate applies to every commit: initial commit, post-PR fix commits, and CR-response commits. Post-PR commits skip the gate most often and cause the most expensive CI round-trips — the gate matters more there, not less. Gate must pass before `commit-splitter` is dispatched.
 
 8. **Bisectable Commit Splitting**: Dispatch `commit-splitter` agent. Restructures commits into bisectable layers.
 

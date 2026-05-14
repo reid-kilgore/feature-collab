@@ -223,7 +223,7 @@ Include this table in the retro output between Trends and Encoding Recommendatio
 | E2 | Compaction requires /pickup re-invocation | spike-autopilot | feature-collab.md, enhance.md, bugfix.md, hotfix.md | {score} |
 | E3 | Ban `as` casts on repository return types | PAS-1151 | enhance.md | {score} |
 | E4 | CI flaky-test re-trigger policy | PAS-1151 | enhance.md | {score} |
-| E5 | Pre-commit typecheck gate | PAS-1151 | enhance.md | {score} |
+| E5 | Pre-commit typecheck gate † | PAS-1151 | enhance.md | {score} |
 | E6 | Data pipeline trace for field-swap features | PAS-1151 | enhance.md | {score} |
 | E7 | Pass discovered commands to subsequent agents | PAS-1151 | enhance.md | {score} |
 | E8 | Mocks-too-generous warning | PAS-1151 | enhance.md | {score} |
@@ -255,7 +255,10 @@ Include this table in the retro output between Trends and Encoding Recommendatio
 | E34 | Triple-repeat patch triggers root-fix proposal | onboarding-loc-inactive | enhance.md | {score} |
 | E35 | Serialize concurrent agents on shared checkout | employment-scoped-timeseries-queries | feature-collab.md | {score} |
 | E36 | Consolidation sub-phase after code-architect fan-out | handlebar | feature-collab.md | {score} |
-| E37 | Strip debug markers before commit | handlebar | feature-collab.md | {score} |
+| E37 | Strip debug markers before commit † | handlebar | feature-collab.md | {score} |
+| E38 | Main-thread commit + bypass ban (no `--no-verify`, no carry-forward) | rollup-all, onboarding-wizard, tips-hooks-wire, demo-g-env, payroll-headers, tip-out-ui, csv, PAS-2321, PAS-992 | enhance.md, feature-collab.md, bugfix.md, hotfix.md | {score} |
+
+† Strengthened in the rollup-all / onboarding-wizard / tips-hooks-wire / demo-g-env / payroll-headers / tip-out-ui / csv / PAS-2321 / PAS-992 batch.
 
 **Summary:** {N} TRIGGERED, {N} TRIGGERED-VIOLATED, {N} NOT APPLICABLE, {N} UNCLEAR
 ```

@@ -41,6 +41,10 @@ FIX ONLY THE BUG — NOTHING ELSE SHIPS IN THIS PR
 - Skipping the reproduction test (TDD RED)
 - Claiming fix works without test-runner verification
 - Asking the user to start servers, run seeds, or do infrastructure setup you could do yourself
+- Never run `git commit` or `git push` from main thread. Always dispatch haiku commit-agent. No exceptions for "small fix," "recovery," or "agent failed."
+- Never pass `--no-verify`, `HUSKY=0`, `--no-gpg-sign`, or any hook-bypass flag unless user explicitly requested it in this session.
+- Bypass approval does NOT carry forward. If user approved one bypass, next commit still requires explicit approval.
+- If commit agent fails: read its output, fix root cause, redispatch. Do not route around it.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -187,6 +191,17 @@ All state saved to disk:
    - If NOT READY, fix and re-assess (max 3 cycles)
 
 9. When all tests pass and criteria met, proceed to SHIPPING.
+
+### Pre-Commit Gate (E5)
+
+Before dispatching any commit agent — including post-PR fix commits and CR-response commits — run typecheck and lint in the same orchestrator turn as the dispatch:
+
+```bash
+npx tsc --noEmit          # in the relevant package directory
+npx eslint --no-fix       # on changed files
+```
+
+If file edits happened after the last gate run, re-run the gate before dispatching. "Ran it earlier" is not an exception — the gate must be current at dispatch time. Do not dispatch the commit agent until both commands pass.
 
 ---
 

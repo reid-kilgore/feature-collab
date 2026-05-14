@@ -76,6 +76,9 @@ Before pushing for a PR, run `git diff --stat origin/main...HEAD` and verify the
 - If test doubles inject fields/states the actual query doesn't return, STOP — the test passes by accident. Re-sync tests must stub `findFirst` to return an existing record with the claimed prior status, not `null`. A `null` return tests first-time insert, not re-sync.
 - After the 2nd manual patch to the same file in one session, pause and propose a root fix instead of applying a 3rd patch. Three patches to the same file means the first two didn't solve the problem — stop patching and investigate.
 - Before dispatching work to an existing worktree/branch, run `gh pr list --head <branch>`. If an open PR exists, STOP — don't send agents to branches with open PRs unless explicitly instructed.
+- Never run `git commit` or `git push` from the main thread. Always dispatch a haiku commit-agent. No exceptions for "small fix," "recovery," or "agent failed."
+- Never pass `--no-verify`, `HUSKY=0`, `--no-gpg-sign`, or any hook-bypass flag unless the user explicitly requested it in this session. Bypass approval does NOT carry forward — if the user approved one bypass, the next commit still requires explicit approval.
+- If a commit agent fails: read its output, fix the root cause, and redispatch. Do not route around it.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)
@@ -231,9 +234,9 @@ git add $DOCS_DIR/PLAN.md $DOCS_DIR/CONTRACTS.md 2>/dev/null
 git commit -m "docs: planning artifacts for $(git branch --show-current)"
 ```
 
-**Pre-commit typecheck gate**: Before dispatching the commit agent, the orchestrator verifies `npx tsc --noEmit` passes from the relevant package directory. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit.
+**Pre-commit typecheck gate**: Before dispatching the commit agent, the orchestrator runs `npx tsc --noEmit` in the same turn as the dispatch — not in a prior turn. If any file edits happened after the last gate run, re-run the gate; "I ran it earlier" is not an exception. Do not delegate typecheck to the commit agent — catch type errors before they enter the commit. This gate applies to every commit: planning-artifact commits, implementation commits, post-PR fix commits, and CR-response commits. The most expensive CI round-trips are post-PR — the gate matters more at that point, not less.
 
-**Pre-commit eslint gate**: Also run `npx eslint --no-fix` on all changed files before dispatching the commit agent. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`.
+**Pre-commit eslint gate**: In the same orchestrator turn as commit-agent dispatch, also run `npx eslint --no-fix` on all changed files. If any file edits happened after the last lint run, re-run lint; no "ran it earlier" exception. This is especially critical for new files with non-standard extensions (`.mjs`, `.cjs`, `.mts`) — existing ignore patterns may not cover them. If full suite has known unrelated failures, run only on the specific changed files rather than using `--no-verify`. Applies to every commit, including post-PR and CR-response commits.
 
 When an agent discovers the correct invocation for lint, test, or build commands through trial and error, record it in PLAN.md and include it in subsequent agent prompts. Do not force each agent to rediscover the same commands independently.
 

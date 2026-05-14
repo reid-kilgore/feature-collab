@@ -30,12 +30,24 @@ MINIMAL CHANGE ONLY — URGENCY IS NOT AN EXCUSE TO SKIP VERIFICATION
 | "This related issue should be fixed too" | One fix per hotfix. Other issues get their own tickets. |
 | "Cherry-pick conflicts can be resolved later" | Escalate conflicts immediately. Don't let them linger. |
 
+### Pre-Commit Gate (E5)
+
+Before dispatching a commit agent, the orchestrator **must** run `npx tsc --noEmit` and `npx eslint --no-fix` on changed files in the same turn as the dispatch. Rules:
+
+- **Same-turn requirement**: The gate runs in the same orchestrator turn as commit-agent dispatch. If any file edits happened after the last gate run, re-run the gate before dispatching. There is no "ran it earlier" exception.
+- **Post-PR scope**: The gate applies to every commit — including post-PR fix commits and CR-response commits. Urgency does not shrink the scope.
+- **Hotfix urgency does NOT override this rule.** The 30 minutes saved by catching a type error or lint violation locally is worth the 30 seconds the gate takes, even in an emergency.
+
 ### Red Flags — STOP
 
 - Deploying without test-runner verification
 - Fixing more than the production issue
 - Skipping the reproduction test because "it's urgent"
 - Resolving cherry-pick conflicts without user input
+- Running `git commit` or `git push` from the main thread — always dispatch a haiku commit-agent. No exceptions for "small fix," "recovery," "emergency," or "agent failed."
+- Passing `--no-verify`, `HUSKY=0`, `--no-gpg-sign`, or any hook-bypass flag unless the user explicitly requested it in this session.
+- Treating one bypass approval as blanket authorization. Bypass approval does NOT carry forward — next commit still requires explicit user approval. Hotfix urgency is not standing authorization to bypass hooks.
+- Routing around a failed commit agent instead of reading its output, fixing the root cause, and redispatching.
 
 ## Model Usage
 - Use Opus for the main thread (planning, user interaction, synthesis)

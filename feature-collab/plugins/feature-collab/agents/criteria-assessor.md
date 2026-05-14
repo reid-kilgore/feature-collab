@@ -146,6 +146,25 @@ npm test  # or project-specific command
 - If yes, is that change described in PLAN.md? If no PLAN.md reference, flag NOT READY.
 - A rewritten docstring that changes semantics (e.g., "duration = recorded hours" → "spans the full period") is a contract change, not a documentation update.
 
+**RED-state scaffolding sweep**
+Before declaring READY, grep changed files for the following strings. Any match in a non-stub/non-fixture file = NOT READY (stale TDD scaffolding):
+```bash
+git diff --name-only HEAD~1 HEAD | xargs grep -l \
+  "RED state\|TDD RED\|// RED:\|DOES NOT EXIST YET\|PRODUCTION CODE DOES NOT EXIST\|TODO REMOVE\|FIXME" 2>/dev/null
+# also run case-insensitive for the variant:
+git diff --name-only HEAD~1 HEAD | xargs grep -il "does not exist yet" 2>/dev/null
+```
+- `RED state`
+- `TDD RED`
+- `// RED:`
+- `DOES NOT EXIST YET`
+- `PRODUCTION CODE DOES NOT EXIST`
+- `does not exist yet` (case-insensitive)
+- `TODO REMOVE`
+- `FIXME`
+
+Failure mode: RED-state agent writes scaffolding comments. GREEN-state agent implements code but doesn't own/edit those comments. Result: stale "RED" markers shipped in production code. The existing E37 debug-marker sweep at commit phase does not catch these because the strings vary; this assessor pass catches them earlier in the pipeline.
+
 ## Exit Criteria Not Tracked Detection
 
 Before producing the final report:
