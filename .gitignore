@@ -21,3 +21,6 @@ npm-debug.log*
 .dolt/
 *.db
 .beads-credential-key
+
+# External cloned repos in spike branches
+spike-scratch/anki-screentime/amgi/

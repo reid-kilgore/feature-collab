@@ -10,8 +10,35 @@ Determine feasibility across: screen-time control, Anki data access, flashcard
 reimplementation, persistence, and personal-use distribution.
 
 ## Status
-**Current Phase**: Complete
+**Current Phase**: Complete — v0 de-risk GREEN
 **Completed**: 2026-05-18
+
+## v0 De-Risk Findings — VERDICT: GREEN
+
+The one real unknown (can rslib embed on iOS + sync **AnkiWeb**?) is resolved by
+building the real thing. Full report: `spike-scratch/anki-screentime/SPIKE_REPORT.md`;
+`amgi` cloned + built at `spike-scratch/anki-screentime/amgi/`.
+
+- **Build: PROVEN.** `amgi`'s `build-xcframework.sh` produced
+  `AnkiRust.xcframework` (arm64 device + sim, 30 MB/slice) **clean on first
+  attempt**, ~5 min cold on Apple Silicon. Zero errors. Not a blocker.
+- **Toolchain cost: trivial.** rustup + `rustup target add aarch64-apple-ios{,-sim}`
+  + `brew install protobuf swift-protobuf xcodegen`. amgi pins Anki via git
+  submodule at tag **`25.09.2`** (commit `3890e12c…`) — reproducible. Rust 1.89,
+  Xcode 16+, iOS 17+.
+- **AnkiWeb sync: CONFIRMED IN SOURCE (definitive).** `rslib/src/sync/http_client/
+  mod.rs:43-45` — absent endpoint `unwrap_or_else` → `https://sync.ankiweb.net/`.
+  `rslib/src/sync/login.rs:34-38` — `endpoint: Option<String>`, `None` = AnkiWeb.
+  amgi's `SyncClient+Live.swift:46-47` passes `"" ` when unconfigured → protobuf
+  drops empty → rslib sees `None` → **defaults to AnkiWeb**. Embedding rslib gives
+  real AnkiWeb sync (read+write) by default; self-hosted is opt-in. Open Question 1
+  RESOLVED.
+- **Remaining: a ~20-min user logistics task**, not a technical risk — device
+  install + AnkiWeb-login smoke test. Runbook in SPIKE_REPORT.md §(e). Needs paid
+  Apple account + a physical iOS 17+ device + your AnkiWeb credentials (cannot be
+  done in this environment).
+- YELLOW (known, accepted): 30 MB/slice binary (fine personal); AGPL (fine for
+  personal sideload, blocks distribution without OSS).
 
 ---
 
@@ -242,9 +269,11 @@ Anki-app usage detection (F3) and AnkiConnect-over-LAN are too fragile.
 
 ## Follow-up Actions
 
-- [ ] **v0 de-risk spike** (recommended first): clone `amgi`, build xcframework,
-      confirm AnkiWeb login+sync+`AnswerCard` round-trip on a real device. Gate the
-      full build on this. Could be its own short `/spike`.
+- [x] **v0 de-risk** — DONE, GREEN. xcframework builds clean; AnkiWeb sync confirmed
+      in source. `amgi` + `SPIKE_REPORT.md` in `spike-scratch/anki-screentime/`.
+- [ ] **User smoke test** (~20 min, your hands): follow SPIKE_REPORT.md §(e) runbook
+      — install `amgi` on a device, log into your AnkiWeb, verify review round-trip.
+      Final empirical confirmation before full build.
 - [ ] Enroll paid Apple Developer account (hard blocker — no on-device path without).
 - [ ] Then `/feature-collab` (multi-component, >200 lines) — v1 scope. Spike
       Findings carry forward as DISCOVERY context (no re-research).
