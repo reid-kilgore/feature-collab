@@ -117,6 +117,51 @@ app's access off behind only Face ID (no Screen-Time passcode needed). Apple
 unaddressed since 2023. For a personal honesty tool this is acceptable; it is not a
 hardened gate.
 
+### F9. Embedding Anki's OSS Rust core (`rslib`) makes the app a REAL AnkiWeb client — this reframes everything
+
+User's instinct ("can't we extract from OSS Anki desktop?") is correct, and better
+than an "AnkiWeb API" (which doesn't exist). Don't reverse-engineer the protocol —
+**embed `rslib`** (the Rust core of `ankitects/anki`) via C FFI, like the OSS iOS
+client **`amgi`** (`github.com/antigluten/amgi`) and Android's `rsdroid` already do.
+
+What you get **inside rslib, for free** (it IS Anki):
+- `SyncLogin`(user,pass,"") → AnkiWeb `hkey`; `SyncCollection` → full bidirectional
+  sync with **AnkiWeb itself** (AnkiDroid proves this works against AnkiWeb).
+- `GetQueuedCards` + `AnswerCard` → real reviews: writes `revlog` **and** updates
+  card scheduling state with correct **FSRS** — then `SyncCollection` pushes it to
+  AnkiWeb, appearing on desktop + AnkiMobile.
+- Stats/graphs/`revlog` reads for the scoreboard.
+
+This **collapses the design**: one engine is the gate signal, the write-back, the
+scoreboard source, and the deck source. No swift-FSRS reimplementation, no manual
+`.colpkg` export, no AnkiConnect dependency, no protocol reverse-engineering.
+
+Costs / caveats:
+- Build infra: cross-compile rslib → `.xcframework` (arm64 device + sim), `protoc`
+  codegen, C FFI bridge, Swift protobuf bindings. ~1–2 wk; `amgi`'s
+  `build-xcframework.sh` is a working template. Binary ~15–40 MB.
+- rslib is **not a stable/public API** (issue #2520 open). Pin to an Anki tag like
+  `amgi`/`rsdroid` do; budget periodic (~2–4×/yr) update work on Anki releases.
+- iOS 17+ (amgi's floor). Need full-sync conflict-resolution UX (upload vs
+  download). rslib needs exclusive SQLite access — coordinate vs AnkiMobile.
+- Unverified: does `amgi` sync *specifically* with AnkiWeb (README says "any
+  compatible server")? AnkiDroid + rslib `SyncLogin` evidence says yes — **confirm
+  by building/running `amgi` before committing**.
+
+### F10. If NOT embedding rslib: the write-back data contract (jank v1 fallback)
+
+Making an in-app review "count" requires `revlog` row **+** `cards` state update,
+both with `usn = -1` (the sentinel for "pending upload"; official Anki client then
+syncs them to AnkiWeb on next sync — you don't implement the protocol).
+
+- `revlog` alone → stats right, **scheduling wrong** (card keeps old due date).
+- `.apkg`/`.colpkg` import does **NOT merge `revlog`** — dead end for write-back.
+- AnkiMobile URL scheme has **no review-injection verb** — dead end.
+- **Jank v1 path = AnkiConnect when desktop reachable**: `insertReviews` (revlog,
+  `usn=-1`) + `setSpecificValueOfCard` (patch `due`/`ivl`/`factor`/`reps`); for
+  FSRS, user runs Tools→FSRS→Reschedule once. Fragile (desktop on + LAN; AnkiConnect
+  repo archived Nov 2025). Strictly inferior to F9 for anything beyond a stopgap.
+
 ### F8. Prior art to crib from
 
 - **foqos** — `github.com/awaseem/foqos` — mature OSS blocker (SwiftData, monitor
@@ -130,73 +175,85 @@ hardened gate.
 
 ## Recommendations
 
-**Recommended build (phased):**
+User decisions captured: gate metric = **both/configurable** (cards OR minutes,
+tunable); write-back **wanted**, jank acceptable short-term, proper later.
 
-1. **v1 — In-app flashcards + blocking, no live Anki coupling.**
-   - Paid dev account, Family Controls dev entitlement, dev profile install.
-   - SwiftUI app: auth → `FamilyActivityPicker` → block via shields.
-   - In-app review engine using `swift-fsrs`. Ingest a user-exported `.apkg`/`.colpkg`
-     for the deck content.
-   - Gate: "study N cards / M minutes in-app" → clear shields → unlock window
-     (chained ≤30-min `DeviceActivitySchedule`) → auto re-lock.
-   - Scoreboard: SwiftData in Documents (+ optional CloudKit backup).
-   - Minimal monitor extension reading `SharedState.json`.
+Given F9, the strongest architecture is **rslib-centric** — one engine does gate,
+write-back, scoreboard, and deck. Two viable phasings:
 
-2. **v2 — Anki stats ingestion for the scoreboard (read-only).**
-   - On a schedule/manual trigger, import the latest `.colpkg`, query `revlog`,
-     merge into the scoreboard so Anki-app study also counts toward stats/streaks.
-   - Optionally AnkiConnect-over-LAN as a "if desktop reachable" bonus path.
+**Recommended — rslib from v1 (de-risk the build spike first):**
 
-3. **Drop / do-not-build:** detecting Anki-app foreground usage via DeviceActivity
-   thresholds as the *unblock trigger* (F3 — unreliable, unverifiable, gameable).
-   The in-app engine is the trustworthy signal; Anki-app study contributes to the
-   *scoreboard* via F4 import, not to the *gate*.
+1. **v0 — De-risk spike (small, ~1–3 days):** clone `amgi`, build its
+   `.xcframework`, run on a device, **prove it logs into and syncs YOUR AnkiWeb
+   account** and that `AnswerCard`→`SyncCollection` round-trips to desktop. This is
+   the single biggest unknown; resolve before committing the full build.
+2. **v1 — Full app on rslib:**
+   - Paid dev account; Family Controls dev entitlement; dev-profile install (1-yr).
+   - SwiftUI app: `FamilyControls` auth → `FamilyActivityPicker` → shield blocking.
+   - Embed rslib: open collection (synced from AnkiWeb), `GetQueuedCards` /
+     `AnswerCard` for in-app study = **real Anki reviews, real FSRS, real
+     write-back** via `SyncCollection`.
+   - Gate: configurable threshold — N cards **or** M minutes (user-tunable, either
+     satisfies) → clear shields → unlock window (chained ≤30-min
+     `DeviceActivitySchedule`) → auto re-lock.
+   - Scoreboard: rslib stats/`revlog` as source of truth; mirror aggregates to
+     SwiftData in Documents (+ optional CloudKit backup for cross-device).
+   - Minimal monitor extension reads `SharedState.json` only (6 MB cap).
+
+**Fallback — if v0 fails or build infra too heavy:** swift-FSRS in-app engine +
+**AnkiConnect jank write-back** (F10) when desktop reachable; `.colpkg` import for
+scoreboard. Strictly worse; only if rslib embedding proves infeasible.
+
+**Drop / do-not-build:** Anki-app foreground-usage detection via DeviceActivity as
+the unblock trigger (F3 — unverifiable, unreliable, gameable). `.apkg` import as a
+write-back vehicle (F10 — doesn't merge `revlog`). Hand-rolled sync protocol (F9 —
+brittle, breaks on Anki bumps, no upgrade path).
 
 ## Trade-offs
 
-| Option | Pros | Cons |
+| Engine option | Pros | Cons |
 |--------|------|------|
-| **A. In-app flashcards as the gate** (recommended) | Perfect, fully-owned signal; offline; reliable; no Apple-API fragility | Must study in our app (forks workflow from AnkiMobile); needs review UX + FSRS |
-| B. Anki-app usage detection as the gate | Study in real Anki | Can't verify it's Anki; binary unreliable callback; can't read minutes; gameable |
-| C. AnkiConnect-over-LAN as the gate | Real Anki data, accurate | Needs desktop on + LAN + config; dead if computer off — too fragile |
-| D. `.colpkg` import as the gate | Gold-source `revlog` data | Manual export each session = high friction + gameable ("forgot to export") |
+| **Embed rslib (recommended)** | Real Anki client: correct FSRS, true bidirectional AnkiWeb write-back, scoreboard + gate + deck from one source; no manual export | Rust→xcframework build infra (~1–2 wk); rslib API unstable (pin + maintain ~quarterly); iOS 17+; ~15–40 MB; AnkiWeb-sync needs hands-on confirmation |
+| swift-FSRS in-app + AnkiConnect write-back | No Rust toolchain; fast to first build | Write-back only when desktop on+LAN; FSRS may diverge from user's tuned params; AnkiConnect archived; scoreboard needs separate `.colpkg` import |
+| `.colpkg` import only (read-only) | Simplest; gold `revlog` data | No write-back at all; manual export friction; gameable |
 
-`.colpkg` import (D) is excellent for the **scoreboard** (v2) but poor as a
-real-time **gate**; in-app (A) is the gate.
+For the **gate signal itself**, in-app study (either engine) is trustworthy;
+Anki-app usage detection (F3) and AnkiConnect-over-LAN are too fragile.
 
-## Open Questions (for end-of-spike decision)
+## Open Questions (remaining for decision)
 
-1. **Gate metric:** unblock on *cards done* (e.g. 20) or *minutes studied* (e.g. 10),
-   or both? Drives state machine + FSRS session design.
-2. **Unlock window:** fixed (e.g. 30 min per session) or proportional to study done?
-3. **Deck source:** author cards as bundled JSON, or always ingest the user's real
-   Anki `.apkg`/`.colpkg`? (Recommend: ingest real deck so study is "real".)
-4. **Write-back:** must in-app reviews sync back to Anki so AnkiMobile credits them,
-   or is our app the system of record for gated study (Anki used separately)? Sync
-   write-back is substantial engineering — default assumption: no write-back v1.
-5. **AnkiWeb auto-pull:** worth implementing the sync protocol later to auto-refresh
-   the collection (kills the manual-export friction), à la `amgi`? Defer decision.
-6. **Distribution:** confirm permanent personal sideload via paid dev profile is
-   acceptable (yearly membership, no weekly re-sign). Submit the *distribution*
-   entitlement request now anyway (weeks-long queue) in case a 2nd device/TestFlight
-   is wanted later?
-7. **iCloud scoreboard sync** across your own devices (iPhone/iPad)? Cheap with
-   `NSPersistentCloudKitContainer` if yes.
-8. **Bypass tolerance:** accept the Settings/Face-ID bypass (F7) as fine for
-   personal honesty, or invest in mitigations (block Settings app — partial only)?
-9. **iOS version floor:** SwiftData + swift-fsrs ⇒ iOS 17+ comfortable. OK?
-10. **Browser blocking:** domain blocking is Safari-only; Chrome/Brave/Firefox must
-    be blocked as whole apps. Acceptable?
+1. **rslib AnkiWeb sync — confirm:** does building/running `amgi` actually sync with
+   *AnkiWeb* (not just self-hosted)? Resolve via v0 spike before full commit.
+2. **Build-infra appetite:** accept the Rust→xcframework toolchain + ~quarterly
+   rslib-pin maintenance, or take the swift-FSRS fallback to ship sooner?
+3. **Unlock window:** fixed (e.g. 30 min/session) or proportional to study done?
+4. **Collection conflict:** rslib needs exclusive SQLite; if you also run AnkiMobile,
+   how to coordinate (sync-on-open/close, advise not running both mid-session)?
+5. **Distribution:** confirm permanent personal sideload via paid dev profile is
+   fine. Note: distributing (even TestFlight) triggers **AGPL** → must open-source
+   the app. Personal sideload = no AGPL obligation. Keep it personal?
+6. **iCloud scoreboard sync** across your own devices? Cheap via
+   `NSPersistentCloudKitContainer`.
+7. **Bypass tolerance:** accept Settings/Face-ID bypass (F7) for personal honesty,
+   or attempt partial mitigation (block Settings app)?
+8. **Browser blocking:** domain block is Safari-only; Chrome/Brave/Firefox must be
+   blocked as whole apps. Acceptable?
+9. **iOS 17+ floor** (rslib/amgi requirement). OK?
 
 ## Follow-up Actions
 
-- [ ] If proceeding: `/feature-collab` (multi-component, >200 lines) — v1 scope.
-      Spike Findings carry forward as DISCOVERY context.
-- [ ] Decide Open Questions 1–4 before architecture lock.
-- [ ] Enroll paid Apple Developer account (blocking dependency, no code path without it).
-- [ ] Clone/study `foqos` for monitor-extension + App-Group wiring.
+- [ ] **v0 de-risk spike** (recommended first): clone `amgi`, build xcframework,
+      confirm AnkiWeb login+sync+`AnswerCard` round-trip on a real device. Gate the
+      full build on this. Could be its own short `/spike`.
+- [ ] Enroll paid Apple Developer account (hard blocker — no on-device path without).
+- [ ] Then `/feature-collab` (multi-component, >200 lines) — v1 scope. Spike
+      Findings carry forward as DISCOVERY context (no re-research).
+- [ ] Clone/study `foqos` (monitor-extension + App-Group) and `amgi` (rslib FFI).
+- [ ] Decide Open Questions 1, 2, 5 before architecture lock.
 
 ## Prototypes
 
-None built — feasibility resolved by API/constraint research; no code needed to
-de-risk further. `spike-scratch/anki-screentime/` left empty.
+None built — feasibility resolved by API/constraint research. The one remaining
+empirical unknown (rslib↔AnkiWeb on iOS) is best de-risked by building the existing
+`amgi` project, captured as the v0 follow-up action. `spike-scratch/anki-screentime/`
+left empty.
