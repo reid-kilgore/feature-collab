@@ -48,38 +48,45 @@ _normalize_branches='
 
 # Find the workfile and line number for a given item name OR branch name.
 # Sets: _wf (workfile path), _ln (line number), _item (json line)
+# Single-jq scan: one subprocess per workfile (not per line).
+# Two-pass semantic preserved: name match across ALL workfiles, then branch match.
 _resolve_item() {
   local target="$1"
-  # First pass: match by item name
-  while IFS= read -r workfile; do
-    local n=0
-    while IFS= read -r line; do
-      n=$((n + 1))
-      [[ -z "$line" ]] && continue
-      local name
-      name=$(echo "$line" | jq -r '.name // empty')
-      if [[ "$name" == "$target" ]]; then
-        _wf="$workfile"; _ln="$n"; _item=$(echo "$line" | jq "$_normalize_branches")
-        return 0
-      fi
-    done < "$workfile"
-  done < <(_find_workfiles)
-  # Second pass: match by branch name
-  while IFS= read -r workfile; do
-    local n=0
-    while IFS= read -r line; do
-      n=$((n + 1))
-      [[ -z "$line" ]] && continue
-      local normalized
-      normalized=$(echo "$line" | jq "$_normalize_branches")
-      local has_branch
-      has_branch=$(echo "$normalized" | jq --arg t "$target" '[.branches[] | .name] | index($t) != null')
-      if [[ "$has_branch" == "true" ]]; then
-        _wf="$workfile"; _ln="$n"; _item="$normalized"
-        return 0
-      fi
-    done < "$workfile"
-  done < <(_find_workfiles)
+  local workfiles=()
+  local f
+  while IFS= read -r f; do workfiles+=("$f"); done < <(_find_workfiles)
+  [[ ${#workfiles[@]} -eq 0 ]] && {
+    echo "Error: '$target' not found (searched item names and branch names)" >&2
+    return 1
+  }
+
+  # Single jq invocation across all workfiles. Returns "<file>\t<line>\t<json>"
+  # for the first match, or empty if none.
+  local result
+  result=$(jq -nRr --arg target "$target" '
+    def normalize:
+      .branches = (
+        if .branches == null then [{"name": .name, "status": "ACTIVE"}]
+        elif (.branches | length > 0) and (.branches[0] | type == "string") then
+          [.branches[] | {"name": ., "status": "ACTIVE"}]
+        else .branches end
+      );
+    [ inputs as $raw
+      | { f: input_filename, n: input_line_number, raw: $raw }
+      | . + { j: (try ($raw | fromjson | normalize) catch null) }
+      | select(.j != null) ]
+    | (
+        (map(select(.j.name == $target)) | .[0])
+        // (map(select((.j.branches // []) | map(.name? // .) | any(. == $target))) | .[0])
+      )
+    | select(. != null)
+    | "\(.f)\t\(.n)\t\(.j | tostring)"
+  ' "${workfiles[@]}" 2>/dev/null)
+
+  if [[ -n "$result" ]]; then
+    IFS=$'\t' read -r _wf _ln _item <<< "$result"
+    return 0
+  fi
   echo "Error: '$target' not found (searched item names and branch names)" >&2
   return 1
 }
@@ -250,31 +257,43 @@ cmd_list() {
     esac
   done
 
-  local results="[]"
+  # Single-jq pass per workfile (one subprocess per workfile, not per line).
+  # Accumulate via temp file (large lists overflow --argjson argv).
+  local _list_tmp
+  _list_tmp=$(mktemp) || { echo "Error: mktemp failed" >&2; return 1; }
+  trap 'rm -f "$_list_tmp"' RETURN
+  local workfile repo
   while IFS= read -r workfile; do
-    local repo
+    [[ -f "$workfile" ]] || continue
     repo=$(basename "$(dirname "$workfile")")
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      local loc
-      loc=$(echo "$line" | jq -r '.loc // empty')
-      local raw_status canonical_status
-      if [[ -z "$loc" ]]; then
-        raw_status="BROKEN"
-        canonical_status="BROKEN"
-      else
-        raw_status=$(echo "$line" | jq -r '.status // ""')
-        canonical_status=$(_normalize_status_read "$raw_status")
-      fi
-      if [[ "$show_all" == false ]] && [[ "$canonical_status" == "DONE" ]]; then
-        continue
-      fi
-      # For JSON output, use canonical status but don't add extraneous keys
-      local normalized
-      normalized=$(echo "$line" | jq "$_normalize_branches" | jq --arg repo "$repo" --arg st "$canonical_status" '. + {repo: (.remote_repo // $repo), status: $st}')
-      results=$(echo "$results" | jq --argjson item "$normalized" '. + [$item]')
-    done < "$workfile"
+    jq -nRc --arg repo "$repo" --argjson show_all "$show_all" '
+      def norm_branches:
+        .branches = (
+          if .branches == null then [{"name": .name, "status": "ACTIVE"}]
+          elif (.branches | length > 0) and (.branches[0] | type == "string") then
+            [.branches[] | {"name": ., "status": "ACTIVE"}]
+          else .branches end
+        );
+      def norm_status:
+        (. // "") as $s
+        | if $s == "NEW" then "NOT_STARTED"
+          elif $s == "ACTIVE" then "WORKING"
+          elif $s == "BLOCKED" or $s == "NEEDS_INPUT" then "WAITING"
+          elif $s == "IN_REVIEW" or $s == "RETRO" then "WORKING"
+          elif $s == "CLOSED" then "DONE"
+          elif $s == "" then "NOT_STARTED"
+          else $s end;
+      inputs
+      | try fromjson catch null
+      | select(. != null)
+      | norm_branches
+      | (if (.loc // "") == "" then "BROKEN" else (.status | norm_status) end) as $cs
+      | . + {repo: (.remote_repo // $repo), status: $cs}
+      | select($show_all or .status != "DONE")
+    ' < "$workfile" >> "$_list_tmp"
   done < <(_find_workfiles)
+  local results
+  results=$(jq -s '.' < "$_list_tmp")
 
   if [[ "$use_json" == true ]]; then
     echo "$results" | jq .
@@ -977,17 +996,25 @@ cmd_pull() {
       remote_repo=$(basename "$(dirname "$rf")")
       local content
       content=$(ssh "$alias" "cat '$rf'" 2>/dev/null) || continue
-      while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        # Validate JSON and inject source/remote_repo, skip DONE/CLOSED
-        local status
-        status=$(echo "$line" | jq -r '.status // "UNKNOWN"' 2>/dev/null) || continue
-        [[ "$status" == "DONE" || "$status" == "CLOSED" ]] && continue
+      # Single jq pass: parse, filter out DONE/CLOSED, inject source/remote_repo/pulled_at.
+      local now
+      now=$(date +%s)
+      local transformed
+      transformed=$(echo "$content" | jq -Rc --arg src "$alias" --arg rr "$remote_repo" --argjson pa "$now" '
+        (try fromjson catch null) as $j
+        | select($j != null)
+        | ($j.status // "UNKNOWN") as $st
+        | select($st != "DONE" and $st != "CLOSED")
+        | $j + {source: $src, remote_repo: $rr, pulled_at: $pa}
+      ' 2>/dev/null) || transformed=""
+      if [[ -n "$transformed" ]]; then
         _lock_workfile "$local_dir/work.txt" || { echo "Error: could not acquire lock on $local_dir/work.txt" >&2; continue; }
-        echo "$line" | jq -c --arg src "$alias" --arg rr "$remote_repo" --arg pa "$(date +%s)" '. + {source: $src, remote_repo: $rr, pulled_at: ($pa | tonumber)}' >> "$local_dir/work.txt" 2>/dev/null || true
+        printf '%s\n' "$transformed" >> "$local_dir/work.txt"
         _unlock_workfile "$local_dir/work.txt"
-        total=$((total + 1))
-      done <<< "$content"
+        local added
+        added=$(printf '%s\n' "$transformed" | wc -l | tr -d ' ')
+        total=$((total + added))
+      fi
     done <<< "$remote_files"
     echo "  Pulled $total active items from $alias"
     count=$((count + total))
@@ -2751,18 +2778,10 @@ _autopilot_crash_recovery() {
 
   while IFS= read -r workfile; do
     [[ -f "$workfile" ]] || continue
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-
-      local wip_name wip_status linear_id
-      wip_name=$(echo "$line"    | jq -r '.name      // empty' 2>/dev/null)
-      wip_status=$(echo "$line"  | jq -r '.status    // empty' 2>/dev/null)
-      linear_id=$(echo "$line"   | jq -r '.linear_id // empty' 2>/dev/null)
-
-      # Only care about autopilot-named entries that are still active
-      case "$wip_name" in *autopilot*) ;; *) continue ;; esac
-      case "$wip_status" in ACTIVE|NEW) ;; *) continue ;; esac
-      [[ -n "$linear_id" ]] || continue
+    # Single jq pass per workfile — prefilter to candidate rows only.
+    # Emits "<name>\t<linear_id>" for entries that are autopilot-named, ACTIVE|NEW, with linear_id set.
+    while IFS=$'\t' read -r wip_name linear_id; do
+      [[ -z "$wip_name" ]] && continue
 
       _autopilot_log "Found potentially orphaned autopilot item: $wip_name (linear: $linear_id)"
 
@@ -2801,7 +2820,15 @@ Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" || true
         fi
       fi
 
-    done < "$workfile"
+    done < <(jq -nRr '
+      inputs
+      | try fromjson catch null
+      | select(. != null)
+      | select((.name // "") | test("autopilot"))
+      | select((.status // "") == "ACTIVE" or (.status // "") == "NEW")
+      | select((.linear_id // "") != "")
+      | "\(.name)\t\(.linear_id)"
+    ' < "$workfile" 2>/dev/null)
   done < <(_find_workfiles)
 
   if [[ $recovery_count -eq 0 ]]; then
