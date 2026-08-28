@@ -1,6 +1,6 @@
 {
   "name": "feature-collab-marketplace",
-  "description": "Local marketplace for feature development plugins",
+  "description": "RETIRED \u2014 not installed, not a source of truth. The canonical bundle at /Users/reid/dev/meta-agent-repo/canonical-bundle/content/ supersedes this. An agent that arrives here by accident must flag it to the user. Local marketplace for feature development plugins",
   "owner": {
     "name": "Reid"
   },

@@ -1,3 +1,8 @@
+> **RETIRED.** Not installed and not a source of truth. See `CLAUDE.md` in this directory.
+> The canonical bundle at `/Users/reid/dev/meta-agent-repo/canonical-bundle/content/` supersedes
+> everything here. If you reached this repository by accident, tell the user and name the file
+> that sent you.
+
 # feature-collab
 
 A Claude Code plugin marketplace for structured, collaborative development workflows. Ships two plugins: **feature-collab** (the main workflow engine) and **gh-checks** (CI monitoring).

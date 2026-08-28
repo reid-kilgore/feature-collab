@@ -1,9 +1,13 @@
 {
   "name": "feature-collab",
   "version": "1.0.0",
-  "description": "feature-collab skills for Pi coding agent",
-  "keywords": ["pi-package"],
+  "description": "RETIRED \u2014 not installed, not a source of truth. The canonical bundle at /Users/reid/dev/meta-agent-repo/canonical-bundle/content/ supersedes this. An agent that arrives here by accident must flag it to the user. feature-collab skills for Pi coding agent",
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "prompts": ["./commands"]
+    "prompts": [
+      "./commands"
+    ]
   }
 }
