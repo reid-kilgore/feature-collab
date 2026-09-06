@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# cc-perf — dispatcher.
+#
+# Usage:
+#   cc-perf [report] [perf-args]      # latency report (default)
+#   cc-perf baseline save             # snapshot current state
+#   cc-perf baseline list             # show baselines for this cwd
+#   cc-perf diff                      # diff current vs last baseline
+#   cc-perf -h | --help               # full help
+set -euo pipefail
+
+SOURCE="$0"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+case "${1:-report}" in
+  report) shift; exec "$DIR/perf.sh" "$@" ;;
+  baseline) shift; exec "$DIR/baseline.sh" "$@" ;;
+  diff) shift; exec "$DIR/baseline.sh" diff "$@" ;;
+  -h|--help)
+    sed -n '2,10p' "$0"
+    echo
+    echo "Run 'cc-perf report --help' for report options."
+    echo "Run 'cc-perf baseline --help' for baseline options."
+    exit 0 ;;
+  -*|--*) exec "$DIR/perf.sh" "$@" ;;   # forward flags to perf.sh
+  *)
+    # positional path arg → forward to perf.sh
+    exec "$DIR/perf.sh" "$@" ;;
+esac

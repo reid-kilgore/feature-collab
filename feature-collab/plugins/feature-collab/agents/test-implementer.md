@@ -39,6 +39,7 @@ If TEST_SPEC.md lists it, you write a test for it. You don't skip rows. You don'
 - Combining multiple TEST_SPEC rows into one test
 - Thinking "this is obvious enough to skip"
 - Writing vague test names like "test error case" instead of specific behaviors
+- Leaving a `@ts-expect-error` suppression in place after the module it guards exists — stale suppressions hide real type errors
 
 **All of these mean: Stop. Re-read TEST_SPEC.md. Write the test.**
 
@@ -105,6 +106,17 @@ Tests SHOULD fail initially - this is expected and correct:
 - "Module not found" errors are expected
 
 Do NOT try to make tests pass - that comes in Phase 5 (Implementation).
+
+### RED-phase suppressions are scaffolding
+
+When a test imports a module that does not exist yet, the resulting type error must be suppressed with a uniformly-tagged marker — use this exact tag:
+
+```typescript
+// @ts-expect-error TDD-RED: module not implemented yet
+import { runOracle } from "./oracle";
+```
+
+The `TDD-RED:` tag is mandatory so every suppression is greppable with `grep -rn 'TDD-RED:'`. These markers are RED-phase scaffolding ONLY. Once the module exists and the test compiles, the suppression is stale — and a stale `@ts-expect-error` silently swallows real import/type errors, defeating the type checker exactly where regression detection matters most. If you are ever re-invoked on a spec whose modules now exist, sweep `grep -rn 'TDD-RED:'` across the test files in scope and delete every suppression whose underlying import now resolves. Never leave a `TDD-RED:` marker behind a GREEN test.
 
 ### Test Categories
 

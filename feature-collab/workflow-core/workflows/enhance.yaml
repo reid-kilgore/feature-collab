@@ -1,0 +1,22 @@
+name: enhance
+intent: Small enhancement with contract-first TDD and tight scope control
+entry_criteria:
+  - expected production change is small and localized
+  - user is modifying existing behavior rather than building a large feature
+required_artifacts:
+  - PLAN.md
+  - CONTRACTS.md
+  - TEST_SPEC.md
+  - DEMO.md
+phase_sequence:
+  - scope_contract
+  - implement
+  - review
+  - verify
+  - demo_handoff
+promotion_rules:
+  - if scope meaningfully expands, move to feature-collab
+portable_invariants:
+  - stay within declared scope
+  - tests first
+  - demo proof is mandatory

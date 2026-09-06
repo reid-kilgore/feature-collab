@@ -1,0 +1,17 @@
+name: bugfix
+intent: Targeted defect repair using reproduce-first discipline
+entry_criteria:
+  - user reports a regression or specific broken behavior
+required_artifacts:
+  - PLAN.md
+  - TEST_SPEC.md
+  - DEMO.md
+phase_sequence:
+  - reproduce_scope
+  - fix
+  - verify
+  - demo_handoff
+portable_invariants:
+  - write failing reproduction before fix
+  - do not expand scope beyond the bug
+  - verification must prove both reproduction and repair

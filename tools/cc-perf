@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+"""Local Claude Code latency diagnostics.
+
+Reads Claude Code transcripts and ~/.claude.json without installing hooks.
+Active hook probes are opt-in because hooks may have side effects.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import time
+from pathlib import Path
+from statistics import median
+from typing import Any
+
+
+HOME = Path.home()
+CLAUDE_DIR = HOME / ".claude"
+BASELINES = CLAUDE_DIR / "perf" / "baselines.json"
+
+
+def parse_since(value: str) -> dt.datetime:
+    now = dt.datetime.now(dt.timezone.utc)
+    m = re.fullmatch(r"(\d+)([hmwd])", value.strip())
+    if not m:
+        raise SystemExit(f"invalid --since {value!r}; use forms like 24h, 7d, 30m")
+    n = int(m.group(1))
+    unit = m.group(2)
+    delta = {
+        "m": dt.timedelta(minutes=n),
+        "h": dt.timedelta(hours=n),
+        "w": dt.timedelta(weeks=n),
+        "d": dt.timedelta(days=n),
+    }[unit]
+    return now - delta
+
+
+def parse_ts(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    idx = min(len(ordered) - 1, max(0, math.ceil(len(ordered) * pct) - 1))
+    return ordered[idx]
+
+
+def summary(values: list[float]) -> dict[str, Any]:
+    if not values:
+        return {"n": 0, "p50_ms": None, "p95_ms": None, "max_ms": None}
+    return {
+        "n": len(values),
+        "p50_ms": round(median(values), 1),
+        "p95_ms": round(percentile(values, 0.95) or 0, 1),
+        "max_ms": round(max(values), 1),
+    }
+
+
+def add_metric(bucket: dict[str, list[float]], key: str, value: Any) -> None:
+    if isinstance(value, (int, float)):
+        bucket.setdefault(key, []).append(float(value))
+
+
+def observation_summary(observations: list[tuple[dt.datetime | None, float]]) -> dict[str, Any]:
+    stat = summary([value for _, value in observations])
+    latest = max(observations, key=lambda item: item[0] or dt.datetime.min.replace(tzinfo=dt.timezone.utc), default=None)
+    stat["latest_ms"] = round(latest[1], 1) if latest else None
+    return stat
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def file_hash(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except FileNotFoundError:
+        return None
+
+
+def transcript_dirs(project: Path) -> list[Path]:
+    root = CLAUDE_DIR / "projects"
+    encoded = "-" + str(project.resolve()).strip("/").replace("/", "-").replace("_", "-")
+    preferred = root / encoded
+    dirs = [preferred] if preferred.exists() else []
+    if root.exists():
+        dirs.extend(p for p in root.iterdir() if p.is_dir() and p not in dirs)
+    return dirs
+
+
+def iter_transcripts(project: Path, since: dt.datetime):
+    project_s = str(project.resolve())
+    for directory in transcript_dirs(project):
+        for path in sorted(directory.glob("**/*.jsonl")):
+            try:
+                if dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc) < since:
+                    continue
+                with path.open() as fh:
+                    matched = False
+                    entries = []
+                    for line in fh:
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        ts = parse_ts(entry.get("timestamp"))
+                        if ts and ts < since:
+                            continue
+                        if entry.get("cwd") == project_s:
+                            matched = True
+                        entries.append(entry)
+                    if matched:
+                        yield path, entries
+            except OSError:
+                continue
+
+
+def settings_snapshot(project: Path) -> dict[str, Any]:
+    global_settings = CLAUDE_DIR / "settings.json"
+    project_settings = project / ".claude" / "settings.json"
+    mcp = project / ".mcp.json"
+    global_data = read_json(global_settings) or {}
+    project_data = read_json(project_settings) or {}
+    return {
+        "global_settings_hash": file_hash(global_settings),
+        "project_settings_hash": file_hash(project_settings),
+        "project_mcp_hash": file_hash(mcp),
+        "model": project_data.get("model") or global_data.get("model"),
+        "global_hook_events": sorted((global_data.get("hooks") or {}).keys()),
+        "project_hook_events": sorted((project_data.get("hooks") or {}).keys()),
+        "statusline": bool(global_data.get("statusLine") or project_data.get("statusLine")),
+        "otel_endpoint_configured": bool((global_data.get("env") or {}).get("OTEL_EXPORTER_OTLP_ENDPOINT")),
+    }
+
+
+def session_rollup(project: Path) -> dict[str, Any] | None:
+    data = read_json(HOME / ".claude.json") or {}
+    project_data = (data.get("projects") or {}).get(str(project.resolve()))
+    if not isinstance(project_data, dict):
+        return None
+    keys = [
+        "lastAPIDuration",
+        "lastAPIDurationWithoutRetries",
+        "lastToolDuration",
+        "lastDuration",
+        "lastTotalCacheReadInputTokens",
+        "lastTotalCacheCreationInputTokens",
+        "lastTotalInputTokens",
+        "lastTotalOutputTokens",
+        "lastCost",
+        "lastSessionId",
+        "lastSessionModified",
+        "enabledMcpjsonServers",
+        "disabledMcpjsonServers",
+    ]
+    result = {k: project_data.get(k) for k in keys}
+    result["models"] = sorted((project_data.get("lastModelUsage") or {}).keys())
+    return result
+
+
+def tool_result_len(content: Any) -> int:
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return len(content.encode())
+    return len(json.dumps(content, separators=(",", ":")).encode())
+
+
+def new_tool_stat() -> dict[str, Any]:
+    return {
+        "count": 0,
+        "errors": 0,
+        "durations_ms": [],
+        "output_bytes": [],
+    }
+
+
+def build_report(project: Path, since: str, latest_turns: int | None = None) -> dict[str, Any]:
+    cutoff = parse_since(since)
+    project_s = str(project.resolve())
+    selected_entries: list[dict[str, Any]] = []
+    turns: list[float] = []
+    hooks: dict[str, list[tuple[dt.datetime | None, float]]] = {}
+    hook_attachments: dict[str, list[float]] = {}
+    hook_errors: dict[str, dict[str, Any]] = {}
+    tool_starts: dict[str, dict[str, Any]] = {}
+    tool_stats: dict[str, dict[str, Any]] = {}
+    agent_stats: dict[str, dict[str, Any]] = {}
+    api_errors: dict[str, int] = {}
+    models: dict[str, dict[str, int]] = {}
+    sessions: set[str] = set()
+    transcript_count = 0
+
+    for _, entries in iter_transcripts(project, cutoff):
+        transcript_count += 1
+        selected_entries.extend(e for e in entries if e.get("cwd") == project_s)
+
+    latest_cutoff = None
+    if latest_turns:
+        turn_events = [
+            e for e in selected_entries
+            if e.get("type") == "system" and e.get("subtype") == "turn_duration" and parse_ts(e.get("timestamp"))
+        ]
+        turn_events.sort(key=lambda e: parse_ts(e.get("timestamp")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc), reverse=True)
+        if len(turn_events) >= latest_turns:
+            latest_cutoff = parse_ts(turn_events[latest_turns - 1].get("timestamp"))
+        elif turn_events:
+            latest_cutoff = parse_ts(turn_events[-1].get("timestamp"))
+        if latest_cutoff:
+            # Stop hook summaries are written just before turn_duration records.
+            latest_cutoff = latest_cutoff - dt.timedelta(seconds=2)
+            selected_entries = [
+                e for e in selected_entries
+                if (parse_ts(e.get("timestamp")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc)) >= latest_cutoff
+            ]
+
+    selected_entries.sort(key=lambda e: parse_ts(e.get("timestamp")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc))
+
+    for e in selected_entries:
+            if e.get("sessionId"):
+                sessions.add(e["sessionId"])
+            if e.get("type") == "system" and e.get("subtype") == "turn_duration":
+                if isinstance(e.get("durationMs"), (int, float)):
+                    turns.append(float(e["durationMs"]))
+            if e.get("type") == "system" and e.get("subtype") == "api_error":
+                cause = e.get("cause") or e.get("error", {}).get("cause") or {}
+                code = cause.get("code") or "unknown"
+                api_errors[code] = api_errors.get(code, 0) + 1
+            if e.get("type") == "system" and e.get("subtype") == "stop_hook_summary":
+                event_ts = parse_ts(e.get("timestamp"))
+                for h in e.get("hookInfos") or []:
+                    cmd = h.get("command") or "unknown"
+                    ms = h.get("durationMs")
+                    if isinstance(ms, (int, float)):
+                        hooks.setdefault(f"Stop:{cmd}", []).append((event_ts, float(ms)))
+            if e.get("type") == "attachment" and isinstance(e.get("attachment"), dict):
+                attachment = e["attachment"]
+                hook_event = attachment.get("hookEvent") or "unknown"
+                hook_name = attachment.get("hookName") or "unknown"
+                key = f"{hook_event}:{hook_name}"
+                add_metric(hook_attachments, key, attachment.get("durationMs"))
+                if attachment.get("type") in ("hook_non_blocking_error", "async_hook_response") and attachment.get("exitCode") not in (None, 0):
+                    info = hook_errors.setdefault(
+                        key,
+                        {
+                            "count": 0,
+                            "exit_codes": {},
+                            "latest_stderr": "",
+                            "command": attachment.get("command"),
+                        },
+                    )
+                    info["count"] += 1
+                    exit_code = str(attachment.get("exitCode"))
+                    info["exit_codes"][exit_code] = info["exit_codes"].get(exit_code, 0) + 1
+                    if attachment.get("stderr"):
+                        info["latest_stderr"] = str(attachment["stderr"])[:240]
+            if e.get("type") == "assistant":
+                msg = e.get("message") or {}
+                model = msg.get("model") or "unknown"
+                usage = msg.get("usage") or {}
+                bucket = models.setdefault(
+                    model,
+                    {
+                        "calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                    },
+                )
+                bucket["calls"] += 1
+                for k in bucket:
+                    if isinstance(usage.get(k), int):
+                        bucket[k] += usage[k]
+                for content in msg.get("content") or []:
+                    if isinstance(content, dict) and content.get("type") == "tool_use":
+                        input_data = content.get("input") or {}
+                        tool_starts[content.get("id")] = {
+                            "name": content.get("name") or "unknown",
+                            "timestamp": parse_ts(e.get("timestamp")),
+                            "description": input_data.get("description") or input_data.get("subagent_type") or "",
+                        }
+            if e.get("type") == "user":
+                msg = e.get("message") or {}
+                for content in msg.get("content") or []:
+                    if not isinstance(content, dict) or content.get("type") != "tool_result":
+                        continue
+                    tool_id = content.get("tool_use_id")
+                    started = tool_starts.get(tool_id) or {}
+                    name = started.get("name") or "unknown"
+                    stat = tool_stats.setdefault(name, new_tool_stat())
+                    output_len = tool_result_len(content.get("content"))
+                    start_ts = started.get("timestamp")
+                    end_ts = parse_ts(e.get("timestamp"))
+                    duration_ms = None
+                    if start_ts and end_ts:
+                        duration_ms = (end_ts - start_ts).total_seconds() * 1000
+                    stat["count"] += 1
+                    if content.get("is_error") is True:
+                        stat["errors"] += 1
+                    stat["output_bytes"].append(output_len)
+                    if duration_ms is not None:
+                        stat["durations_ms"].append(duration_ms)
+                    if name == "Agent":
+                        description = started.get("description") or "Agent"
+                        agent = agent_stats.setdefault(description, new_tool_stat())
+                        agent["count"] += 1
+                        if content.get("is_error") is True:
+                            agent["errors"] += 1
+                        agent["output_bytes"].append(output_len)
+                        if duration_ms is not None:
+                            agent["durations_ms"].append(duration_ms)
+
+    hook_summaries = {name: observation_summary(vals) for name, vals in hooks.items()}
+    attachment_summaries = {name: summary(vals) for name, vals in hook_attachments.items()}
+    tool_summaries = {
+        name: {
+            "count": stat["count"],
+            "errors": stat["errors"],
+            "duration": summary(stat["durations_ms"]),
+            "output_bytes": summary(stat["output_bytes"]),
+        }
+        for name, stat in tool_stats.items()
+    }
+    agent_summaries = {
+        name: {
+            "count": stat["count"],
+            "errors": stat["errors"],
+            "duration": summary(stat["durations_ms"]),
+            "output_bytes": summary(stat["output_bytes"]),
+        }
+        for name, stat in agent_stats.items()
+    }
+    warnings = []
+    for name, stat in hook_summaries.items():
+        p95 = stat["p95_ms"] or 0
+        if p95 > 5000:
+            warnings.append(f"CRITICAL {name} p95 {p95:.0f}ms exceeds 5000ms")
+        elif p95 > 3000:
+            warnings.append(f"HIGH {name} p95 {p95:.0f}ms exceeds 3000ms")
+        elif p95 > 1000:
+            warnings.append(f"WARN {name} p95 {p95:.0f}ms exceeds 1000ms")
+    for name, info in hook_errors.items():
+        warnings.append(f"CRITICAL hook errors in {name}: {info['count']}")
+
+    return {
+        "project": str(project.resolve()),
+        "since": since,
+        "latest_turns": latest_turns,
+        "latest_cutoff": latest_cutoff.isoformat() if latest_cutoff else None,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "transcripts": transcript_count,
+        "sessions": len(sessions),
+        "turn_latency": summary(turns),
+        "stop_hooks": hook_summaries,
+        "hook_attachments": attachment_summaries,
+        "hook_errors": hook_errors,
+        "tools": tool_summaries,
+        "agent_tasks": agent_summaries,
+        "api_errors": api_errors,
+        "models": models,
+        "session_rollup": session_rollup(project),
+        "settings": settings_snapshot(project),
+        "warnings": warnings,
+    }
+
+
+def hook_commands(settings: dict[str, Any], event: str) -> list[str]:
+    found = []
+    for group in (settings.get("hooks") or {}).get(event) or []:
+        for hook in group.get("hooks") or []:
+            if hook.get("type") == "command" and hook.get("command"):
+                found.append(hook["command"])
+    return found
+
+
+def build_probe_payload(project: Path, event: str) -> str:
+    payload = {
+        "cwd": str(project.resolve()),
+        "session_id": "cc-perf-diagnostic",
+        "hook_event_name": event,
+    }
+    if event == "UserPromptSubmit":
+        payload["prompt"] = "diagnostic probe"
+    if event in ("PreToolUse", "PostToolUse"):
+        payload["tool_name"] = "Bash"
+    return json.dumps(payload)
+
+
+def run_probes(project: Path, run: bool) -> dict[str, Any]:
+    global_settings = read_json(CLAUDE_DIR / "settings.json") or {}
+    project_settings = read_json(project / ".claude" / "settings.json") or {}
+    results = []
+    for source, settings in (("global", global_settings), ("project", project_settings)):
+        for event in sorted((settings.get("hooks") or {}).keys()):
+            for command in hook_commands(settings, event):
+                row: dict[str, Any] = {"source": source, "event": event, "command": command}
+                if run:
+                    start = time.monotonic()
+                    proc = subprocess.run(
+                        command,
+                        input=build_probe_payload(project, event),
+                        text=True,
+                        shell=True,
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    row.update(
+                        {
+                            "duration_ms": round((time.monotonic() - start) * 1000, 1),
+                            "rc": proc.returncode,
+                            "stdout_bytes": len(proc.stdout.encode()),
+                            "stderr_summary": proc.stderr.strip()[:200],
+                        }
+                    )
+                results.append(row)
+    return {"project": str(project.resolve()), "ran": run, "probes": results}
+
+
+def save_baseline(report: dict[str, Any]) -> None:
+    BASELINES.parent.mkdir(parents=True, exist_ok=True)
+    data = read_json(BASELINES) or []
+    data.append(report)
+    BASELINES.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def latest_baseline(project: Path) -> dict[str, Any] | None:
+    data = read_json(BASELINES) or []
+    project_s = str(project.resolve())
+    matches = [r for r in data if r.get("project") == project_s]
+    return matches[-1] if matches else None
+
+
+def fmt_ms(value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if value < 1000:
+        return f"{value:.0f}ms"
+    seconds = value / 1000
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    rem = seconds % 60
+    return f"{minutes}m{rem:04.1f}s"
+
+
+def fmt_count(value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 10_000:
+        return f"{value / 1_000:.0f}k"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    return str(int(value))
+
+
+def fmt_money(value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        return f"${float(value):.2f}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def short_name(name: str, width: int = 44) -> str:
+    replacements = [
+        ("Stop:bash /Users/reid/.claude/hooks/", "Stop:"),
+        ("PreToolUse:PreToolUse:", "PreTool:"),
+        ("PostToolUse:PostToolUse:", "PostTool:"),
+        ("SessionStart:SessionStart:", "Session:"),
+        ("mcp__claude_ai_Linear__", "Linear."),
+        ("mcp__tilth__", "tilth."),
+    ]
+    for old, new in replacements:
+        name = name.replace(old, new)
+    return textwrap.shorten(name, width=width, placeholder="...")
+
+
+def health_label(report: dict[str, Any]) -> str:
+    latest_stop = max((stat.get("latest_ms") or 0 for stat in report.get("stop_hooks", {}).values()), default=0)
+    hook_error_count = sum(info.get("count", 0) for info in report.get("hook_errors", {}).values())
+    turn_p95 = report.get("turn_latency", {}).get("p95_ms") or 0
+    if latest_stop > 5000 or hook_error_count:
+        return "ATTENTION"
+    if turn_p95 > 120_000:
+        return "SLOW"
+    return "OK"
+
+
+def top_findings(report: dict[str, Any]) -> list[str]:
+    findings: list[str] = []
+    stop_hooks = report.get("stop_hooks", {})
+    if stop_hooks:
+        worst_latest = max(stop_hooks.items(), key=lambda item: item[1].get("latest_ms") or 0)
+        latest = worst_latest[1].get("latest_ms") or 0
+        if latest > 5000:
+            findings.append(f"Current Stop hook still slow: {short_name(worst_latest[0])} latest {fmt_ms(latest)}.")
+        elif latest:
+            findings.append(f"Current Stop hooks look fixed: worst latest {fmt_ms(latest)}.")
+        worst_p95 = max(stop_hooks.items(), key=lambda item: item[1].get("p95_ms") or 0)
+        if (worst_p95[1].get("p95_ms") or 0) > 5000 and latest <= 5000:
+            findings.append(f"Historical Stop p95 still high ({fmt_ms(worst_p95[1].get('p95_ms'))}); window includes pre-fix turns.")
+    hook_errors = report.get("hook_errors", {})
+    if hook_errors:
+        total_errors = sum(info.get("count", 0) for info in hook_errors.values())
+        worst_error = max(hook_errors.items(), key=lambda item: item[1].get("count", 0))
+        findings.append(f"Hook errors: {fmt_count(total_errors)} total; biggest is {short_name(worst_error[0])} ({fmt_count(worst_error[1].get('count'))}).")
+    tools = report.get("tools", {})
+    if tools:
+        agent_tasks = report.get("agent_tasks", {})
+        if agent_tasks:
+            worst_agent = max(agent_tasks.items(), key=lambda item: item[1].get("duration", {}).get("p95_ms") or 0)
+            findings.append(f"Slowest Agent task: {short_name(worst_agent[0])} p95 {fmt_ms(worst_agent[1]['duration'].get('p95_ms'))}.")
+        slow_tools = [
+            (name, stat)
+            for name, stat in tools.items()
+            if (stat.get("duration", {}).get("p95_ms") or 0) >= 1000
+        ]
+        if slow_tools:
+            worst_tool = max(slow_tools, key=lambda item: item[1].get("duration", {}).get("p95_ms") or 0)
+            findings.append(f"Slow tool p95: {short_name(worst_tool[0])} {fmt_ms(worst_tool[1]['duration'].get('p95_ms'))}.")
+    api_errors = report.get("api_errors", {})
+    if api_errors:
+        findings.append("API retries/errors: " + ", ".join(f"{code}={count}" for code, count in sorted(api_errors.items())) + ".")
+    if not findings:
+        findings.append("No obvious local degradation in this window.")
+    return findings[:5]
+
+
+def print_row(columns: list[tuple[str, int]]) -> None:
+    print("  " + "  ".join(value.ljust(width)[:width] for value, width in columns))
+
+
+def print_human(report: dict[str, Any]) -> None:
+    print(f"Claude Code Perf: {health_label(report)}")
+    print(f"Project: {report['project']}")
+    window = report["since"]
+    if report.get("latest_turns"):
+        window += f" / latest {report['latest_turns']} turns"
+    print(f"Window: {window}  transcripts={report['transcripts']} sessions={report['sessions']}")
+    turn = report["turn_latency"]
+    print(f"Turns: n={turn['n']} p50={fmt_ms(turn['p50_ms'])} p95={fmt_ms(turn['p95_ms'])} max={fmt_ms(turn['max_ms'])}")
+
+    print("\nTop findings:")
+    for finding in top_findings(report):
+        print(f"  - {finding}")
+
+    if report["stop_hooks"]:
+        print("\nStop Hooks")
+        print_row([("hook", 36), ("n", 5), ("latest", 8), ("p50", 8), ("p95", 8), ("max", 8)])
+        for name, stat in sorted(
+            report["stop_hooks"].items(),
+            key=lambda item: item[1]["p95_ms"] or 0,
+            reverse=True,
+        ):
+            print_row([
+                (short_name(name, 36), 36),
+                (str(stat["n"]), 5),
+                (fmt_ms(stat["latest_ms"]), 8),
+                (fmt_ms(stat["p50_ms"]), 8),
+                (fmt_ms(stat["p95_ms"]), 8),
+                (fmt_ms(stat["max_ms"]), 8),
+            ])
+
+    if report.get("hook_attachments"):
+        print("\nHook Event Durations")
+        print_row([("hook", 32), ("n", 5), ("p50", 8), ("p95", 8), ("max", 8)])
+        for name, stat in sorted(
+            report["hook_attachments"].items(),
+            key=lambda item: item[1]["p95_ms"] or 0,
+            reverse=True,
+        )[:8]:
+            print_row([
+                (short_name(name, 32), 32),
+                (str(stat["n"]), 5),
+                (fmt_ms(stat["p50_ms"]), 8),
+                (fmt_ms(stat["p95_ms"]), 8),
+                (fmt_ms(stat["max_ms"]), 8),
+            ])
+
+    if report.get("hook_errors"):
+        print("\nHook Errors")
+        print_row([("hook", 32), ("count", 7), ("exit", 10), ("command", 52)])
+        for name, info in sorted(report["hook_errors"].items(), key=lambda item: item[1]["count"], reverse=True)[:8]:
+            exits = ",".join(f"{code}:{count}" for code, count in sorted(info["exit_codes"].items()))
+            print_row([
+                (short_name(name, 32), 32),
+                (fmt_count(info["count"]), 7),
+                (exits, 10),
+                (textwrap.shorten(str(info.get("command") or "-"), width=52, placeholder="..."), 52),
+            ])
+
+    if report.get("tools"):
+        print("\nTools:")
+        print_row([("tool", 30), ("count", 7), ("err", 5), ("p50", 8), ("p95", 8), ("out95", 8)])
+        for name, stat in sorted(
+            report["tools"].items(),
+            key=lambda item: item[1]["duration"]["p95_ms"] or 0,
+            reverse=True,
+        )[:10]:
+            duration = stat["duration"]
+            output = stat["output_bytes"]
+            print_row([
+                (short_name(name, 30), 30),
+                (fmt_count(stat["count"]), 7),
+                (fmt_count(stat["errors"]), 5),
+                (fmt_ms(duration["p50_ms"]), 8),
+                (fmt_ms(duration["p95_ms"]), 8),
+                (fmt_count(output["p95_ms"]), 8),
+            ])
+
+    if report.get("agent_tasks"):
+        print("\nAgent Tasks")
+        print_row([("description", 42), ("count", 7), ("err", 5), ("p50", 8), ("p95", 8), ("max", 8)])
+        for name, stat in sorted(
+            report["agent_tasks"].items(),
+            key=lambda item: item[1]["duration"]["p95_ms"] or 0,
+            reverse=True,
+        )[:12]:
+            duration = stat["duration"]
+            print_row([
+                (short_name(name, 42), 42),
+                (fmt_count(stat["count"]), 7),
+                (fmt_count(stat["errors"]), 5),
+                (fmt_ms(duration["p50_ms"]), 8),
+                (fmt_ms(duration["p95_ms"]), 8),
+                (fmt_ms(duration["max_ms"]), 8),
+            ])
+
+    if report.get("api_errors"):
+        print("\nAPI errors:")
+        for code, count in sorted(report["api_errors"].items(), key=lambda item: item[1], reverse=True):
+            print(f"  {code}: {count}")
+
+    if report.get("models"):
+        print("\nModels:")
+        print_row([("model", 28), ("calls", 7), ("out", 8), ("cache read", 11), ("cache new", 10), ("hit", 6)])
+        for model, stat in sorted(report["models"].items()):
+            cache_read = stat.get("cache_read_input_tokens", 0)
+            cache_create = stat.get("cache_creation_input_tokens", 0)
+            uncached = stat.get("input_tokens", 0)
+            denom = cache_read + cache_create + uncached
+            cache_ratio = round(cache_read / denom * 100, 1) if denom else 0
+            print_row([
+                (short_name(model, 28), 28),
+                (fmt_count(stat.get("calls")), 7),
+                (fmt_count(stat.get("output_tokens")), 8),
+                (fmt_count(cache_read), 11),
+                (fmt_count(cache_create), 10),
+                (f"{cache_ratio:.1f}%", 6),
+            ])
+
+    rollup = report.get("session_rollup") or {}
+    if rollup:
+        print("\nLast Session Rollup")
+        print(
+            f"  api={fmt_ms(rollup.get('lastAPIDuration'))} "
+            f"tool={fmt_ms(rollup.get('lastToolDuration'))} "
+            f"wall={fmt_ms(rollup.get('lastDuration'))} "
+            f"cost={fmt_money(rollup.get('lastCost'))}"
+        )
+        print(
+            f"  cache_read={fmt_count(rollup.get('lastTotalCacheReadInputTokens'))} "
+            f"cache_new={fmt_count(rollup.get('lastTotalCacheCreationInputTokens'))} "
+            f"models={','.join(rollup.get('models') or [])}"
+        )
+
+    if report["warnings"]:
+        print("\nRaw Warnings")
+        for warning in report["warnings"][:10]:
+            print(f"  - {warning}")
+        if len(report["warnings"]) > 10:
+            print(f"  ... {len(report['warnings']) - 10} more; use --json for full detail")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Claude Code local perf diagnostics")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    for name in ("report", "baseline-save", "diff"):
+        p = sub.add_parser(name)
+        p.add_argument("--project", default=os.getcwd())
+        p.add_argument("--since", default="24h")
+        p.add_argument("--latest-turns", type=int, default=None, help="restrict report metrics to the latest N completed turns inside --since")
+        p.add_argument("--json", action="store_true")
+    probe = sub.add_parser("probe")
+    probe.add_argument("--project", default=os.getcwd())
+    probe.add_argument("--run", action="store_true", help="actually execute hooks; may have side effects")
+    probe.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project = Path(args.project).resolve()
+    if args.cmd == "probe":
+        result = run_probes(project, args.run)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print("Hook probes" + (" (executed)" if args.run else " (listed only; pass --run to execute)"))
+            for p in result["probes"]:
+                suffix = ""
+                if "duration_ms" in p:
+                    suffix = f" duration={p['duration_ms']}ms rc={p['rc']}"
+                print(f"  [{p['source']}] {p['event']}: {textwrap.shorten(p['command'], 110)}{suffix}")
+        return 0
+
+    report = build_report(project, args.since, args.latest_turns)
+    if args.cmd == "baseline-save":
+        save_baseline(report)
+        print(f"Saved baseline to {BASELINES}")
+        return 0
+    if args.cmd == "diff":
+        baseline = latest_baseline(project)
+        if not baseline:
+            print("No baseline found. Run: tools/cc-perf baseline-save", file=sys.stderr)
+            return 1
+        current_p95 = report["turn_latency"]["p95_ms"] or 0
+        base_p95 = baseline["turn_latency"]["p95_ms"] or 0
+        print(f"Turn p95: baseline={base_p95}ms current={current_p95}ms delta={round(current_p95 - base_p95, 1)}ms")
+        for name, stat in report["stop_hooks"].items():
+            old = ((baseline.get("stop_hooks") or {}).get(name) or {}).get("p95_ms") or 0
+            new = stat["p95_ms"] or 0
+            print(f"{name} p95: baseline={old}ms current={new}ms delta={round(new - old, 1)}ms")
+        return 0
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print_human(report)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

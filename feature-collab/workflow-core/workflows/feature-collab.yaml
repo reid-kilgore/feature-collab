@@ -1,0 +1,47 @@
+name: feature-collab
+intent: Multi-component feature development with explicit phase gates and contract-first execution
+entry_criteria:
+  - change spans multiple components or is expected to exceed small-enhancement scope
+  - user wants structured planning, testing, and verification
+required_artifacts:
+  - PLAN.md
+  - CONTRACTS.md
+  - TEST_SPEC.md
+  - DETAILS.md
+  - DECISIONS.md
+  - DEMO.md
+  - SESSION_STATE.md
+phase_sequence:
+  - session_setup
+  - discovery_scope_lock
+  - contracts
+  - walking_skeleton
+  - architecture
+  - implementation
+  - review
+  - security_exit
+  - demo_handoff
+role_defaults:
+  orchestrator:
+    role: orchestrator
+  discovery:
+    role: code-explorer
+  implementation:
+    role: code-architect
+  tests:
+    role: test-runner
+  review:
+    role: code-reviewer
+  guard:
+    role: scope-guardian
+  exit:
+    role: criteria-assessor
+  demo:
+    role: demo-builder
+portable_invariants:
+  - no progress claims without role-verified evidence
+  - no implementation before contracts and failing tests
+  - no phase transition without explicit gate evidence
+  - docs on disk are canonical state
+resume:
+  pickup_workflow: pickup

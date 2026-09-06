@@ -17,7 +17,7 @@ if echo "$new"$'\n'"$old" | grep -qE '^[[:space:]]*current_state[[:space:]]*:'; 
   subagent=$(echo "$event" | jq -r '.agent_type // .tool_input.subagent_type // ""')
   agent_id="${CLAUDE_SUBAGENT_ID:-}"
 
-  if [[ "$subagent" != "transition-decider" ]] && [[ "$agent_id" != *"transition-decider"* ]]; then
+  if [[ "$subagent" != *"transition-decider"* ]] && [[ "$agent_id" != *"transition-decider"* ]]; then
     echo '{"decision":"block","reason":"UNAUTHORIZED_STATE_FIELD_WRITE: only transition-decider may write current_state in SESSION_STATE.md."}' >&2
     exit 2
   fi

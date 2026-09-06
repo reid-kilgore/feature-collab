@@ -1,0 +1,13 @@
+name: handoff
+intent: Persist session state for reliable resume in a new session
+required_artifacts:
+  - PLAN.md
+  - HANDOFF.md
+  - SESSION_STATE.md
+phase_sequence:
+  - read_state
+  - write_handoff
+  - update_session_state
+portable_invariants:
+  - every next-session fact must be written to disk
+  - vague handoffs are invalid

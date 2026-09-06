@@ -1,0 +1,14 @@
+name: spike
+intent: Research and uncertainty reduction that produces a report, not production code
+entry_criteria:
+  - the team does not yet know what to build
+required_artifacts:
+  - PLAN.md
+  - DEMO.md
+phase_sequence:
+  - explore
+  - report
+portable_invariants:
+  - no production code by default
+  - executable examples are part of the deliverable
+  - recommend next workflow when the question is answered

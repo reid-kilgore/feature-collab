@@ -107,6 +107,15 @@ Invoke `/feature-collab` to continue the workflow. The feature-collab skill will
 - **Don't ignore HANDOFF.md warnings** — the previous agent wrote them for a reason
 - **Don't skip loading todos** — the task list drives progress tracking
 
+## If the Session Expands Beyond the Plan
+
+A pickup session frequently expands into incident response — staging breaks, a demo needs firefighting, new bugs surface that aren't in PLAN.md. This is legitimate, but the workflow gates still apply even when the work is happening outside the feature-collab phase loop:
+
+- **Record the pivot.** Write a scope-expansion note in SESSION_STATE.md naming what the session is now doing beyond PLAN.md. The plan and the actual work must not silently diverge — a reader of PLAN.md alone should not be surprised by the commit history.
+- **The pre-commit gate still applies.** Any code committed during incident response — including an ad-hoc fix dispatched as a standalone implementation agent, not a feature-collab commit-agent — owes `npx tsc --noEmit` + `npx eslint --no-fix` on the changed package dirs, run in the same orchestrator turn that dispatches the commit. Off-workflow does not mean off-gate. This is the most-skipped rule under firefight time-pressure; skipping it trades a 30-second local check for a ~30-minute CI round-trip.
+- **Commits still go through a haiku commit-agent**, never the main thread — no exception for "small fix," "recovery," or "agent failed."
+- **A diagnosis is "confirmed" only when reproduced through the real code path.** Reconstructing a failure from SQL/schema inspection yields a *candidate* cause, not a confirmed one. Do not relay a candidate to the user as confirmed.
+
 ## If Things Look Wrong
 
 If the documents are inconsistent or seem stale:

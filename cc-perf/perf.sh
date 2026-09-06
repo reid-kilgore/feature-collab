@@ -129,8 +129,10 @@ def stats(arr):
     sum: (arr | add // 0)
   };
 
-def ts_ms: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
-  + ( (capture("\\.(?<f>[0-9]+)Z$") // {f:"0"}) | .f | "0.\(.)" | tonumber * 1000 | floor );
+def ts_ms: if type != "string" then null else
+  (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
+  + ( (capture("\\.(?<f>[0-9]+)Z$") // {f:"0"}) | .f | "0.\(.)" | tonumber * 1000 | floor )
+  end;
 
 # --- turn durations ---
 ( [ .[] | select(.type=="system" and .subtype=="turn_duration") | .durationMs ] ) as $turns
@@ -152,6 +154,7 @@ def ts_ms: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
 |
 ( [ $tool_starts[] as $s
     | ($tool_ends[] | select(.id == $s.id)) as $e
+    | select($s.t_start != null and $e.t_end != null)
     | {name:$s.name, ms:($e.t_end - $s.t_start), error:$e.is_error,
         kind: ( if ($s.name == "AskUserQuestion") then "idle"
                 elif ($s.name == "Agent") then "subagent"
@@ -194,7 +197,7 @@ def ts_ms: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
 ) as $tokens
 |
 # --- stop hook summaries: flatten hookInfos ---
-( [ .[] | select(.type=="system" and .subtype=="stop_hook_summary") | .hookInfos[]? | {cmd:.command, ms:.durationMs, event:"Stop"} ] ) as $stop_hooks
+( [ .[] | select(.type=="system" and .subtype=="stop_hook_summary") | .hookInfos[]? | {cmd:.command, ms:(.durationMs // 0), event:"Stop"} ] ) as $stop_hooks
 |
 # --- attachment hook events (everything else: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact) ---
 ( [ .[]
@@ -220,7 +223,7 @@ def ts_ms: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
       missing_cmd: ([ $g[] | select(((.atype // "") | tostring) == "hook_non_blocking_error" and (.exit // 0) == 127) ] | length),
       blocking_decision_event: (([ "PreToolUse","PostToolUse" ] | index($g[0].event)) != null)
     })
-  | sort_by(-.stats.p95)
+  | sort_by(-(.stats.p95 // 0))
 ) as $by_hook
 |
 # Warnings
@@ -235,7 +238,15 @@ def ts_ms: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 * 1000)
 # Hook tax per turn: total hook ms divided by turn count.
 ( ($all_hooks | map(.ms) | add // 0) ) as $hook_total_ms
 |
-( if ($turns | length) > 0 then ($hook_total_ms / ($turns | length) | floor) else 0 end ) as $hook_tax_per_turn
+# Fallback turn count for headless `claude -p` transcripts that lack system.turn_duration:
+# count user-message entries (each = 1 prompt-submit cycle).
+( [ .[] | select(.type=="user" and ((.message.content // []) | type == "string" or (any(.type == "text" or (. | type == "string"))))) ] | length ) as $user_msgs
+|
+( if ($turns | length) > 0 then ($turns | length)
+  elif $user_msgs > 0 then $user_msgs
+  else 1 end ) as $turn_denom
+|
+( if $turn_denom > 0 then ($hook_total_ms / $turn_denom | floor) else 0 end ) as $hook_tax_per_turn
 |
 # Tool kind aggregates
 ( $tools | group_by(.kind) | map(. as $g | {kind:$g[0].kind, sum:($g|map(.ms)|add//0), n:($g|length)}) ) as $by_kind

@@ -1,0 +1,16 @@
+name: pickup
+intent: Restore workflow context from durable artifacts and continue from current phase
+required_artifacts:
+  - PLAN.md
+  - SESSION_STATE.md
+optional_artifacts:
+  - HANDOFF.md
+  - FEEDBACK.md
+phase_sequence:
+  - load_state
+  - restore_todos
+  - summarize_resume_context
+  - continue_workflow
+portable_invariants:
+  - trust docs over memory
+  - do not repeat completed phases

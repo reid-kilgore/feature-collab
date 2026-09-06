@@ -24,3 +24,57 @@ npm-debug.log*
 
 # External cloned repos in spike branches
 spike-scratch/anki-screentime/amgi/
+
+# Nested clone of a third-party repo; see meta-agent-repo EXTERNAL-DEPENDENCIES.md
+/drawbar/
+
+# Nested git repos: separate projects with their own history (several on GitHub). Never tracked here.
+/anki-block
+anki-gen
+ask-questions
+claude-guide.nvim
+criticmarkup
+daily-walk
+dl-music
+drawbar
+exist-tags
+garmin-app
+gstack
+llm-usage-gauges
+lottoscroll
+mdannotate
+morning_app
+newworkoutplan
+progress-mcp
+studyblock
+swiftui-play/
+
+/anki-gen/
+/ask-questions/
+/claude-guide.nvim/
+/claude_llm_studio/claude-code-proxy/
+/criticmarkup/
+/daily-walk/
+/dl-music/
+/exist-tags/
+/feature-collab/spike-scratch/test-repo/
+/garmin-app/
+/gstack/
+/llm-usage-gauges/
+/lottoscroll/
+/mdannotate/
+/morning_app/
+/newworkoutplan/
+/progress-mcp/
+/spike-scratch/anki-screentime/amgi/
+/studyblock/
+/swiftui-play/
+/typescript-fullstack-test/frontend/
+
+# secrets, env files, build output, caches (added 2026-09-06 after push protection caught oil/or.key.txt)
+.env
+*.key.txt
+tidal-annual/config.json
+__pycache__/
+dist/
+*.bak.*
