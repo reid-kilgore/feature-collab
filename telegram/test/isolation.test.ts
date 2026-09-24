@@ -8,6 +8,8 @@
 //   3. test/support/harness.ts refuses to hand out a MAESTRO_INBOX_DIR that is missing or
 //      outside the OS temp directory, so even a real maestro binary that somehow ran would
 //      only ever write to a throwaway file.
+//   4. src/inbox/tailscale.ts refuses to run the real `ssh` binary under the same condition,
+//      when AGENT_TELEGRAM_SSH_BIN is not set.
 // (1) and (2) are demonstrated in a freshly spawned child process, not by mutating
 // process.env in this shared test-runner process: config.ts reads AGENT_TELEGRAM_HOME once
 // at module load, so only a fresh process sees an env change — which also matches how the
@@ -86,6 +88,40 @@ test("guard 2 control: apiBase() returns the fake server once TELEGRAM_API_BASE 
     const env = { ...process.env, AGENT_TELEGRAM_HOME: home, TELEGRAM_API_BASE: "http://127.0.0.1:9" };
     const { stdout } = await runCheck("api-base", env);
     assert.equal(stdout, "OK value=http://127.0.0.1:9");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard 4: startTailscaleCheck refuses the real ssh binary in test mode with no stub override", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "isolation-guard4-"));
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, AGENT_TELEGRAM_HOME: home };
+    delete env.AGENT_TELEGRAM_SSH_BIN;
+    const { stdout } = await runCheck("ssh-check", env);
+    assert.match(stdout, /^OK /);
+    const outcome = JSON.parse(stdout.slice("OK ".length));
+    assert.equal(outcome.kind, "no-link");
+    assert.match(outcome.detail, /refusing to run the real ssh binary/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard 4 control: startTailscaleCheck runs the stub once AGENT_TELEGRAM_SSH_BIN points at one", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "isolation-guard4-control-"));
+  try {
+    const stubPath = path.join(home, "ssh-stub.cjs");
+    writeFileSync(
+      stubPath,
+      `#!/usr/bin/env node\nprocess.stdout.write("# To authenticate, visit: https://login.tailscale.com/a/zzz999\\n");\n`,
+      { mode: 0o755 },
+    );
+    chmodSync(stubPath, 0o755);
+    const env = { ...process.env, AGENT_TELEGRAM_HOME: home, AGENT_TELEGRAM_SSH_BIN: stubPath, AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "500" };
+    const { stdout } = await runCheck("ssh-check", env);
+    const outcome = JSON.parse(stdout.slice("OK ".length));
+    assert.deepEqual(outcome, { kind: "link", url: "https://login.tailscale.com/a/zzz999" });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

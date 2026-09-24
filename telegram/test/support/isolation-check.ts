@@ -19,6 +19,12 @@ async function run(): Promise<string> {
     const { apiBase } = await import("../../src/config.ts");
     return `OK value=${apiBase()}`;
   }
+  if (check === "ssh-check") {
+    const { startTailscaleCheck } = await import("../../src/inbox/tailscale.ts");
+    const { result } = startTailscaleCheck("duo");
+    const outcome = await result;
+    return `OK ${JSON.stringify(outcome)}`;
+  }
   throw new Error(`unknown check: ${check}`);
 }
 

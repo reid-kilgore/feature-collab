@@ -17,6 +17,7 @@ export class TelegramApiError extends Error {
 export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
+  url?: string;
 }
 
 export interface ReplyMarkup {

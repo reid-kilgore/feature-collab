@@ -210,6 +210,108 @@ test("a maestro failure on /ask is shown as a warning, and nothing is silently a
   }
 });
 
+// The maestro stub's `recent` prints exactly the WARNING format maestro.ts is built against
+// ("could not read the <alias> inbox ..."), which is what tailscale.ts's parseUnreachableAlias
+// looks for. These tests drive that with maestro-recent-warnings.txt, and the ssh stub (see
+// harness.ts) with ssh-output.txt / ssh-hang / ssh-invocations.log.
+function countSshInvocations(home: string): number {
+  const file = path.join(home, "ssh-invocations.log");
+  if (!existsSync(file)) return 0;
+  return readFileSync(file, "utf8").split("\n").filter(Boolean).length;
+}
+
+test("/inbox: an unreachable-host warning starts a Tailscale check and sends the link as a button", async () => {
+  const h = await setupHarness();
+  try {
+    writeFileSync(path.join(h.home, "maestro-recent-warnings.txt"), "WARNING: could not read the duo inbox (ssh failed) — its items are MISSING below, not zero\n");
+    writeFileSync(
+      path.join(h.home, "ssh-output.txt"),
+      "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123def\n",
+    );
+
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/inbox" });
+
+    // The partial list still goes out first, with the friendly hint, not the raw warning text.
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("duo unreachable")));
+
+    await waitUntil(() =>
+      h.fake.sent.some((m) => {
+        const markup = m.body.reply_markup as { inline_keyboard?: Array<Array<{ url?: string }>> } | undefined;
+        return Boolean(markup?.inline_keyboard?.[0]?.[0]?.url);
+      }),
+    );
+    const linkMsg = h.fake.sent.find((m) => {
+      const markup = m.body.reply_markup as { inline_keyboard?: Array<Array<{ url?: string }>> } | undefined;
+      return Boolean(markup?.inline_keyboard?.[0]?.[0]?.url);
+    })!;
+    const markup = linkMsg.body.reply_markup as { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+    assert.equal(markup.inline_keyboard[0]![0]!.url, "https://login.tailscale.com/a/abc123def");
+    assert.match(markup.inline_keyboard[0]![0]!.text, /Approve Tailscale check for duo/);
+    assert.match(String(linkMsg.body.text), /send \/inbox again/);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("/inbox: a non-Tailscale URL in ssh's output is ignored, and a second /inbox does not spawn ssh again", async () => {
+  const h = await setupHarness();
+  try {
+    writeFileSync(path.join(h.home, "maestro-recent-warnings.txt"), "WARNING: could not read the duo inbox (ssh failed) — its items are MISSING below, not zero\n");
+    writeFileSync(path.join(h.home, "ssh-output.txt"), "see https://example.com/not-a-check-link for details\n");
+
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/inbox" });
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/inbox" });
+
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("no Tailscale check link appeared")));
+
+    const fallback = h.fake.sent.filter((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("no Tailscale check link appeared"));
+    assert.ok(fallback.some((m) => String(m.body.text).includes("ssh said:")));
+    assert.ok(!h.fake.sent.some((m) => {
+      const markup = m.body.reply_markup as { inline_keyboard?: Array<Array<{ url?: string }>> } | undefined;
+      return Boolean(markup?.inline_keyboard?.[0]?.[0]?.url);
+    }), "no link was ever found, so no approve-button message should be sent");
+
+    // Two /inbox calls both saw the warning, but the second must not spawn a second ssh while
+    // the first check is still within its (short, test-configured) watch window.
+    await sleep(100);
+    assert.ok(countSshInvocations(h.home) <= 1, `expected at most 1 ssh invocation, got ${countSshInvocations(h.home)}`);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("/inbox: an alias outside the requested hosts never spawns ssh", async () => {
+  const h = await setupHarness();
+  try {
+    writeFileSync(path.join(h.home, "maestro-recent-warnings.txt"), "WARNING: could not read the other-box inbox (ssh failed) — its items are MISSING below, not zero\n");
+    writeFileSync(path.join(h.home, "ssh-output.txt"), "# To authenticate, visit: https://login.tailscale.com/a/shouldnotappear\n");
+
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/inbox" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("other-box")));
+
+    await sleep(300); // give a wrongly-started check time to appear, if the bug exists
+    assert.equal(countSshInvocations(h.home), 0, "an alias /inbox never asked for must not trigger an ssh check");
+    assert.ok(!h.fake.sent.some((m) => String(m.body.text ?? "").includes("shouldnotappear")));
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
 test("maestroEnv puts ~/bin and Homebrew ahead of launchd's bare PATH", async () => {
   const { maestroEnv } = await import("../src/inbox/maestro.ts");
   const env = maestroEnv({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", KEEP: "1" }, "/Users/someone");
