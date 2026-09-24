@@ -209,3 +209,12 @@ test("a maestro failure on /ask is shown as a warning, and nothing is silently a
     await h.teardown();
   }
 });
+
+test("maestroEnv puts ~/bin and Homebrew ahead of launchd's bare PATH", async () => {
+  const { maestroEnv } = await import("../src/inbox/maestro.ts");
+  const env = maestroEnv({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", KEEP: "1" }, "/Users/someone");
+  assert.equal(env.PATH, "/Users/someone/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+  assert.equal(env.KEEP, "1");
+  const again = maestroEnv({ PATH: "/opt/homebrew/bin:/usr/bin" }, "/Users/someone");
+  assert.equal(again.PATH, "/Users/someone/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin");
+});

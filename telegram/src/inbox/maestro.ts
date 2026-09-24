@@ -9,6 +9,8 @@
 // machine.
 
 import { execFile } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { isTestMode } from "../config.ts";
 
 export class MaestroError extends Error {}
@@ -28,6 +30,16 @@ function resolveBin(): string {
   return "maestro";
 }
 
+// The daemon runs under launchd, whose PATH is only /usr/bin:/bin:/usr/sbin:/sbin (read
+// first-hand on REDD-mason). `maestro` lives in ~/bin, and its `#!/usr/bin/env python3` needs
+// Homebrew's python, so both directories go in front of whatever PATH the daemon was given.
+// The child resolves `maestro` and `python3` against this PATH.
+export function maestroEnv(base: NodeJS.ProcessEnv = process.env, home: string = homedir()): NodeJS.ProcessEnv {
+  const extra = [join(home, "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+  const rest = (base.PATH ?? "").split(":").filter((dir) => dir && !extra.includes(dir));
+  return { ...base, PATH: [...extra, ...rest].join(":") };
+}
+
 function run(argv: string[], opts: { input?: string } = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     let bin: string;
@@ -37,7 +49,7 @@ function run(argv: string[], opts: { input?: string } = {}): Promise<{ stdout: s
       reject(error as MaestroError);
       return;
     }
-    const child = execFile(bin, argv, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const child = execFile(bin, argv, { maxBuffer: 10 * 1024 * 1024, env: maestroEnv() }, (error, stdout, stderr) => {
       if (error) {
         const message = stderr.trim() || (error as Error).message;
         reject(new MaestroError(message));
