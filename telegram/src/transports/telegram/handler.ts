@@ -26,7 +26,9 @@ import {
   decodeCallback,
 } from "./render.ts";
 import { maestroAdd, maestroRecent, MaestroError } from "../../inbox/maestro.ts";
-import { renderInboxList, renderInboxDetail, decodeInboxCallback } from "../../inbox/render.ts";
+import { renderInboxList, renderInboxDetail, decodeInboxCallback, escapeHtml, truncate } from "../../inbox/render.ts";
+import { startTailscaleCheck, parseUnreachableAlias, isValidAlias } from "../../inbox/tailscale.ts";
+import type { TailscaleCheckHandle } from "../../inbox/tailscale.ts";
 
 // How far back /inbox looks, and which hosts it merges: this machine's own inbox ("local")
 // plus the other laptop's ("duo"), read over ssh by maestro itself — matches the exact
@@ -287,9 +289,64 @@ async function sendInboxList(ctx: HandlerContext, chatId: number): Promise<void>
     const { items, warnings } = await maestroRecent(INBOX_RECENT_HOURS, INBOX_HOSTS);
     const view = renderInboxList(items, warnings);
     await ctx.api.sendMessage(String(chatId), view.text, { html: true, replyMarkup: view.replyMarkup });
+    // Fire-and-forget: the check can take up to WATCH_MS to resolve, and must not hold up the
+    // poller's next update (a callback tap, another /inbox) while it waits.
+    void maybeStartTailscaleChecks(ctx, chatId, warnings).catch((error) => {
+      ctx.store.appendAudit("tailscale_check_error", null, null, { message: (error as Error).message });
+    });
   } catch (error) {
     await ctx.api.sendMessage(String(chatId), `⚠️ maestro is unreachable: ${(error as Error).message}`);
   }
+}
+
+// Tracks, per host alias, a Tailscale SSH check we've already kicked off and are still
+// waiting on (either for a link to appear, or — once one has — for Reid to approve it and the
+// ssh process to close). Module-level: one daemon process serves one chat, so this is exactly
+// the "at most one pending check per alias" the feature asks for.
+interface PendingTailscaleCheck {
+  link?: string;
+}
+const pendingTailscaleChecks = new Map<string, PendingTailscaleCheck>();
+
+async function maybeStartTailscaleChecks(ctx: HandlerContext, chatId: number, warnings: string[]): Promise<void> {
+  for (const warning of warnings) {
+    const alias = parseUnreachableAlias(warning);
+    if (!alias || !isValidAlias(alias) || !INBOX_HOSTS.includes(alias)) continue;
+    await maybeStartTailscaleCheckForAlias(ctx, chatId, alias);
+  }
+}
+
+async function maybeStartTailscaleCheckForAlias(ctx: HandlerContext, chatId: number, alias: string): Promise<void> {
+  const existing = pendingTailscaleChecks.get(alias);
+  if (existing) {
+    if (existing.link) await sendTailscaleLinkMessage(ctx, chatId, alias, existing.link);
+    return; // a check is already running (or already found a link) for this alias
+  }
+  const entry: PendingTailscaleCheck = {};
+  pendingTailscaleChecks.set(alias, entry);
+  const handle: TailscaleCheckHandle = startTailscaleCheck(alias);
+  handle.child?.once("close", () => {
+    pendingTailscaleChecks.delete(alias);
+  });
+  const result = await handle.result;
+  if (result.kind === "link") {
+    entry.link = result.url;
+    await sendTailscaleLinkMessage(ctx, chatId, alias, result.url);
+  } else {
+    pendingTailscaleChecks.delete(alias);
+    await ctx.api.sendMessage(
+      String(chatId),
+      `${escapeHtml(alias)} unreachable, and no Tailscale check link appeared (ssh said: ${escapeHtml(truncate(result.detail, 200))})`,
+      { html: true },
+    );
+  }
+}
+
+async function sendTailscaleLinkMessage(ctx: HandlerContext, chatId: number, alias: string, url: string): Promise<void> {
+  await ctx.api.sendMessage(String(chatId), `Approve the Tailscale check for ${escapeHtml(alias)}, then send /inbox again.`, {
+    html: true,
+    replyMarkup: { inline_keyboard: [[{ text: `Approve Tailscale check for ${alias}`, url }]] },
+  });
 }
 
 // `/ask <text>` becomes one maestro inbox item (kind: ask, by: reid). Plain text does not:

@@ -3,15 +3,16 @@
 
 import type { InlineKeyboardButton, ReplyMarkup } from "../transports/telegram/api.ts";
 import type { MaestroItem } from "./maestro.ts";
+import { parseUnreachableAlias } from "./tailscale.ts";
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const MAX_LIST_BUTTONS = 10;
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function truncate(label: string, max: number): string {
+export function truncate(label: string, max: number): string {
   return label.length > max ? `${label.slice(0, max - 1)}…` : label;
 }
 
@@ -78,7 +79,10 @@ export function renderInboxList(items: MaestroItem[], warnings: string[]): { tex
     if (items.length > shown.length) lines.push(`…and ${items.length - shown.length} more (not shown)`);
   }
 
-  for (const warning of warnings) lines.push(`⚠️ ${escapeHtml(warning)}`);
+  for (const warning of warnings) {
+    const alias = parseUnreachableAlias(warning);
+    lines.push(alias ? `⚠️ ${escapeHtml(alias)} unreachable — Tailscale may need a check` : `⚠️ ${escapeHtml(warning)}`);
+  }
 
   return { text: lines.join("\n"), replyMarkup: { inline_keyboard: rows } };
 }

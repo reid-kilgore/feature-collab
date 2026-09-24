@@ -84,6 +84,29 @@ process.stderr.write("maestro-stub: unknown command " + cmd + "\\n");
 process.exit(1);
 `;
 
+// A stub `ssh` binary, for the Tailscale-check-link feature in src/inbox/tailscale.ts. Like
+// the maestro stub above, it is file-driven so tests write fixtures instead of poking at argv
+// parsing, and every test gets a harness-scoped instance so no test ever spawns the real ssh
+// on this machine:
+//   <home>/ssh-output.txt   - written to stdout as one write, then (unless ssh-hang is present)
+//                             the process exits 0. Put a login.tailscale.com URL on its own
+//                             line to simulate a check link appearing.
+//   <home>/ssh-hang         - if present, the stub never exits on its own (simulates ssh
+//                             waiting on approval); the harness kills it in teardown.
+const SSH_STUB_SOURCE = `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const home = __dirname;
+fs.appendFileSync(path.join(home, "ssh-invocations.log"), "1\\n");
+const outputFile = path.join(home, "ssh-output.txt");
+if (fs.existsSync(outputFile)) process.stdout.write(fs.readFileSync(outputFile, "utf8"));
+if (fs.existsSync(path.join(home, "ssh-hang"))) {
+  setInterval(() => {}, 1000 * 1000);
+} else {
+  process.exit(0);
+}
+`;
+
 export interface Harness {
   home: string;
   fake: FakeTelegram;
@@ -119,6 +142,10 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
   writeFileSync(maestroStubPath, MAESTRO_STUB_SOURCE, { mode: 0o755 });
   chmodSync(maestroStubPath, 0o755);
 
+  const sshStubPath = path.join(home, "ssh-stub.cjs");
+  writeFileSync(sshStubPath, SSH_STUB_SOURCE, { mode: 0o755 });
+  chmodSync(sshStubPath, 0o755);
+
   // Second, independent layer under the AGENT_TELEGRAM_MAESTRO_BIN guard in
   // src/inbox/maestro.ts: if the real `maestro` binary somehow ran anyway (a symlink shadowing
   // the stub, a future code path that calls it directly), it still could not reach the real
@@ -138,6 +165,11 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     AGENT_TELEGRAM_MAESTRO_BIN: maestroStubPath,
     // Belt-and-suspenders: see the comment on maestroInboxDir above.
     MAESTRO_INBOX_DIR: maestroInboxDir,
+    // Never the real ssh on PATH: see SSH_STUB_SOURCE above for how tests drive it.
+    AGENT_TELEGRAM_SSH_BIN: sshStubPath,
+    // Fast windows so a test doesn't have to wait out the real 15s/10min ones.
+    AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "500",
+    AGENT_TELEGRAM_TAILSCALE_HARDKILL_MS: "3000",
   };
 
   // Live enforcement of the invariant, on the exact value about to be handed to every spawned
