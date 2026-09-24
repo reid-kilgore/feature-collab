@@ -25,6 +25,15 @@ import {
   renderBatchDone,
   decodeCallback,
 } from "./render.ts";
+import { maestroAdd, maestroRecent, MaestroError } from "../../inbox/maestro.ts";
+import { renderInboxList, renderInboxDetail, decodeInboxCallback } from "../../inbox/render.ts";
+
+// How far back /inbox looks, and which hosts it merges: this machine's own inbox ("local")
+// plus the other laptop's ("duo"), read over ssh by maestro itself — matches the exact
+// `maestro recent --json --by reid --hours 48 --hosts local,duo` invocation this feature
+// was specified against.
+const INBOX_RECENT_HOURS = 48;
+const INBOX_HOSTS = ["local", "duo"];
 
 function sanitizeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 60) || "document";
@@ -165,6 +174,11 @@ async function handleCallback(ctx: HandlerContext, cq: TgCallbackQuery): Promise
     await handleCancelConfirmation(ctx, cq, data);
     return;
   }
+  const inboxId = decodeInboxCallback(data);
+  if (inboxId !== undefined) {
+    await handleInboxDetail(ctx, cq, inboxId);
+    return;
+  }
   const decoded = decodeCallback(data);
   if (!decoded) {
     await ctx.api.answerCallbackQuery(cq.id).catch(() => {});
@@ -245,6 +259,52 @@ async function handleCancelConfirmation(ctx: HandlerContext, cq: TgCallbackQuery
   await ctx.api.answerCallbackQuery(cq.id).catch(() => {});
 }
 
+// Tapping a button in the /inbox list: re-fetch that item's full record (the list message
+// only carries a truncated snippet) and render it as its own chat message with the trail.
+async function handleInboxDetail(ctx: HandlerContext, cq: TgCallbackQuery, id: string): Promise<void> {
+  const chatId = cq.message?.chat.id;
+  if (chatId === undefined) {
+    await ctx.api.answerCallbackQuery(cq.id).catch(() => {});
+    return;
+  }
+  await ctx.api.answerCallbackQuery(cq.id).catch(() => {});
+  try {
+    const { items, warnings } = await maestroRecent(INBOX_RECENT_HOURS, INBOX_HOSTS);
+    const item = items.find((i) => i.id === id);
+    if (!item) {
+      const suffix = warnings.length ? ` (${warnings.join("; ")})` : "";
+      await ctx.api.sendMessage(String(chatId), `Could not find ${id} in the last ${INBOX_RECENT_HOURS}h${suffix}.`);
+      return;
+    }
+    await ctx.api.sendMessage(String(chatId), renderInboxDetail(item), { html: true });
+  } catch (error) {
+    await ctx.api.sendMessage(String(chatId), `⚠️ maestro is unreachable: ${(error as Error).message}`);
+  }
+}
+
+async function sendInboxList(ctx: HandlerContext, chatId: number): Promise<void> {
+  try {
+    const { items, warnings } = await maestroRecent(INBOX_RECENT_HOURS, INBOX_HOSTS);
+    const view = renderInboxList(items, warnings);
+    await ctx.api.sendMessage(String(chatId), view.text, { html: true, replyMarkup: view.replyMarkup });
+  } catch (error) {
+    await ctx.api.sendMessage(String(chatId), `⚠️ maestro is unreachable: ${(error as Error).message}`);
+  }
+}
+
+// `/ask <text>` becomes one maestro inbox item (kind: ask, by: reid). Plain text does not:
+// it still goes to tg recv, below. A maestro failure here is shown as a short warning, never a crash
+// and never a silently dropped message.
+async function addToMaestroAsk(ctx: HandlerContext, chatId: number, text: string): Promise<void> {
+  try {
+    const id = await maestroAdd(text);
+    await ctx.api.sendMessage(String(chatId), `Added ${id} to the inbox.`);
+  } catch (error) {
+    const message = error instanceof MaestroError ? error.message : (error as Error).message;
+    await ctx.api.sendMessage(String(chatId), `⚠️ Could not reach maestro, nothing was added: ${message}`);
+  }
+}
+
 async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<void> {
   if (!isAllowed(ctx, message.chat.id, message.from?.id)) {
     ctx.store.appendAudit("unauthorized_update", null, null, { kind: "message", chatId: message.chat.id, userId: message.from?.id });
@@ -308,16 +368,32 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     });
     return;
   }
+  if (text === "/ask" || text.startsWith("/ask ") || text.startsWith("/ask@")) {
+    const match = /^\/ask(?:@\w+)?(?:\s+([\s\S]+))?$/.exec(text);
+    const body = match?.[1]?.trim();
+    if (!body) {
+      await ctx.api.sendMessage(String(message.chat.id), "Usage: /ask <text>");
+      return;
+    }
+    await addToMaestroAsk(ctx, message.chat.id, body);
+    return;
+  }
+  if (text === "/inbox") {
+    await sendInboxList(ctx, message.chat.id);
+    return;
+  }
   if (text === "/help") {
     await ctx.api.sendMessage(
       String(message.chat.id),
-      "Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/help - this message\n\nAnything else you send goes to the agent's inbox (tg recv).",
+      "Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/inbox - recent items you added, tap one for its detail and trail\n/help - this message\n\nAnything else you send goes to the agent's inbox (tg recv).",
     );
     return;
   }
 
   // Not a reply to a question, not a command: this is free-form conversation for the
-  // agent's inbox, not a hint. Text, photos, and documents are all accepted.
+  // agent's inbox, not a hint. Text, photos, and documents are all accepted. `/ask <text>`
+  // above is the only way plain text becomes a maestro item — sessions rely on tg recv
+  // seeing every plain message, so that routing stays untouched.
   await addToInbox(ctx, message);
 }
 

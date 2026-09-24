@@ -133,8 +133,19 @@ export function configExists(): boolean {
   return existsSync(configFile());
 }
 
+// Fail-closed guard: under AGENT_TELEGRAM_HOME (test mode), there is no legitimate reason to
+// fall through to the real Telegram API — that would reach Reid's phone from a test run. A
+// test harness must set TELEGRAM_API_BASE to a fake server; a process that forgot to refuses
+// outright instead of silently calling the real thing.
 export function apiBase(): string {
-  return process.env.TELEGRAM_API_BASE ?? "https://api.telegram.org";
+  const override = process.env.TELEGRAM_API_BASE;
+  if (override) return override;
+  if (testHome) {
+    throw new Error(
+      "refusing to call the real Telegram API under AGENT_TELEGRAM_HOME (test mode): set TELEGRAM_API_BASE to a fake server first",
+    );
+  }
+  return "https://api.telegram.org";
 }
 
 // Telegram bot tokens look like `123456789:AAExampleTokenCharacters-_HereMore`. Redact
