@@ -132,7 +132,7 @@ interface TgMessage {
   chat: TgChat;
   text?: string;
   caption?: string;
-  reply_to_message?: { message_id: number };
+  reply_to_message?: { message_id: number; text?: string; caption?: string };
   photo?: TgPhotoSize[];
   document?: TgDocument;
 }
@@ -349,9 +349,9 @@ async function sendTailscaleLinkMessage(ctx: HandlerContext, chatId: number, ali
   });
 }
 
-// `/ask <text>` becomes one maestro inbox item (kind: ask, by: reid). Plain text does not:
-// it still goes to tg recv, below. A maestro failure here is shown as a short warning, never a crash
-// and never a silently dropped message.
+// `/ask <text>` and unsolicited free text (see handleMessage) both land here: one maestro
+// inbox item (kind: ask, by: reid), with the daemon replying with its id. A maestro failure
+// is shown as a short warning, never a crash and never a silently dropped message.
 async function addToMaestroAsk(ctx: HandlerContext, chatId: number, text: string): Promise<void> {
   try {
     const id = await maestroAdd(text);
@@ -360,6 +360,17 @@ async function addToMaestroAsk(ctx: HandlerContext, chatId: number, text: string
     const message = error instanceof MaestroError ? error.message : (error as Error).message;
     await ctx.api.sendMessage(String(chatId), `⚠️ Could not reach maestro, nothing was added: ${message}`);
   }
+}
+
+// A Telegram reply carries the full replied-to message back to us. Quote the first 200
+// characters of it so a maestro item made from a bare "yes" or "do that" still carries what
+// it was answering, without pulling in the whole prior conversation.
+const REPLY_QUOTE_LIMIT = 200;
+
+function replyQuote(replyTo: TgMessage["reply_to_message"]): string | undefined {
+  const quoted = replyTo?.text ?? replyTo?.caption;
+  if (!quoted) return undefined;
+  return quoted.slice(0, REPLY_QUOTE_LIMIT);
 }
 
 async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<void> {
@@ -447,11 +458,19 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     return;
   }
 
-  // Not a reply to a question, not a command: this is free-form conversation for the
-  // agent's inbox, not a hint. Text, photos, and documents are all accepted. `/ask <text>`
-  // above is the only way plain text becomes a maestro item — sessions rely on tg recv
-  // seeing every plain message, so that routing stays untouched.
+  // Not a reply to a live question, not a command: this is unsolicited text or an attachment.
+  // It still goes to the agent's inbox unchanged (tg recv keeps seeing every message, so
+  // nothing that already reads that inbox breaks). A plain text message additionally becomes
+  // a maestro inbox item, exactly as /ask does, so a message with no session listening for it
+  // still gets triaged instead of sitting unread. Photos and documents (no message.text) are
+  // left as inbox-only, same as before: maestro items are for text a person can triage from
+  // the recent-items list, and a bare caption rarely stands on its own there.
   await addToInbox(ctx, message);
+  if (text) {
+    const quoted = replyQuote(message.reply_to_message);
+    const body = quoted ? `${text}\n\n(replying to: "${quoted}")` : text;
+    await addToMaestroAsk(ctx, message.chat.id, body);
+  }
 }
 
 async function addToInbox(ctx: HandlerContext, message: TgMessage): Promise<void> {

@@ -48,6 +48,100 @@ test("/ask <text> adds a maestro item and replies with its id", async () => {
   }
 });
 
+test("an unsolicited plain message becomes a maestro item and replies with its id", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "lately if I send just a message it does not seem to get picked up" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+
+    const reply = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").startsWith("Added "))!;
+    assert.match(String(reply.body.text), /^Added t1 to the inbox\.$/);
+
+    const added = readAdded(h.home);
+    assert.equal(added.length, 1);
+    assert.equal(added[0]!.text, "lately if I send just a message it does not seem to get picked up");
+
+    // It still lands in the local inbox unchanged, so tg recv keeps working for anything
+    // that reads it.
+    const recv = await h.runCli(["recv"]);
+    assert.equal(JSON.parse(recv.stdout.trim()).messages.length, 1);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a reply to an old bot message becomes a maestro item carrying a quote of what it replied to", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({
+      chatId: Number(h.chatId),
+      userId: Number(h.userId),
+      text: "yes, do that",
+      replyToMessageId: 1,
+      replyToText: "Finished the migration. Want to see the 3 files that needed manual review?",
+    });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+
+    const added = readAdded(h.home);
+    assert.equal(added.length, 1);
+    assert.match(added[0]!.text, /^yes, do that/);
+    assert.match(added[0]!.text, /Finished the migration\. Want to see the 3 files that needed manual review\?/);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a non-allowed user's plain message is ignored: nothing is added, nothing is sent back", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: 9999, userId: 8888, text: "sneak this in" });
+    await sleep(500); // no reply is expected, so just give the daemon a beat to (not) act
+
+    assert.equal(readAdded(h.home).length, 0);
+    assert.equal(h.fake.sent.filter((m) => m.method === "sendMessage").length, 0);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a maestro failure on an unsolicited message is shown as a warning, and nothing is silently added", async () => {
+  const h = await setupHarness();
+  try {
+    writeFileSync(path.join(h.home, "maestro-fail-add"), "stub down for maintenance\n");
+
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "does this get lost" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("⚠️")));
+
+    assert.equal(readAdded(h.home).length, 0);
+
+    // The message is still recorded in the local inbox despite the maestro failure.
+    const recv = await h.runCli(["recv"]);
+    assert.equal(JSON.parse(recv.stdout.trim()).messages.length, 1);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
 test("a reply to a pending tg-ask question is not added to the maestro inbox", async () => {
   const h = await setupHarness();
   try {
