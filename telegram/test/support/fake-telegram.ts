@@ -59,14 +59,16 @@ export class FakeTelegram {
     });
   }
 
-  pushMessage(opts: { chatId: number; userId: number; text: string; replyToMessageId?: number }): number {
+  pushMessage(opts: { chatId: number; userId: number; text: string; replyToMessageId?: number; replyToText?: string }): number {
     return this.pushUpdate({
       message: {
         message_id: this.nextMessageId++,
         from: { id: opts.userId },
         chat: { id: opts.chatId },
         text: opts.text,
-        ...(opts.replyToMessageId ? { reply_to_message: { message_id: opts.replyToMessageId } } : {}),
+        ...(opts.replyToMessageId
+          ? { reply_to_message: { message_id: opts.replyToMessageId, ...(opts.replyToText ? { text: opts.replyToText } : {}) } }
+          : {}),
       },
     });
   }

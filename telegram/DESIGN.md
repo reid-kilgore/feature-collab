@@ -305,3 +305,22 @@ else the absolute cwd; overridable with `--channel <key>` or `AGENT_TELEGRAM_CHA
 
 `tg recv` returns only messages routed to its channel plus unrouted ones. `/status` lists channels
 with their last activity and unread counts, so Reid can see who is listening.
+
+### Maestro fallback for unsolicited text (added 2026-09-26)
+
+The inbox above only helps when some session is actually running `tg recv`. Often none is: Reid
+sends a message or replies to an old one, no session is listening, and it used to sit unread until
+someone happened to poll. Now every plain text message that is **not** a reply to a live question
+and **not** a `/command` also becomes a maestro inbox item — the same `maestro add` call `/ask`
+makes — so it gets triaged the way any other maestro item does. The daemon replies with the new
+item's id, same as `/ask`. The message still goes to the local inbox unchanged (`tg recv` keeps
+seeing it), so nothing that already reads that inbox breaks.
+
+If the message is a Telegram reply to an earlier message, the maestro item quotes the first 200
+characters of what it replied to, so a bare "yes, do that" still carries its context. A maestro
+failure here is shown to Reid as a `⚠️` warning, never a crash and never a silently dropped
+message — the same disposition `/ask` uses.
+
+Photos and documents (no `message.text`) are unaffected: they still go to the local inbox only, as
+before. A bare caption rarely stands on its own in the maestro recent-items list the way a full
+text message does, so this fallback is text-only.

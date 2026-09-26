@@ -118,3 +118,7 @@ Same Bash-timeout problem as `tg ask`: use `run_in_background` and poll, or acce
   (Telegram has no side panel to show them next to the question).
 - A reply to a live `tg ask` question always goes to that question, never to the inbox.
   Everything else Reid sends — text, photos, documents — goes to the inbox for `tg recv`.
+- Plain text that isn't a reply to a live question also becomes a maestro inbox item (like
+  `/ask`), so a message with no session running `tg recv` still gets triaged instead of
+  sitting unread. A reply to an earlier message carries a short quote of it for context.
+  Photos and documents are inbox-only, unchanged.
