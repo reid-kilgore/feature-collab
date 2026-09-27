@@ -386,6 +386,18 @@ function replyQuote(replyTo: TgMessage["reply_to_message"]): string | undefined 
   return quoted.slice(0, REPLY_QUOTE_LIMIT);
 }
 
+// The maestro item made from a reply quotes what was replied to. When that message was one
+// `tg send` sent on a recorded channel, name the channel too, so the item doesn't read as an
+// answer to nobody in particular. Reuses the same message_channel lookup that routes the reply
+// itself (ctx.channelForMessage), rather than a second one.
+function replySuffix(ctx: HandlerContext, replyTo: TgMessage["reply_to_message"]): string {
+  const quoted = replyQuote(replyTo);
+  if (!quoted) return "";
+  const channel = replyTo ? ctx.channelForMessage(replyTo.message_id) : undefined;
+  const channelNote = channel ? ` · reply to a notice from channel ${channel}` : "";
+  return `\n\n(replying to: "${quoted}")${channelNote}`;
+}
+
 async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<void> {
   if (!isAllowed(ctx, message.chat.id, message.from?.id)) {
     ctx.store.appendAudit("unauthorized_update", null, null, { kind: "message", chatId: message.chat.id, userId: message.from?.id });
@@ -479,8 +491,7 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
   const unknownCommand = /^\/(\S+)/.exec(text);
   if (unknownCommand) {
     await addToInbox(ctx, message);
-    const quoted = replyQuote(message.reply_to_message);
-    const body = quoted ? `${text}\n\n(replying to: "${quoted}")` : text;
+    const body = `${text}${replySuffix(ctx, message.reply_to_message)}`;
     await addToMaestroAsk(ctx, message.chat.id, body);
     await ctx.api.sendMessage(String(message.chat.id), `unknown command /${unknownCommand[1]}; see /help`);
     return;
@@ -495,8 +506,7 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
   // the recent-items list, and a bare caption rarely stands on its own there.
   await addToInbox(ctx, message);
   if (text) {
-    const quoted = replyQuote(message.reply_to_message);
-    const body = quoted ? `${text}\n\n(replying to: "${quoted}")` : text;
+    const body = `${text}${replySuffix(ctx, message.reply_to_message)}`;
     await addToMaestroAsk(ctx, message.chat.id, body);
   }
 }

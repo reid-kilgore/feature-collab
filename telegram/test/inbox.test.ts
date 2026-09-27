@@ -179,6 +179,41 @@ test("a reply to an old bot message becomes a maestro item carrying a quote of w
     assert.equal(added.length, 1);
     assert.match(added[0]!.text, /^yes, do that/);
     assert.match(added[0]!.text, /Finished the migration\. Want to see the 3 files that needed manual review\?/);
+    // Message id 1 was never sent through `tg send`, so no channel is on record for it: the
+    // item names no channel.
+    assert.doesNotMatch(added[0]!.text, /reply to a notice from channel/);
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a reply to a message tg send sent on a channel names that channel in the maestro item", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    const sendResult = await h.runCli(["send", "--channel", "maestro", "Finished the migration. Want to see the 3 files that needed manual review?"]);
+    assert.equal(sendResult.code, 0, sendResult.stderr);
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage"));
+    const notice = h.fake.sent.find((m) => m.method === "sendMessage")!;
+    const noticeMessageId = h.fake.sent.filter((m) => m.method === "sendMessage").indexOf(notice) + 1;
+
+    h.fake.pushMessage({
+      chatId: Number(h.chatId),
+      userId: Number(h.userId),
+      text: "yes, do that",
+      replyToMessageId: noticeMessageId,
+      replyToText: "Finished the migration. Want to see the 3 files that needed manual review?",
+    });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+
+    const added = readAdded(h.home);
+    assert.equal(added.length, 1);
+    assert.match(added[0]!.text, /^yes, do that/);
+    assert.match(added[0]!.text, /\(replying to: "Finished the migration\. Want to see the 3 files that needed manual review\?"\) · reply to a notice from channel maestro/);
 
     daemon.kill("SIGKILL");
   } finally {
