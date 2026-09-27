@@ -98,6 +98,10 @@ export class TelegramApi {
     return this.call("getMe");
   }
 
+  async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
+    await this.call("setMyCommands", { commands });
+  }
+
   async getUpdates(offset: number, timeoutSeconds = 0, signal?: AbortSignal): Promise<unknown[]> {
     return this.call<unknown[]>("getUpdates", { offset, timeout: timeoutSeconds, allowed_updates: ["message", "callback_query"] }, signal);
   }
