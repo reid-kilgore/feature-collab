@@ -19,7 +19,7 @@ import {
 import { Store, newId, newShortId } from "../core/store.ts";
 import type { QuestionStatus } from "../core/store.ts";
 import { TelegramApi, classifyAttachment } from "../transports/telegram/api.ts";
-import { createTelegramPort } from "../transports/telegram/handler.ts";
+import { createTelegramPort, BOT_COMMANDS } from "../transports/telegram/handler.ts";
 import type { HandlerContext } from "../transports/telegram/handler.ts";
 import { Poller } from "../transports/telegram/poller.ts";
 import { startBatch, cancelBatch, expireBatch, isBatchTimedOut, buildResult } from "../core/interaction.ts";
@@ -137,6 +137,14 @@ export async function runDaemon(): Promise<void> {
     channelForMessage: (messageId) => store.getChannelForMessage(messageId),
     pickActiveChannel,
   };
+
+  // Registers the "/" menu Telegram shows in the chat UI. Best-effort: a failure here
+  // (network blip, API change) is logged and never stops the daemon from starting.
+  try {
+    await api.setMyCommands(BOT_COMMANDS);
+  } catch (error) {
+    log(`setMyCommands failed: ${(error as Error).message}`);
+  }
 
   await recoverOnStartup(store, port, onResolved, log);
 

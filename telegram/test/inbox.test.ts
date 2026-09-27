@@ -10,6 +10,7 @@ import path from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./support/harness.ts";
 import type { SentMessage } from "./support/fake-telegram.ts";
+import { BOT_COMMANDS } from "../src/transports/telegram/handler.ts";
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -41,6 +42,90 @@ test("/ask <text> adds a maestro item and replies with its id", async () => {
     const added = readAdded(h.home);
     assert.equal(added.length, 1);
     assert.equal(added[0]!.text, "buy milk");
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the daemon registers the / command menu at startup", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setMyCommands"));
+    const call = h.fake.sent.find((m) => m.method === "setMyCommands")!;
+    const commands = call.body.commands as Array<{ command: string; description: string }>;
+    for (const expected of BOT_COMMANDS) {
+      assert.ok(
+        commands.some((c) => c.command === expected.command && c.description === expected.description),
+        `expected setMyCommands to include /${expected.command}`,
+      );
+    }
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("/add <text> adds a maestro item exactly as /ask does", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/add buy milk" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+
+    const reply = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").startsWith("Added "))!;
+    assert.match(String(reply.body.text), /^Added t1 to the inbox\.$/);
+
+    const added = readAdded(h.home);
+    assert.equal(added.length, 1);
+    assert.equal(added[0]!.text, "buy milk");
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("an unknown /command still files a maestro item and the reply points at /help", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/frobnicate the widget" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("unknown command")));
+
+    const hint = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").includes("unknown command"))!;
+    assert.match(String(hint.body.text), /unknown command \/frobnicate; see \/help/);
+
+    const added = readAdded(h.home);
+    assert.equal(added.length, 1);
+    assert.equal(added[0]!.text, "/frobnicate the widget");
+
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("/help lists /add", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "/help" });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Commands:")));
+
+    const help = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").includes("Commands:"))!;
+    assert.match(String(help.body.text), /\/add <text> - same as \/ask/);
 
     daemon.kill("SIGKILL");
   } finally {

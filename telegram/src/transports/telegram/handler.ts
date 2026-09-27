@@ -37,6 +37,19 @@ import type { TailscaleCheckHandle } from "../../inbox/tailscale.ts";
 const INBOX_RECENT_HOURS = 48;
 const INBOX_HOSTS = ["local", "duo"];
 
+// The commands Telegram's "/" menu shows, registered with setMyCommands at daemon start
+// (see src/daemon/server.ts) and listed by /help below. Keep these two uses in sync: one
+// source of truth for what a command is called and what it does.
+export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
+  { command: "status", description: "pending questions, unread inbox count, listening state" },
+  { command: "pending", description: "resend the current question" },
+  { command: "cancel", description: "cancel the current question batch" },
+  { command: "ask", description: "add an item to the maestro inbox" },
+  { command: "add", description: "same as /ask" },
+  { command: "inbox", description: "recent items you added, tap one for its detail and trail" },
+  { command: "help", description: "this message" },
+];
+
 function sanitizeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 60) || "document";
 }
@@ -436,11 +449,13 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     });
     return;
   }
-  if (text === "/ask" || text.startsWith("/ask ") || text.startsWith("/ask@")) {
-    const match = /^\/ask(?:@\w+)?(?:\s+([\s\S]+))?$/.exec(text);
+  // /add is an alias of /ask (matches `maestro add`): same command, same behavior.
+  if (/^\/(?:ask|add)(?:@\w+)?(?:\s|$)/.test(text)) {
+    const match = /^\/(?:ask|add)(?:@\w+)?(?:\s+([\s\S]+))?$/.exec(text);
     const body = match?.[1]?.trim();
+    const commandName = text.startsWith("/add") ? "/add" : "/ask";
     if (!body) {
-      await ctx.api.sendMessage(String(message.chat.id), "Usage: /ask <text>");
+      await ctx.api.sendMessage(String(message.chat.id), `Usage: ${commandName} <text>`);
       return;
     }
     await addToMaestroAsk(ctx, message.chat.id, body);
@@ -453,8 +468,21 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
   if (text === "/help") {
     await ctx.api.sendMessage(
       String(message.chat.id),
-      "Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/inbox - recent items you added, tap one for its detail and trail\n/help - this message\n\nAnything else you send goes to the agent's inbox (tg recv).",
+      "Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/add <text> - same as /ask\n/inbox - recent items you added, tap one for its detail and trail\n/help - this message\n\nAnything else you send goes to the maestro inbox, and still to the agent's inbox (tg recv).",
     );
+    return;
+  }
+
+  // A slash command we don't recognize still files a maestro item through the free-text
+  // path below, but the reply also points at /help so it doesn't look like it was silently
+  // accepted.
+  const unknownCommand = /^\/(\S+)/.exec(text);
+  if (unknownCommand) {
+    await addToInbox(ctx, message);
+    const quoted = replyQuote(message.reply_to_message);
+    const body = quoted ? `${text}\n\n(replying to: "${quoted}")` : text;
+    await addToMaestroAsk(ctx, message.chat.id, body);
+    await ctx.api.sendMessage(String(message.chat.id), `unknown command /${unknownCommand[1]}; see /help`);
     return;
   }
 
