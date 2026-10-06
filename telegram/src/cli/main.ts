@@ -10,6 +10,7 @@ import { runDaemon } from "../daemon/server.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, DocumentInput } from "../contract/payload.ts";
 import type { Level } from "../contract/notify.ts";
+import { readPresence, setPresence, describePresence } from "../presence.ts";
 import { getToken, readConfig, configExists, shortHostname, redact } from "../config.ts";
 import type {
   DaemonRequest,
@@ -50,6 +51,9 @@ async function main(): Promise<void> {
     case "recv":
       await cmdRecv(rest);
       return;
+    case "presence":
+      cmdPresence(rest);
+      return;
     case "daemon":
       await runDaemon();
       return;
@@ -76,6 +80,7 @@ Commands:
   cancel <id|all>
   wait <id>
   recv [--wait] [--timeout DURATION] [--peek] [--channel KEY]
+  presence [show] | away [--note TEXT] [--for DURATION|--no-expiry] [--by WHO] | present [--note TEXT] [--by WHO]
   daemon
   setup [--token T] [--chat-id ID]
   doctor`);
@@ -385,6 +390,7 @@ async function cmdStatus(): Promise<void> {
     console.log(`listening: ${status.listening}`);
     console.log(`last update: ${status.lastUpdateAgeSeconds === null ? "never" : `${status.lastUpdateAgeSeconds}s ago`}`);
     console.log(`daemon started: ${status.startedAt}`);
+    console.log(describePresence(readPresence()));
     if (status.channels.length) {
       console.log("channels:");
       for (const c of status.channels) {
@@ -394,6 +400,45 @@ async function cmdStatus(): Promise<void> {
     }
   } catch (error) {
     console.error(redact((error as Error).message));
+    process.exitCode = 1;
+  }
+}
+
+// ---- presence ----
+
+// `tg presence away --note "commuting, use Telegram"` is what a session runs when Reid says he is
+// leaving; `tg presence present` when he says he is back (a UserPromptSubmit hook does the same
+// on his next typed turn). The time always comes from the clock.
+function cmdPresence(argv: string[]): void {
+  const sub = argv[0] ?? "show";
+  const rest = argv.slice(1);
+  if (sub === "show") {
+    const reading = readPresence();
+    if (rest.includes("--json")) console.log(JSON.stringify({ state: reading.state, reason: reading.reason, record: reading.record }));
+    else console.log(describePresence(reading));
+    return;
+  }
+  if (sub !== "away" && sub !== "present") {
+    console.error("usage: tg presence [show [--json]] | away [--note TEXT] [--for DURATION | --no-expiry] [--by WHO] | present [--note TEXT] [--by WHO]");
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    let note: string | undefined;
+    let setBy: string | undefined;
+    let forSeconds: number | null | undefined;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--note") note = rest[++i];
+      else if (arg === "--by") setBy = rest[++i];
+      else if (arg === "--for" && sub === "away") forSeconds = parseDuration(rest[++i] ?? "");
+      else if (arg === "--no-expiry" && sub === "away") forSeconds = null;
+      else throw new Error(`Unknown argument: ${arg}`);
+    }
+    const record = setPresence({ state: sub, note, setBy, forSeconds });
+    console.log(describePresence({ state: record.state, reason: "recorded", record }));
+  } catch (error) {
+    console.error((error as Error).message);
     process.exitCode = 1;
   }
 }

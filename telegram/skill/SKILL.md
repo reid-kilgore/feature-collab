@@ -10,6 +10,17 @@ Reid answers a structured question from his phone. Same payload/result contract 
 `ask-questions` (see that tool's own skill/help), so if you already know `ask-questions`,
 you already know `tg ask` — just swap "ask in browser" for "ask on phone".
 
+## Presence: when Reid says he is leaving
+
+When Reid says he is leaving, commuting or otherwise away from the keyboard, run
+`tg presence away --note "<his words>"` in the same turn, so the fact survives a compaction.
+When he says he is back, run `tg presence present`. While presence is away, `ask-questions`
+refuses to open a browser form and prints the `tg ask` command to use instead, so ask with
+`tg ask` (same payload, except `quiz` questions, which `tg ask` rejects). An away record lapses
+after 8 hours (`--for 2h` or `--no-expiry` to change that), and a hook, when installed, clears it
+on his next typed turn. `tg presence` shows the current state. Do not pass `--ignore-presence`
+to `ask-questions` unless Reid is typing to you right now.
+
 ## When to use `tg send`
 
 Milestones, failures, and anything that needs attention but does not need to block:
