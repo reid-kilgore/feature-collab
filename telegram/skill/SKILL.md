@@ -125,8 +125,30 @@ Same Bash-timeout problem as `tg ask`: use `run_in_background` and poll, or acce
 - `tg` auto-starts its daemon if it isn't running; you don't need to manage it.
 - Batches of related questions: put multiple entries in `questions[]`; they are asked one
   at a time, in order, as separate Telegram messages.
-- `documents` in the payload are sent as a Markdown file attachment before the questions
-  (Telegram has no side panel to show them next to the question).
+- `documents` in the payload are sent before the questions (Telegram has no side panel to
+  show them next to the question). Each entry must be `{id, title, markdown}` or
+  `{id, title, path}` (exactly one of `markdown` or `path`). `{title, content}` is refused.
+  A relative `path` is resolved against the payload file's directory (the current directory
+  for `--json` or stdin) and may not leave it.
+
+  ```json
+  "documents": [
+    {"id": "plan", "title": "Rollout plan", "markdown": "# Plan\n\n```mermaid\ngraph TD; A-->B\n```"},
+    {"id": "notes", "title": "Notes", "path": "notes.md"},
+    {"id": "shot", "title": "Staging after the change", "path": "shots/after.png"}
+  ]
+  ```
+
+  Markdown documents arrive as a `.md` file. Pictures arrive as photos, because a phone
+  cannot render them from a file:
+  - A `path` that ends in png, jpg, jpeg, gif or webp is sent as a photo (caption: the title).
+  - `![alt](relative.png)` images inside a markdown document are sent as photos after the
+    document text, in order.
+  - Every ```` ```mermaid ```` and ```` ```svg ```` fence, in a document or in `message`, is
+    rendered to a PNG and sent as a photo captioned with the title and "diagram N". The
+    fence is replaced by `[diagram N]` in the text. If rendering fails (no Chromium, bad
+    diagram syntax), the source is sent as a code block and the daemon logs a warning on
+    stderr; it is never dropped silently.
 - A reply to a live `tg ask` question always goes to that question, never to the inbox.
   Everything else Reid sends — text, photos, documents — goes to the inbox for `tg recv`.
 - Plain text that isn't a reply to a live question also becomes a maestro inbox item (like

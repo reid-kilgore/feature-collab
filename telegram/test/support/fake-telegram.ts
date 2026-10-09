@@ -95,7 +95,11 @@ export class FakeTelegram {
       }
     } else if (contentType.includes("multipart/form-data")) {
       // We don't need the file bytes for assertions; extract the simple text fields.
-      body = { chat_id: extractField(raw, "chat_id"), caption: extractField(raw, "caption") };
+      body = {
+        chat_id: extractField(raw, "chat_id"),
+        caption: extractField(raw, "caption"),
+        filename: /filename="([^"]*)"/.exec(raw)?.[1],
+      };
     }
 
     const json = (obj: unknown, status = 200) => {

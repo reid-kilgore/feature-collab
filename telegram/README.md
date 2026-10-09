@@ -38,6 +38,19 @@ tg ask --json '{"version":1,"questions":[{"id":"go","prompt":"Deploy now?","type
 tg recv --wait --timeout 4h     # block for Reid's next message; text is his instruction to you
 ```
 
+`tg ask` documents must be `{id, title, markdown}` or `{id, title, path}`:
+
+```
+tg ask --json '{"version":1,"questions":[{"id":"ok","prompt":"Ship it?","type":"single","options":[{"value":"y","label":"Yes"},{"value":"n","label":"No"}]}],"documents":[{"id":"plan","title":"Plan","markdown":"```mermaid\ngraph TD; A-->B\n```"},{"id":"shot","title":"After","path":"after.png"}]}'
+```
+
+Pictures are sent as photos, not files: an image `path` (png/jpg/jpeg/gif/webp), markdown
+images (`![alt](rel.png)`) in a document, and every mermaid or svg fence (in a document or
+in `message`). Fences are rendered to PNG with a headless Chromium found at `$TG_CHROMIUM`
+or the newest `~/Library/Caches/ms-playwright/chromium*` install on the machine running the
+daemon (mermaid is loaded from the pinned jsdelivr CDN, so it needs network). If rendering
+fails, the fence source is sent as a code block and the daemon logs a warning.
+
 `tg ask` prints exactly the `ask-questions` result shape to stdout. See `skill/SKILL.md`
 for the full agent-facing contract, including timeouts, defaults, and conversation mode
 (`tg send` / `tg recv --wait` loop).
