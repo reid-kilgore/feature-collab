@@ -9,6 +9,7 @@ import { runSetup } from "./setup.ts";
 import { runDaemon } from "../daemon/server.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, DocumentInput } from "../contract/payload.ts";
+import { extractMarkdownImageRefs, isImagePath } from "../core/diagrams.ts";
 import type { Level } from "../contract/notify.ts";
 import { readPresence, setPresence, describePresence } from "../presence.ts";
 import { getToken, readConfig, configExists, shortHostname, redact } from "../config.ts";
@@ -237,29 +238,41 @@ async function cmdAsk(argv: string[]): Promise<void> {
   process.off("SIGINT", onSigint);
 }
 
-interface ResolvedDocument extends DocumentInput {
-  markdown: string;
-  path?: undefined;
+// Resolves a path the agent gave (relative to `from`) to a real file inside baseDir.
+// Refuses absolute paths, "..", and symlinks that leave baseDir.
+function resolveInside(baseDir: string, rel: string, from: string, label: string): string {
+  if (path.isAbsolute(rel)) throw new Error(`${label}: path must be relative`);
+  const realBase = realpathSync(baseDir);
+  const resolved = path.resolve(realpathSync(from), rel);
+  const outside = (relative: string) => relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative);
+  if (outside(path.relative(realBase, resolved))) throw new Error(`${label}: path must stay within ${baseDir}`);
+  let realResolved: string;
+  try {
+    realResolved = realpathSync(resolved);
+  } catch {
+    throw new Error(`${label}: file not found: ${rel}`);
+  }
+  if (outside(path.relative(realBase, realResolved))) throw new Error(`${label}: path must stay within ${baseDir} (symlink check)`);
+  return realResolved;
 }
 
 function resolveDocuments(documents: DocumentInput[], baseDir: string): DocumentInput[] {
   return documents.map((doc) => {
-    if (doc.markdown !== undefined) return doc;
-    if (!doc.path) throw new Error(`document ${doc.id} has neither markdown nor path`);
-    if (path.isAbsolute(doc.path)) throw new Error(`document ${doc.id}: path must be relative`);
-    const resolved = path.resolve(baseDir, doc.path);
-    const relative = path.relative(baseDir, resolved);
-    if (relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) {
-      throw new Error(`document ${doc.id}: path must stay within ${baseDir}`);
+    const label = `document ${doc.id}`;
+    let markdown: string;
+    let docDir = baseDir;
+    if (doc.markdown !== undefined) {
+      markdown = doc.markdown;
+    } else {
+      if (!doc.path) throw new Error(`${label} has neither markdown nor path`);
+      const realResolved = resolveInside(baseDir, doc.path, baseDir, label);
+      // An image path is sent as a photo; the daemon gets the checked absolute path.
+      if (isImagePath(realResolved)) return { id: doc.id, title: doc.title, path: realResolved };
+      markdown = readFileSync(realResolved, "utf8");
+      docDir = path.dirname(realResolved);
     }
-    const realBase = realpathSync(baseDir);
-    const realResolved = realpathSync(resolved);
-    const realRelative = path.relative(realBase, realResolved);
-    if (realRelative.startsWith(`..${path.sep}`) || realRelative === ".." || path.isAbsolute(realRelative)) {
-      throw new Error(`document ${doc.id}: path must stay within ${baseDir} (symlink check)`);
-    }
-    const markdown = readFileSync(realResolved, "utf8");
-    return { id: doc.id, title: doc.title, markdown } satisfies ResolvedDocument;
+    const images = extractMarkdownImageRefs(markdown).map((ref) => resolveInside(baseDir, ref, docDir, `${label} image ${ref}`));
+    return { id: doc.id, title: doc.title, markdown, ...(images.length ? { images } : {}) };
   });
 }
 

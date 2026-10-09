@@ -16,7 +16,11 @@ import os from "node:os";
 import { writeFileSync, unlinkSync, mkdtempSync, mkdirSync } from "node:fs";
 import type { AskPayload, Question } from "../../contract/payload.ts";
 import { inboxDir } from "../../config.ts";
-import { TelegramApi } from "./api.ts";
+import { TelegramApi, classifyAttachment } from "./api.ts";
+import { extractDiagrams, isImagePath } from "../../core/diagrams.ts";
+import type { Diagram } from "../../core/diagrams.ts";
+import { renderDiagramToPng } from "./diagram-render.ts";
+import type { DiagramRenderer } from "./diagram-render.ts";
 import {
   renderQuestionView,
   renderForceReplyPrompt,
@@ -59,16 +63,67 @@ export interface AllowedIdentity {
   userId: string;
 }
 
-export function createTelegramPort(api: TelegramApi, hostname: string): OutboundPort {
+function htmlEscape(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Sends a local image as a photo (a document if it is over Telegram's photo size limit).
+async function sendImageFile(api: TelegramApi, chatId: string, filePath: string, caption: string): Promise<void> {
+  const text = htmlEscape(caption).slice(0, 1000);
+  const { kind } = await classifyAttachment(filePath);
+  if (kind === "photo") await api.sendPhoto(chatId, filePath, text);
+  else await api.sendDocument(chatId, filePath, text);
+}
+
+// Renders each diagram and sends it as a photo. A diagram that cannot be rendered is sent
+// as a code block and a warning goes to stderr; it is never dropped silently.
+async function sendDiagrams(api: TelegramApi, chatId: string, title: string, diagrams: Diagram[], render: DiagramRenderer): Promise<void> {
+  for (let i = 0; i < diagrams.length; i++) {
+    const diagram = diagrams[i]!;
+    const label = `${title} — diagram ${i + 1}`;
+    let png: string | undefined;
+    try {
+      png = await render(diagram.kind, diagram.source);
+      await api.sendPhoto(chatId, png, htmlEscape(label).slice(0, 1000));
+    } catch (error) {
+      console.error(`tg: warning: could not render ${diagram.kind} diagram ${i + 1} of "${title}", sending its source as a code block instead: ${(error as Error).message}`);
+      const header = `${htmlEscape(label)} (could not render, source below)`;
+      const chunks = diagram.source.match(/[\s\S]{1,3000}/g) ?? [""];
+      for (const chunk of chunks) {
+        await api.sendMessage(chatId, `${header}\n<pre>${htmlEscape(chunk)}</pre>`, { html: true });
+      }
+    } finally {
+      if (png) {
+        try {
+          unlinkSync(png);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+
+export function createTelegramPort(api: TelegramApi, hostname: string, render: DiagramRenderer = renderDiagramToPng): OutboundPort {
   return {
     async sendHeader(batch, payload: AskPayload) {
-      const text = renderHeader(payload, hostname);
+      const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
+      const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
+      const text = renderHeader(headerPayload, hostname);
       if (text) await api.sendMessage(batch.chat_id, text, { html: true });
+      if (messageParts?.diagrams.length) {
+        await sendDiagrams(api, batch.chat_id, payload.title ?? "Message", messageParts.diagrams, render);
+      }
       if (payload.documents?.length) {
         for (const doc of payload.documents) {
+          if (doc.path && isImagePath(doc.path)) {
+            await sendImageFile(api, batch.chat_id, doc.path, doc.title);
+            continue;
+          }
+          const parts = extractDiagrams(doc.markdown ?? "");
           const dir = mkdtempSync(path.join(os.tmpdir(), "agent-telegram-doc-"));
           const filePath = path.join(dir, `${sanitizeFilename(doc.title)}.md`);
-          writeFileSync(filePath, doc.markdown ?? "");
+          writeFileSync(filePath, parts.text);
           try {
             await api.sendDocument(batch.chat_id, filePath, `📄 ${doc.title}`);
           } finally {
@@ -77,6 +132,10 @@ export function createTelegramPort(api: TelegramApi, hostname: string): Outbound
             } catch {
               // ignore
             }
+          }
+          await sendDiagrams(api, batch.chat_id, doc.title, parts.diagrams, render);
+          for (let i = 0; i < (doc.images ?? []).length; i++) {
+            await sendImageFile(api, batch.chat_id, doc.images![i]!, `${doc.title} — image ${i + 1}`);
           }
         }
       }

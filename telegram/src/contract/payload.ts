@@ -28,6 +28,9 @@ export interface DocumentInput {
   title: string;
   markdown?: string;
   path?: string;
+  // Set by the tg CLI, not by the agent: absolute paths of images referenced from the
+  // markdown, in order. The daemon sends them as photos after the document text.
+  images?: string[];
 }
 
 export interface AskPayload {
@@ -86,6 +89,7 @@ function checkString(
 }
 
 const QUESTION_TYPES = new Set(["single", "multiple", "text"]);
+const DOCUMENT_KEYS = new Set(["id", "title", "markdown", "path", "images"]);
 const ON_TIMEOUT_VALUES = new Set(["cancel", "default"]);
 
 export function validatePayload(payload: unknown): AskPayload {
@@ -208,7 +212,15 @@ export function validatePayload(payload: unknown): AskPayload {
         checkString(documentRaw.title, `${prefix}.title`, issues);
         const hasMarkdown = Object.hasOwn(documentRaw, "markdown");
         const hasPath = Object.hasOwn(documentRaw, "path");
-        if (hasMarkdown === hasPath) issue(issues, prefix, "must contain exactly one of markdown or path");
+        if (hasMarkdown === hasPath) {
+          issue(issues, prefix, `must contain exactly one of markdown or path (a document is {id, title, markdown} or {id, title, path})`);
+        }
+        for (const key of Object.keys(documentRaw)) {
+          if (!DOCUMENT_KEYS.has(key)) issue(issues, `${prefix}.${key}`, `is not a document key; documents take only id, title, and markdown or path`);
+        }
+        if (documentRaw.images !== undefined && (!Array.isArray(documentRaw.images) || documentRaw.images.some((v: unknown) => typeof v !== "string"))) {
+          issue(issues, `${prefix}.images`, "must be an array of strings");
+        }
         if (hasMarkdown) checkString(documentRaw.markdown, `${prefix}.markdown`, issues, { required: false });
         if (hasPath) checkString(documentRaw.path, `${prefix}.path`, issues);
       });

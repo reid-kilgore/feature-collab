@@ -82,7 +82,7 @@ tg ask --file q.json | --json '...' | (stdin)   [--timeout 4h] [--on-timeout can
 Payload: exactly the `ask-questions` v1 schema (`version`, `title?`, `message?`, `questions[]`,
 `documents?`), extended with optional top-level `timeoutSeconds` and `onTimeout` ("cancel" | "default")
 and optional per-question `default` (option value, or array for multiple). `documents` are accepted and
-sent as a `.md` file attachment before the questions (Telegram has no side panel).
+sent as a `.md` file attachment before the questions (Telegram has no side panel). Pictures go as photos: image `path` documents, markdown images, and mermaid/svg fences (rendered to PNG by headless Chromium in the daemon, `src/transports/telegram/diagram-render.ts`; source sent as a code block plus a stderr warning if rendering fails).
 
 Result on stdout: exactly the `ask-questions` result shape.
 
