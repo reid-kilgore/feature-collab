@@ -228,7 +228,7 @@ refuses without `{"confirm": true}`. Both routes need the same initData as every
 **Config** (hand-set in `config.json`; `tg setup` keeps it): `miniapp.port` (local port),
 `miniapp.secret` (16+ chars of letters, digits, `_`, `-`), `miniapp.publicUrl` (the Funnel https
 origin), optional `miniapp.maxAgeSeconds` (60 to 86400). When it is running the daemon sets the
-chat menu button to open the app (`setChatMenuButton`), adds `/open` to the command menu, and
+chat menu button to open the app (`setChatMenuButton`; its text is "Questions", or "Questions (N)" with N open sets, updated only when N changes, one call per burst, by `miniapp/menu-count.ts`), adds `/open` to the command menu, and
 `/open` replies with a button that opens it. The page loads Telegram's `telegram-web-app.js` from
 telegram.org; there are still no runtime dependencies (`node:http`, `node:crypto` only).
 

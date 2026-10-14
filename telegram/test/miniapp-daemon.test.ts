@@ -281,3 +281,28 @@ test("a reply to the retired reply prompt of a moved text question is told it mo
     await h.teardown();
   }
 });
+
+test("the menu button text follows the number of open sets through the daemon", async () => {
+  const h = await setupHarness();
+  try {
+    const port = await freePort();
+    writeConfig(h, { miniapp: { port, secret: SECRET, publicUrl: "https://redd.example.ts.net" } });
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const texts = () => h.fake.sent.filter((m) => m.method === "setChatMenuButton").map((m) => (m.body.menu_button as { text: string }).text);
+    await waitUntil(() => texts().length === 1);
+    assert.deepEqual(texts(), ["Questions"]);
+
+    const payload = { version: 1, questions: [{ id: "a", prompt: "Pick", type: "single", options: [{ value: "x", label: "X" }] }] };
+    const askProc = h.spawnCli(["ask", "--json", JSON.stringify(payload)]);
+    await waitUntil(() => texts().includes("Questions (1)"), 6000);
+    const shortId = /"q:([a-z0-9]+):s:0"/.exec(JSON.stringify(h.fake.sent.find((m) => JSON.stringify(m.body.reply_markup ?? "").includes('"q:'))!.body.reply_markup))![1]!;
+    h.fake.pushCallback({ chatId: Number(h.chatId), userId: Number(h.userId), data: `q:${shortId}:s:0` });
+    await new Promise<number | null>((resolve) => askProc.once("close", resolve));
+    await waitUntil(() => texts().at(-1) === "Questions", 6000);
+    assert.deepEqual(texts(), ["Questions", "Questions (1)", "Questions"]);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});

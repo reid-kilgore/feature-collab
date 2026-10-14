@@ -9,13 +9,12 @@
   var app = document.getElementById('app');
 
   var state = {
-    screen: 'list', // list | set | finished
+    screen: 'list', // list | set
     list: null,
     detail: null,
     answers: Object.create(null), // questionId -> { selected: [], other: '', text: '', skip: false }
     results: Object.create(null), // questionId -> { status, reason }
     sending: false,
-    finished: null,
     error: null,
     menu: false, // the header "…" menu is open
     sheet: null, // the long-press sheet: { batch, confirm }
@@ -23,9 +22,23 @@
     toast: null,
   };
 
+  // The native header back button needs Bot API 6.1. Without it the page draws its own.
+  var nativeBack = false;
   if (tg) {
     try { tg.ready(); tg.expand(); } catch (e) { /* not fatal */ }
-    try { if (tg.BackButton) tg.BackButton.onClick(function () { goList(); }); } catch (e) { /* not fatal */ }
+    try {
+      nativeBack = !!(tg.BackButton && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1'));
+      if (nativeBack) tg.BackButton.onClick(function () { goList(); });
+    } catch (e) { nativeBack = false; }
+  }
+
+  function syncBackButton() {
+    if (!nativeBack) return;
+    try { if (state.screen === 'set') tg.BackButton.show(); else tg.BackButton.hide(); } catch (e) { /* ignore */ }
+  }
+
+  function haptic(kind) {
+    try { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(kind); } catch (e) { /* ignore */ }
   }
 
   function h(tag, props) {
@@ -94,9 +107,7 @@
     state.menu = false;
     state.screen = 'list';
     state.detail = null;
-    state.finished = null;
     state.error = null;
-    if (tg && tg.BackButton) { try { tg.BackButton.hide(); } catch (e) { /* ignore */ } }
     loadList();
   }
 
@@ -113,13 +124,11 @@
     state.confirmCancel = false;
     state.answers = loadDraft(id);
     state.results = Object.create(null);
-    state.finished = null;
     api('batches/' + id).then(function (r) {
       if (r.status === 404) { goList(); return; }
       state.detail = r.body;
       state.screen = 'set';
       state.error = null;
-      if (tg && tg.BackButton) { try { tg.BackButton.show(); } catch (e) { /* ignore */ } }
       render();
     }, fail);
   }
@@ -198,7 +207,6 @@
     state.sending = true;
     render();
     var batchId = state.detail.id;
-    var previous = state.detail;
     api('batches/' + batchId + '/answers', { method: 'POST', body: JSON.stringify({ answers: answers }) }).then(function (r) {
       state.sending = false;
       if (r.status !== 200) { state.error = 'The bot could not take that submission. Try again.'; render(); return; }
@@ -208,17 +216,27 @@
       // Keep only the answers that did not go through, so they can be corrected and sent again.
       Object.keys(state.results).forEach(function (id) { if (state.results[id].status === 'ok') delete state.answers[id]; });
       saveDraft();
+      var sent = outcome.results.filter(function (x) { return x.status === 'ok'; }).length;
+      var failed = outcome.results.filter(function (x) { return x.status !== 'ok'; });
+      var sentText = 'Sent ' + sent + (sent === 1 ? ' answer' : ' answers');
+      if (!failed.length) {
+        haptic('success');
+        goList();
+        showToast(sentText);
+        return;
+      }
+      haptic('warning');
+      var mixed = (sent ? sentText + '. ' : '') + failed.length + ' not sent: ' + (failed[0].reason || 'it could not be applied.');
       return api('batches/' + batchId).then(function (d) {
         if (d.status === 404) {
+          // The set closed under us (cancelled, expired, or finished in chat): nothing to stay on.
           clearDraft(batchId);
-          state.finished = { batchStatus: outcome.batchStatus, previous: previous, results: outcome.results };
-          state.screen = 'finished';
-          state.detail = null;
-          if (tg && tg.BackButton) { try { tg.BackButton.show(); } catch (e) { /* ignore */ } }
+          goList();
         } else {
           state.detail = d.body;
+          render();
         }
-        render();
+        showToast(mixed, 7000);
       });
     }).catch(function (error) { state.sending = false; fail(error); });
   }
@@ -278,9 +296,7 @@
 
   function renderList() {
     var nodes = [];
-    nodes.push(h('div', { class: 'row' },
-      h('h1', { text: 'Open questions' }),
-      h('button', { class: 'link', text: 'Refresh', onclick: loadList })));
+    nodes.push(h('h1', { text: 'Open questions' }));
     if (!state.list) { nodes.push(h('p', { class: 'hint', text: 'Loading…' })); return nodes; }
     nodes.push(h('p', { class: 'hint', text: 'Read at ' + time(state.list.readAt) }));
     if (!state.list.batches.length) {
@@ -330,6 +346,39 @@
     });
     el.addEventListener('contextmenu', function (e) { e.preventDefault(); if (!fired) { cancel(); fired = true; onLong(); } });
   }
+
+  // A field plus a Done button that shows only while the field has focus (iOS has no Done bar
+  // in Telegram's web view).
+  function fieldWithDone(field) {
+    return h('div', { class: 'field' }, field,
+      h('button', { class: 'link done', text: 'Done', onpointerdown: function (e) { e.preventDefault(); }, onclick: dismissKeyboard }));
+  }
+
+  function isTextField(el) {
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'radio' && el.type !== 'checkbox';
+  }
+
+  function dismissKeyboard() {
+    var el = document.activeElement;
+    if (isTextField(el)) el.blur();
+  }
+
+  var focusedAt = 0;
+  document.addEventListener('focusin', function (e) {
+    if (!isTextField(e.target)) return;
+    focusedAt = Date.now();
+    document.body.className = 'typing';
+  });
+  document.addEventListener('focusout', function () { document.body.className = ''; });
+  // A tap anywhere that is not a field, or a drag on the page, puts the keyboard away. The
+  // drag is ignored for a moment after focus, because the browser scrolls the field into view.
+  document.addEventListener('pointerdown', function (e) {
+    if (!isTextField(e.target) && !(e.target.className === 'link done')) dismissKeyboard();
+  });
+  document.addEventListener('touchmove', function (e) {
+    if (isTextField(e.target) || Date.now() - focusedAt < 400) return;
+    dismissKeyboard();
+  }, { passive: true });
 
   function optionNode(q, opt, a, rerender) {
     var multiple = q.type === 'multiple';
@@ -385,16 +434,19 @@
     var body = h('div', { class: a.skip ? 'disabled' : '' });
     var rerender = function () { render(); };
     if (q.type === 'text') {
-      body.appendChild(h('textarea', {
+      // Multi-line: Return must add a new line, so it keeps the default key and the Done
+      // button under the field is how the keyboard is dismissed.
+      body.appendChild(fieldWithDone(h('textarea', {
         placeholder: q.placeholder || 'Your answer',
         value: a.text,
         oninput: function (e) { a.text = e.target.value; updateSendButton(); },
-      }));
+      })));
     } else {
       q.options.forEach(function (opt) { body.appendChild(optionNode(q, opt, a, rerender)); });
       if (q.allowOther) {
-        body.appendChild(h('input', {
+        body.appendChild(fieldWithDone(h('input', {
           type: 'text',
+          enterkeyhint: 'done',
           placeholder: 'Other, or a note',
           value: a.other,
           oninput: function (e) {
@@ -402,7 +454,8 @@
             if (q.type === 'single' && a.other.trim()) { a.selected = []; refreshSelection(card); }
             updateSendButton();
           },
-        }));
+          onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+        })));
       }
     }
     card.appendChild(body);
@@ -487,7 +540,7 @@
     var d = state.detail;
     var nodes = [];
     nodes.push(h('div', { class: 'row' },
-      h('button', { class: 'link', text: '‹ Back', onclick: goList }),
+      nativeBack ? h('span') : h('button', { class: 'link', text: '‹ Back', onclick: goList }),
       h('button', { class: 'dots', 'aria-label': 'More: open this set in chat, copy its title, or cancel it', 'aria-expanded': state.menu ? 'true' : 'false', text: '…', onclick: function () { state.menu = !state.menu; state.confirmCancel = false; render(); } })));
     if (state.menu) nodes.push(setMenu(d));
     nodes.push(h('h1', { text: d.title }));
@@ -499,21 +552,6 @@
     return nodes;
   }
 
-  function renderFinished() {
-    var f = state.finished;
-    var nodes = [h('h1', { text: f.batchStatus === 'submitted' ? 'All answered' : 'This set is closed' })];
-    var problems = f.results.filter(function (r) { return r.status !== 'ok'; });
-    if (!problems.length) nodes.push(h('p', { class: 'hint', text: 'Your answers were sent.' }));
-    problems.forEach(function (r) {
-      var q = f.previous.questions.filter(function (x) { return x.id === r.questionId; })[0];
-      nodes.push(h('div', { class: 'card' },
-        h('p', { class: 'prompt', text: q ? q.prompt : r.questionId }),
-        h('div', { class: 'note error', text: r.reason || 'This answer was not sent.' })));
-    });
-    nodes.push(h('button', { class: 'link', text: 'Back to open questions', onclick: goList }));
-    return nodes;
-  }
-
   function render() {
     var scroll = window.scrollY;
     app.textContent = '';
@@ -521,17 +559,24 @@
       app.appendChild(h('div', { class: 'card' }, h('p', { class: 'note error', text: state.error })));
       if (state.screen === 'list' && !state.list) return;
     }
-    var nodes = state.screen === 'set' && state.detail ? renderSet() : state.screen === 'finished' && state.finished ? renderFinished() : renderList();
+    var nodes = state.screen === 'set' && state.detail ? renderSet() : renderList();
     nodes.forEach(function (n) { app.appendChild(n); });
     if (state.sheet && state.screen === 'list') app.appendChild(renderSheet());
     if (state.toast) app.appendChild(h('div', { class: 'toast', role: 'status', text: state.toast }));
     updateSendButton();
+    syncBackButton();
     window.scrollTo(0, scroll);
   }
 
+  // The list refreshes itself when the app comes back into view; Telegram's own "…" menu has Reload.
+  function refreshIfList() {
+    if (state.screen === 'list') loadList();
+  }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && state.screen === 'list') loadList();
+    if (!document.hidden) refreshIfList();
   });
+  // Bot API 8.0: the app was brought back to the front without being reloaded.
+  try { if (tg && tg.onEvent) tg.onEvent('activated', refreshIfList); } catch (e) { /* older client */ }
 
   render();
   loadList();

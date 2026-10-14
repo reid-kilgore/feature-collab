@@ -30,6 +30,8 @@ import type { AskPayload, AskResult } from "../contract/payload.ts";
 import { markdownToTelegramHtml, splitMessage } from "../core/markdown.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
+import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
+import { listView } from "../miniapp/views.ts";
 import type { DaemonRequest, DaemonResponse, ChannelStatus } from "./protocol.ts";
 
 const SWEEP_INTERVAL_MS = 30000;
@@ -70,7 +72,10 @@ export async function runDaemon(): Promise<void> {
   const startedAt = new Date();
 
   const waiters = new Map<string, Array<(result: AskResult) => void>>();
+  // Set once the Mini App is running; a no-op until then.
+  let menuChanged = () => {};
   const onResolved: OnResolved = (batchId, result) => {
+    menuChanged();
     const list = waiters.get(batchId);
     if (list) {
       for (const resolve of list) resolve(result);
@@ -178,11 +183,23 @@ export async function runDaemon(): Promise<void> {
   } catch (error) {
     log(`setMyCommands failed: ${(error as Error).message}`);
   }
-  try {
-    if (miniappUrl) await api.setChatMenuButton(config.chatId, "Questions", miniappUrl);
-    else await api.resetChatMenuButton(config.chatId);
-  } catch (error) {
-    log(`setChatMenuButton failed: ${(error as Error).message}`);
+  // The button text carries the number of open sets (src/miniapp/menu-count.ts).
+  let menuUpdater: ReturnType<typeof createMenuCountUpdater> | undefined;
+  if (miniappUrl) {
+    const url = miniappUrl;
+    menuUpdater = createMenuCountUpdater({
+      getCount: () => listView(store).batches.length,
+      setText: (text) => api.setChatMenuButton(config.chatId, text, url),
+      log,
+    });
+    menuChanged = () => menuUpdater!.schedule();
+    await menuUpdater.syncNow();
+  } else {
+    try {
+      await api.resetChatMenuButton(config.chatId);
+    } catch (error) {
+      log(`setChatMenuButton failed: ${(error as Error).message}`);
+    }
   }
 
   await recoverOnStartup(store, port, onResolved, log);
@@ -226,6 +243,7 @@ export async function runDaemon(): Promise<void> {
       markListen,
       channelState,
       isShuttingDown,
+      menuChanged: () => menuChanged(),
     }).catch((error) => {
       log(`connection error: ${(error as Error).message}`);
     });
@@ -255,6 +273,7 @@ export async function runDaemon(): Promise<void> {
     forceExitTimer.unref();
     try {
       clearInterval(sweepTimer);
+      menuUpdater?.stop();
       for (const socket of openSockets) socket.destroy();
       await Promise.race([poller.stop(), sleep(2500)]);
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -360,6 +379,8 @@ interface ConnectionDeps {
   markListen: (channel: string, delta: 1 | -1) => void;
   channelState: Map<string, { lastSendAt: number; listening: number }>;
   isShuttingDown: () => boolean;
+  // A set was created (resolved sets are reported through onResolved): the menu count may differ.
+  menuChanged: () => void;
 }
 
 async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promise<void> {
@@ -595,6 +616,7 @@ function createAskBatch(
     chat_id: deps.config.chatId,
     user_id: deps.config.userId,
   });
+  deps.menuChanged();
   payload.questions.forEach((_q, idx) => {
     deps.store.createQuestion({
       id: newId(),

@@ -66,3 +66,6 @@ textarea { min-height: 88px; resize: vertical; }
 .sheet .close { border-radius: 14px; border-top: 0; font-weight: 600; background: var(--bg); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom)); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 18px; font-size: 14px; z-index: 12; }
 button.card { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.field .done { display: none; margin-left: auto; padding: 4px 0 0; }
+.field:focus-within .done { display: block; }
+body.typing .bottom { display: none; }
