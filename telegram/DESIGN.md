@@ -24,7 +24,12 @@ Taste corrections to the brief:
 - **The CLI boundary is the agent API.** "Emit event, pause, resume" is simply a blocking process that
   prints one JSON value on stdout. No in-process event bus, no `UserInteractionTransport` interface for
   the agent to import. Works identically for Claude, Codex, and shell scripts.
-- **No Mini App, no webhook.** Long polling from a daemon. Inline keyboards + ForceReply.
+- **No webhook. A Mini App since 2026-10-14.** Long polling from a daemon stays the only way updates
+  arrive: a webhook would silence `getUpdates`, so none is registered. Reid decided on 2026-10-14
+  (typed approval in the tooling pane, layout A) to add a Telegram Mini App that lists the open
+  `tg ask` batches and answers them on one page; see "Mini App" below. It is optional and off
+  unless configured. The chat flow (inline keyboards + ForceReply) is unchanged and remains the
+  fallback.
 
 ## Runtime and dependencies
 
@@ -46,7 +51,13 @@ telegram/
     core/
       store.ts              SQLite schema + repository (questions, answers, audit, updates seen)
       interaction.ts        transport-neutral state machine for one question batch
+      answers.ts            applies a whole page of Mini App answers through interaction.ts
       markdown.ts           Markdown → Telegram HTML subset (bold/italic/code/pre/links/lists→bullets)
+    miniapp/
+      server.ts             loopback HTTP server inside the daemon: page shell + /api routes
+      initdata.ts           Telegram initData validation (HMAC, max age, allowed user)
+      views.ts              what the page may see: open batches only
+      page.ts, web/         static page shell (index.html, app.js, app.css), no data in it
     transports/telegram/
       api.ts                thin Bot API client over fetch (sendMessage, editMessageText, sendPhoto,
                             sendDocument, answerCallbackQuery, getUpdates, getMe)
@@ -148,6 +159,54 @@ when resolved (connection stays open; the CLI blocks on it). If the CLI disconne
 question is cancelled on Telegram (edited to "cancelled by agent"). `{op:"status"}`, `{op:"pending"}`,
 `{op:"cancel", id}`. Include a `{op:"wait", id}` so a restarted CLI can re-attach to a pending question
 (print the id on stderr when asking, so an agent can recover after its own timeout).
+
+## Mini App (added 2026-10-14)
+
+Layout A of the approved design: a list of open question sets (newest first; title, asking
+session, "N of M answered", age, deadline, progress bar, "read at" time) and a set screen with one
+card per question (radio cards for single choice, checkboxes for multiple choice, "Other, or a
+note" when `allowOther` is set, a skip control only where the chat flow shows Skip, `(Recommended)`
+labels shown as a RECOMMENDED tag) and a sticky "Send N answers" button. Not built yet (PR 2): the
+"…" menu, the per-question "In chat" link, and the long-press sheet. Their slots are marked
+`data-slot` in `web/app.js`.
+
+**Where it runs.** In the daemon process, because only the daemon can resolve a waiting `tg ask`
+caller. It is isolated: it starts only when `config.json` has a `miniapp` block, it binds
+127.0.0.1 only, a bad block or a busy port is logged and the daemon carries on without it, and no
+error in a request handler escapes (it becomes a bare 500). A separate process talking to the unix
+socket was considered and rejected for now: it would need new daemon requests for list, detail and
+batch submit, and a second place to get the lock right, for no gain while the HTTP code has no
+shared mutable state with the poller beyond the store it already uses.
+
+**The lock.** The page is reached over Tailscale Funnel (public HTTPS), so Telegram initData is
+the only lock. Every `/api` request carries it in the `x-telegram-init-data` header. The server
+recomputes the HMAC-SHA256 (secret = HMAC_SHA256("WebAppData", bot token)) over the sorted
+fields, compares in constant time, rejects repeated fields, requires `auth_date` no older than
+`maxAgeSeconds` (default 3600; Telegram issues fresh initData on every open, so an hour covers a
+sitting while limiting replay of a leaked value) and no more than 60 seconds in the future, and
+requires the signed `user.id` to equal the configured user id. Anything else is a bare 401. The
+URL also starts with a random path segment (`miniapp.secret`), which only keeps scanners out; it is
+not relied on. The page shell is public and holds no data. The data API returns open batches only
+and never the bot token, chat ids, or message ids.
+
+**Answers and conflicts.** A submit goes through `core/answers.ts`, which calls the same
+`applyAnswerSingle`, `applyAnswerText`, `applyContinueMultiple` and `applySkip` the chat buttons
+use, so the asker resolves once and chat messages are edited as usual. Everything is validated
+before anything changes. A question already answered, skipped, cancelled or expired (for example
+answered in chat while the page was open) gets a per-question `conflict` result and is not touched;
+a malformed answer gets `invalid`; the others go through. Questions not yet sent to chat are
+answered without ever being sent. If a submit leaves some questions unanswered, chat continues with
+the first of them. A question marked live for a submit that then fails is put back to waiting.
+Submits for one batch run one at a time. `advanceOrFinish` no longer sends the next chat question
+while a chat message is still live, or finishes the batch while any question is live; for the chat
+flow, which keeps one question live, nothing changes.
+
+**Config** (hand-set in `config.json`; `tg setup` keeps it): `miniapp.port` (local port),
+`miniapp.secret` (16+ chars of letters, digits, `_`, `-`), `miniapp.publicUrl` (the Funnel https
+origin), optional `miniapp.maxAgeSeconds` (60 to 86400). When it is running the daemon sets the
+chat menu button to open the app (`setChatMenuButton`), adds `/open` to the command menu, and
+`/open` replies with a button that opens it. The page loads Telegram's `telegram-web-app.js` from
+telegram.org; there are still no runtime dependencies (`node:http`, `node:crypto` only).
 
 ## Telegram rendering
 

@@ -54,6 +54,9 @@ export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "help", description: "this message" },
 ];
 
+// Registered with setMyCommands only when the Mini App is configured (see daemon/server.ts).
+export const OPEN_COMMAND = { command: "open", description: "open your questions in the mini app" };
+
 function sanitizeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 60) || "document";
 }
@@ -182,6 +185,8 @@ export interface HandlerContext {
   // several agents"): resolve which channel a free-form message belongs to.
   channelForMessage: (messageId: number) => string | undefined;
   pickActiveChannel: () => string | undefined;
+  // The Mini App's https URL, set only when the Mini App is configured and running.
+  miniappUrl?: string;
 }
 
 // Minimal shapes of the Telegram Update we read. Everything else is ignored.
@@ -532,6 +537,16 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     await addToMaestroAsk(ctx, message.chat.id, body);
     return;
   }
+  if (/^\/open(?:@\w+)?$/.test(text)) {
+    if (!ctx.miniappUrl) {
+      await ctx.api.sendMessage(String(message.chat.id), "The mini app is not set up on this machine.");
+      return;
+    }
+    await ctx.api.sendMessage(String(message.chat.id), "Your open questions:", {
+      replyMarkup: { inline_keyboard: [[{ text: "Open questions", web_app: { url: ctx.miniappUrl } }]] },
+    });
+    return;
+  }
   if (text === "/inbox") {
     await sendInboxList(ctx, message.chat.id);
     return;
@@ -539,7 +554,7 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
   if (text === "/help") {
     await ctx.api.sendMessage(
       String(message.chat.id),
-      "Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/add <text> - same as /ask\n/inbox - recent items you added, tap one for its detail and trail\n/help - this message\n\nAnything else you send goes to the maestro inbox, and still to the agent's inbox (tg recv).",
+      `Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/add <text> - same as /ask\n/inbox - recent items you added, tap one for its detail and trail\n${ctx.miniappUrl ? "/open - open your questions in the mini app\n" : ""}/help - this message\n\nAnything else you send goes to the maestro inbox, and still to the agent's inbox (tg recv).`,
     );
     return;
   }
