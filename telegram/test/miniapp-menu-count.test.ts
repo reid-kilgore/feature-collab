@@ -68,9 +68,52 @@ test("a failed call is logged, not thrown, and the next change tries again", asy
   const t = rig({ failFirst: true });
   await t.updater.syncNow();
   assert.deepEqual(t.sent, []);
-  assert.match(t.logs[0]!, /setChatMenuButton failed: telegram down/);
+  assert.match(t.logs[0]!, /menu button update failed: telegram down/);
   // The count is still the one never shown, so even an unchanged count is sent on the next schedule.
   t.updater.schedule();
   await wait(60);
   assert.deepEqual(t.sent, ["Questions"]);
+});
+
+test("a count that throws is logged without crashing, and the next change still works", async () => {
+  let broken = true;
+  let count = 1;
+  const sent: string[] = [];
+  const logs: string[] = [];
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const updater = createMenuCountUpdater({
+      getCount: () => {
+        if (broken) throw new Error("bad payload_json");
+        return count;
+      },
+      setText: async (text) => void sent.push(text),
+      log: (l) => logs.push(l),
+      debounceMs: 20,
+    });
+    updater.schedule();
+    await wait(60);
+    assert.deepEqual(sent, []);
+    assert.match(logs[0]!, /bad payload_json/);
+    await updater.syncNow();
+    assert.equal(logs.length, 2);
+    broken = false;
+    updater.schedule();
+    await wait(60);
+    assert.deepEqual(sent, ["Questions (1)"]);
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+test("after stop, schedule does nothing", async () => {
+  const t = rig();
+  t.updater.stop();
+  t.setCount(4);
+  t.updater.schedule();
+  await wait(60);
+  assert.deepEqual(t.sent, []);
 });

@@ -27,6 +27,7 @@ export function createMenuCountUpdater(deps: MenuCountDeps): MenuCountUpdater {
   const debounceMs = deps.debounceMs ?? 750;
   let shown: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
   let running = false;
   let dirty = false;
 
@@ -39,15 +40,16 @@ export function createMenuCountUpdater(deps: MenuCountDeps): MenuCountUpdater {
     try {
       do {
         dirty = false;
-        const count = deps.getCount();
-        if (!force && count === shown) continue;
-        force = false;
+        // Counting reads the store and parses stored payloads, so it can throw too.
         try {
+          const count = deps.getCount();
+          if (!force && count === shown) continue;
+          force = false;
           await deps.setText(menuText(count));
           shown = count;
         } catch (error) {
           // Not fatal. `shown` is unchanged, so the next change tries again.
-          deps.log(`setChatMenuButton failed: ${(error as Error).message}`);
+          deps.log(`menu button update failed: ${(error as Error).message}`);
         }
       } while (dirty);
     } finally {
@@ -57,16 +59,18 @@ export function createMenuCountUpdater(deps: MenuCountDeps): MenuCountUpdater {
 
   return {
     schedule() {
-      if (timer) return;
+      if (timer || stopped) return;
       timer = setTimeout(() => {
         timer = undefined;
-        void run(false);
+        // run() catches its own errors; this is a second guard against an unhandled rejection.
+        run(false).catch((error) => deps.log(`menu button update failed: ${(error as Error).message}`));
       }, debounceMs);
     },
     syncNow() {
       return run(true);
     },
     stop() {
+      stopped = true;
       if (timer) clearTimeout(timer);
       timer = undefined;
     },
