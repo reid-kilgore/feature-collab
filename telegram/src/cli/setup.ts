@@ -7,7 +7,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { setToken, getToken, writeConfig, apiBase, isTestMode, shortHostname } from "../config.ts";
+import { setToken, getToken, writeConfig, readConfig, apiBase, isTestMode, shortHostname } from "../config.ts";
 import { TelegramApi } from "../transports/telegram/api.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
 
@@ -54,7 +54,8 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     console.error(`Discovered chat ${chatId}, user ${userId}.`);
   }
 
-  writeConfig({ chatId, userId, botUsername: me.username ?? String(me.id) });
+  // Keep any hand-set settings (the Mini App block) that setup does not manage.
+  writeConfig({ ...readConfig(), chatId, userId, botUsername: me.username ?? String(me.id) });
   console.error(`Config written for host ${shortHostname()}.`);
 
   if (!isTestMode()) {

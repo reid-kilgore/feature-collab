@@ -11,6 +11,7 @@ import {
   logFile,
   getToken,
   readConfig,
+  resolveMiniapp,
   apiBase,
   redact,
   shortHostname,
@@ -19,15 +20,16 @@ import {
 import { Store, newId, newShortId } from "../core/store.ts";
 import type { QuestionStatus } from "../core/store.ts";
 import { TelegramApi, classifyAttachment } from "../transports/telegram/api.ts";
-import { createTelegramPort, BOT_COMMANDS } from "../transports/telegram/handler.ts";
+import { createTelegramPort, BOT_COMMANDS, OPEN_COMMAND } from "../transports/telegram/handler.ts";
 import type { HandlerContext } from "../transports/telegram/handler.ts";
 import { Poller } from "../transports/telegram/poller.ts";
-import { startBatch, cancelBatch, expireBatch, isBatchTimedOut, buildResult } from "../core/interaction.ts";
+import { startBatch, cancelBatch, expireBatch, isBatchTimedOut, buildResult, advanceOrFinish } from "../core/interaction.ts";
 import type { OnResolved } from "../core/interaction.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, AskResult } from "../contract/payload.ts";
 import { markdownToTelegramHtml, splitMessage } from "../core/markdown.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
+import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import type { DaemonRequest, DaemonResponse, ChannelStatus } from "./protocol.ts";
 
 const SWEEP_INTERVAL_MS = 30000;
@@ -125,6 +127,25 @@ export async function runDaemon(): Promise<void> {
     return bestListening ?? bestAny;
   };
 
+  // The Mini App is optional: nothing below runs unless config.json has a "miniapp" block, and
+  // a bad block or a busy port is logged and leaves the rest of the daemon running.
+  const miniappSettings = resolveMiniapp(config);
+  if (miniappSettings && "error" in miniappSettings) log(`mini app disabled: ${miniappSettings.error}`);
+  const miniapp = miniappSettings && !("error" in miniappSettings) ? miniappSettings : undefined;
+  const miniappServer = miniapp
+    ? createMiniappServer({
+        store,
+        port,
+        onResolved,
+        botToken: token,
+        allowedUserId: config.userId,
+        secret: miniapp.secret,
+        maxAgeSeconds: miniapp.maxAgeSeconds,
+        log,
+      })
+    : undefined;
+  let miniappUrl: string | undefined;
+
   const ctx: HandlerContext = {
     store,
     api,
@@ -136,14 +157,32 @@ export async function runDaemon(): Promise<void> {
     notifyInbox,
     channelForMessage: (messageId) => store.getChannelForMessage(messageId),
     pickActiveChannel,
+    get miniappUrl() {
+      return miniappUrl;
+    },
   };
 
   // Registers the "/" menu Telegram shows in the chat UI. Best-effort: a failure here
   // (network blip, API change) is logged and never stops the daemon from starting.
+  if (miniapp && miniappServer) {
+    try {
+      const bound = await listenLoopback(miniappServer, miniapp.port);
+      miniappUrl = miniapp.url;
+      log(`mini app listening on 127.0.0.1:${bound}`);
+    } catch (error) {
+      log(`mini app disabled, could not listen on 127.0.0.1:${miniapp.port}: ${(error as Error).message}`);
+    }
+  }
   try {
-    await api.setMyCommands(BOT_COMMANDS);
+    await api.setMyCommands(miniappUrl ? [...BOT_COMMANDS, OPEN_COMMAND] : BOT_COMMANDS);
   } catch (error) {
     log(`setMyCommands failed: ${(error as Error).message}`);
+  }
+  try {
+    if (miniappUrl) await api.setChatMenuButton(config.chatId, "Questions", miniappUrl);
+    else await api.resetChatMenuButton(config.chatId);
+  } catch (error) {
+    log(`setChatMenuButton failed: ${(error as Error).message}`);
   }
 
   await recoverOnStartup(store, port, onResolved, log);
@@ -219,6 +258,10 @@ export async function runDaemon(): Promise<void> {
       for (const socket of openSockets) socket.destroy();
       await Promise.race([poller.stop(), sleep(2500)]);
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (miniappServer?.listening) {
+        miniappServer.closeAllConnections();
+        await new Promise<void>((resolve) => miniappServer.close(() => resolve()));
+      }
       store.close();
       releaseLock();
     } catch (error) {
@@ -639,12 +682,21 @@ async function recoverOnStartup(store: Store, port: ReturnType<typeof createTele
       await expireBatch(store, port, onResolved, batch.id);
       continue;
     }
+    // A live question with no chat message was marked live by a Mini App submit that the crash
+    // interrupted: nothing in chat can answer it, so put it back to waiting.
+    for (const q of store.listQuestionsForBatch(batch.id)) {
+      if ((q.status === "pending" || q.status === "awaiting_text") && q.message_id === null) {
+        store.updateQuestion(q.id, { status: "waiting" });
+      }
+    }
     const questions = store.listQuestionsForBatch(batch.id);
     const live = questions.find((q) => q.status === "pending" || q.status === "awaiting_text");
     if (!live) {
       // Nothing sent yet (crash between insert and send), or a "waiting" head-of-line question.
       try {
-        await startBatch(store, port, batch.id);
+        const started = questions.some((q) => q.status !== "waiting");
+        if (started) await advanceOrFinish(store, port, onResolved, batch.id);
+        else await startBatch(store, port, batch.id);
       } catch (error) {
         logFn(`recovery startBatch failed for ${batch.id}: ${(error as Error).message}`);
       }

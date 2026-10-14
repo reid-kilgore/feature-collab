@@ -53,17 +53,24 @@ async function sendQuestionAtIndex(store: Store, port: OutboundPort, batch: Batc
 }
 
 // After a question resolves, advance to the next `waiting` question, or finish the batch.
-async function advanceOrFinish(store: Store, port: OutboundPort, onResolved: OnResolved, batchId: string): Promise<void> {
+export async function advanceOrFinish(store: Store, port: OutboundPort, onResolved: OnResolved, batchId: string): Promise<void> {
   const batch = store.getBatch(batchId);
   if (!batch) return;
   if (batch.status !== "pending") return;
   const payload = JSON.parse(batch.payload_json) as AskPayload;
   const rows = store.listQuestionsForBatch(batchId);
+  // The chat flow keeps one question live at a time, so for a chat answer neither guard below
+  // ever fires. The mini app (core/answers.ts) can hold several questions live at once, with
+  // answers still to be applied in the same submit: do not send the next question while a
+  // chat message is still waiting for an answer, and do not finish while any question is live.
+  const isLive = (status: string) => status === "pending" || status === "awaiting_text";
   const next = rows.find((r) => r.status === "waiting");
   if (next) {
+    if (rows.some((r) => isLive(r.status) && r.message_id !== null)) return;
     await sendQuestionAtIndex(store, port, batch, payload, next.idx);
     return;
   }
+  if (rows.some((r) => isLive(r.status))) return;
   // All questions resolved: finish.
   const result = buildResult(store, batch, payload, "submitted");
   store.updateBatchStatus(batchId, "submitted", JSON.stringify(result));

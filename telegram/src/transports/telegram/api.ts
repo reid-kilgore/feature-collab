@@ -5,6 +5,12 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { redact } from "../../config.ts";
 
+// Ordinary Bot API calls answer in well under a second; this only bounds a hung connection.
+const CALL_TIMEOUT_MS = 20_000;
+// Uploads can be large; getUpdates long-polls for `timeout` seconds plus this margin.
+const UPLOAD_TIMEOUT_MS = 120_000;
+const POLL_MARGIN_MS = 20_000;
+
 export class TelegramApiError extends Error {
   code?: number;
   constructor(message: string, code?: number) {
@@ -18,6 +24,8 @@ export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
   url?: string;
+  // Opens a Mini App. Telegram accepts this on inline keyboards and menu buttons, https only.
+  web_app?: { url: string };
 }
 
 export interface ReplyMarkup {
@@ -35,16 +43,22 @@ export class TelegramApi {
   private token: string;
   private baseUrl: string;
 
-  constructor(token: string, baseUrl: string = "https://api.telegram.org") {
+  private callTimeoutMs: number;
+
+  constructor(token: string, baseUrl: string = "https://api.telegram.org", callTimeoutMs: number = CALL_TIMEOUT_MS) {
     this.token = token;
     this.baseUrl = baseUrl;
+    this.callTimeoutMs = callTimeoutMs;
   }
 
   private url(method: string): string {
     return `${this.baseUrl}/bot${this.token}/${method}`;
   }
 
-  private async call<T>(method: string, body?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  private async call<T>(method: string, body?: Record<string, unknown>, callerSignal?: AbortSignal, timeoutMs = this.callTimeoutMs): Promise<T> {
+    // A hung call must not hold a batch's submit chain forever (core/answers.ts waits on these).
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
     let response: Response;
     try {
       response = await fetch(this.url(method), {
@@ -54,6 +68,7 @@ export class TelegramApi {
         signal,
       });
     } catch (error) {
+      if (timeout.aborted && !callerSignal?.aborted) throw new TelegramApiError(`${method} timed out after ${timeoutMs} ms`);
       if ((error as { name?: string }).name === "AbortError") throw error;
       throw new TelegramApiError(redact(`network error calling ${method}: ${(error as Error).message}`));
     }
@@ -77,7 +92,7 @@ export class TelegramApi {
     form.append(file.field, new Blob([new Uint8Array(data)]), file.filename);
     let response: Response;
     try {
-      response = await fetch(this.url(method), { method: "POST", body: form });
+      response = await fetch(this.url(method), { method: "POST", body: form, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
     } catch (error) {
       throw new TelegramApiError(redact(`network error calling ${method}: ${(error as Error).message}`));
     }
@@ -102,8 +117,19 @@ export class TelegramApi {
     await this.call("setMyCommands", { commands });
   }
 
+  // Replaces the chat's menu button (next to the text field) with one that opens the Mini App.
+  async setChatMenuButton(chatId: string, text: string, webAppUrl: string): Promise<void> {
+    await this.call("setChatMenuButton", { chat_id: chatId, menu_button: { type: "web_app", text, web_app: { url: webAppUrl } } });
+  }
+
+  // Puts the chat's menu button back to Telegram's default, so a button left from an earlier
+  // run does not point at a Mini App that is no longer served.
+  async resetChatMenuButton(chatId: string): Promise<void> {
+    await this.call("setChatMenuButton", { chat_id: chatId, menu_button: { type: "default" } });
+  }
+
   async getUpdates(offset: number, timeoutSeconds = 0, signal?: AbortSignal): Promise<unknown[]> {
-    return this.call<unknown[]>("getUpdates", { offset, timeout: timeoutSeconds, allowed_updates: ["message", "callback_query"] }, signal);
+    return this.call<unknown[]>("getUpdates", { offset, timeout: timeoutSeconds, allowed_updates: ["message", "callback_query"] }, signal, timeoutSeconds * 1000 + POLL_MARGIN_MS);
   }
 
   async sendMessage(chatId: string, text: string, opts: { html?: boolean; replyMarkup?: ReplyMarkup } = {}): Promise<SendMessageResult> {

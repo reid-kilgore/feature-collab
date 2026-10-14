@@ -16,6 +16,7 @@ export interface SentMessage {
     | "answerCallbackQuery"
     | "setMessageReaction"
     | "setMyCommands"
+    | "setChatMenuButton"
     | "getFile";
   body: Record<string, unknown>;
 }
@@ -145,6 +146,7 @@ export class FakeTelegram {
         this.sent.push({ method, body });
         return json({ ok: true, result: true });
       case "setMyCommands":
+      case "setChatMenuButton":
         this.sent.push({ method, body });
         return json({ ok: true, result: true });
       case "getFile":

@@ -9,10 +9,57 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 
+// Mini App settings, all optional: without them the daemon does not start the HTTP server at all.
+// Set by hand in config.json (see DESIGN.md "Mini App"). `tg setup` keeps them when it rewrites
+// the file.
+export interface MiniappConfig {
+  // Local port the server listens on (127.0.0.1 only). Tailscale Funnel proxies to it.
+  port: number;
+  // Random string used as the first path segment of every URL, at least 16 characters of
+  // letters, digits, "_" or "-". Not a credential (initData is), only a guard against scanners.
+  secret: string;
+  // Public HTTPS origin Funnel serves, for example "https://redd.example.ts.net". No path.
+  publicUrl: string;
+  // How old initData may be, in seconds. Default 3600.
+  maxAgeSeconds?: number;
+}
+
 export interface Config {
   chatId: string;
   userId: string;
   botUsername: string;
+  miniapp?: MiniappConfig;
+}
+
+export interface ResolvedMiniapp {
+  port: number;
+  secret: string;
+  maxAgeSeconds: number;
+  // The full URL the bot opens: origin + "/" + secret + "/".
+  url: string;
+}
+
+export const DEFAULT_MINIAPP_MAX_AGE_SECONDS = 3600;
+
+// Returns the Mini App settings to use, nothing when the feature is not configured, or an
+// error string when it is configured wrongly (the daemon logs it and runs without the Mini App).
+export function resolveMiniapp(config: Config): ResolvedMiniapp | { error: string } | undefined {
+  const m = config.miniapp;
+  if (!m) return undefined;
+  if (!Number.isInteger(m.port) || m.port < 1 || m.port > 65535) return { error: "miniapp.port must be an integer from 1 to 65535" };
+  if (typeof m.secret !== "string" || !/^[A-Za-z0-9_-]{16,}$/.test(m.secret)) {
+    return { error: "miniapp.secret must be at least 16 characters of letters, digits, _ or -" };
+  }
+  let origin: URL;
+  try {
+    origin = new URL(m.publicUrl);
+  } catch {
+    return { error: "miniapp.publicUrl must be a URL like https://host.example.ts.net" };
+  }
+  if (origin.protocol !== "https:") return { error: "miniapp.publicUrl must be https (Telegram only opens Mini Apps over HTTPS)" };
+  const maxAge = m.maxAgeSeconds ?? DEFAULT_MINIAPP_MAX_AGE_SECONDS;
+  if (!Number.isInteger(maxAge) || maxAge < 60 || maxAge > 86400) return { error: "miniapp.maxAgeSeconds must be an integer from 60 to 86400" };
+  return { port: m.port, secret: m.secret, maxAgeSeconds: maxAge, url: `${origin.origin}/${m.secret}/` };
 }
 
 const testHome = process.env.AGENT_TELEGRAM_HOME;
