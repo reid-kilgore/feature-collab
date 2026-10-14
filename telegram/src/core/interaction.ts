@@ -14,7 +14,12 @@ export type ResolvedKind = "answered" | "skipped" | "cancelled" | "expired";
 
 export interface OutboundPort {
   sendHeader(batch: BatchRow, payload: AskPayload): Promise<void>;
-  sendQuestion(batch: BatchRow, question: Question, questionRow: QuestionRow, index: number, total: number, selected: string[]): Promise<SentQuestion>;
+  // replyToMessageId posts the question as a reply to an earlier message (used to move a question).
+  sendQuestion(batch: BatchRow, question: Question, questionRow: QuestionRow, index: number, total: number, selected: string[], opts?: { replyToMessageId?: number }): Promise<SentQuestion>;
+  // Turns the old copy of a moved question into a "moved below" note with no buttons.
+  markMoved(batch: BatchRow, question: Question, oldMessageId: number, oldForceReplyMessageId: number | null): Promise<void>;
+  // Removes a message this process just sent and decided not to keep.
+  retract(batch: BatchRow, messageId: number): Promise<void>;
   editResolved(batch: BatchRow, question: Question, questionRow: QuestionRow, kind: ResolvedKind, answerText?: string): Promise<void>;
   deleteForceReply(batch: BatchRow, questionRow: QuestionRow): Promise<void>;
   sendBatchDone(batch: BatchRow): Promise<void>;
@@ -36,12 +41,21 @@ export async function startBatch(store: Store, port: OutboundPort, batchId: stri
   await sendQuestionAtIndex(store, port, batch, payload, 0);
 }
 
-async function sendQuestionAtIndex(store: Store, port: OutboundPort, batch: BatchRow, payload: AskPayload, idx: number): Promise<void> {
+export async function sendQuestionAtIndex(store: Store, port: OutboundPort, batch: BatchRow, payload: AskPayload, idx: number): Promise<void> {
   const rows = store.listQuestionsForBatch(batch.id);
   const row = rows.find((r) => r.idx === idx);
   if (!row) throw new Error(`no question row at idx ${idx} for batch ${batch.id}`);
   const question = questionFromPayload(payload, row);
+  if (row.status !== "waiting") return;
   const sent = await port.sendQuestion(batch, question, row, idx, payload.questions.length, []);
+  // Something else (a move to chat, a Mini App submit) may have sent or answered this question
+  // while the message was going out. A question has one live copy: drop this one.
+  const fresh = store.getQuestion(row.id);
+  if (!fresh || fresh.status !== "waiting") {
+    await port.retract(batch, sent.messageId).catch(() => {});
+    if (sent.forceReplyMessageId) await port.retract(batch, sent.forceReplyMessageId).catch(() => {});
+    return;
+  }
   const status = question.type === "text" ? "awaiting_text" : "pending";
   store.updateQuestion(row.id, {
     status,
@@ -66,7 +80,9 @@ export async function advanceOrFinish(store: Store, port: OutboundPort, onResolv
   const isLive = (status: string) => status === "pending" || status === "awaiting_text";
   const next = rows.find((r) => r.status === "waiting");
   if (next) {
-    if (rows.some((r) => isLive(r.status) && r.message_id !== null)) return;
+    // Only a question shown earlier in the batch holds the next one back: one moved to chat out
+    // of order (core/chat-move.ts) must not stall the questions before it.
+    if (rows.some((r) => isLive(r.status) && r.message_id !== null && r.idx < next.idx)) return;
     await sendQuestionAtIndex(store, port, batch, payload, next.idx);
     return;
   }

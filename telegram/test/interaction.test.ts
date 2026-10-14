@@ -35,6 +35,8 @@ function makeFakePort(): OutboundPort & { sentQuestions: number; resolvedViews: 
     async editResolved(_batch: unknown, _question: unknown, _row: unknown, kind: string, text?: string) {
       port.resolvedViews.push(`${kind}:${text ?? ""}`);
     },
+    async markMoved() {},
+    async retract() {},
     async deleteForceReply() {},
     async sendBatchDone() {
       port.done = true;

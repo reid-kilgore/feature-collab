@@ -19,6 +19,8 @@ export interface SentMessage {
     | "setChatMenuButton"
     | "getFile";
   body: Record<string, unknown>;
+  // The message_id the fake handed back, for sendMessage / sendPhoto / sendDocument.
+  messageId?: number;
 }
 
 export class FakeTelegram {
@@ -129,7 +131,7 @@ export class FakeTelegram {
       case "sendPhoto":
       case "sendDocument": {
         const id = this.nextMessageId++;
-        this.sent.push({ method, body });
+        this.sent.push({ method, body, messageId: id });
         return json({ ok: true, result: { message_id: id } });
       }
       case "editMessageText":

@@ -298,3 +298,80 @@ test("question ids named like Object.prototype members work end to end", async (
     await t.close();
   }
 });
+
+test("the chat and cancel routes need the initData lock like every other route", async () => {
+  const t = await rig();
+  try {
+    const id = createBatch(t.store, THREE_QUESTIONS);
+    await startBatch(t.store, t.port, id);
+    for (const action of ["chat", "cancel"]) {
+      const res = await fetch(t.url(`/api/batches/${id}/${action}`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) });
+      assert.equal(res.status, 401, action);
+      assert.equal(await res.text(), "");
+      const wrongUser = await fetch(t.url(`/api/batches/${id}/${action}`), { method: "POST", headers: { ...t.auth(43), "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) });
+      assert.equal(wrongUser.status, 401, action);
+    }
+    assert.equal(t.port.sends.length, 1);
+    assert.equal(t.store.getBatch(id)!.status, "pending");
+    assert.equal((await fetch(t.url(`/api/batches/${id}/chat`), { headers: t.auth() })).status, 405);
+  } finally {
+    await t.close();
+  }
+});
+
+test("POST chat reposts the open question; with a questionId it moves just that one", async () => {
+  const t = await rig();
+  try {
+    const id = createBatch(t.store, THREE_QUESTIONS);
+    await startBatch(t.store, t.port, id);
+    const post = (action: string, body: unknown) =>
+      fetch(t.url(`/api/batches/${id}/${action}`), { method: "POST", headers: { ...t.auth(), "content-type": "application/json" }, body: JSON.stringify(body) });
+    const whole = await post("chat", {});
+    assert.equal(whole.status, 200);
+    assert.deepEqual(await whole.json(), { status: "ok", moved: 1 });
+    assert.equal(t.port.sends.length, 2);
+    assert.equal(t.port.sends[1]!.replyTo, t.port.sends[0]!.messageId);
+
+    const one = await post("chat", { questionId: "q3" });
+    assert.deepEqual(await one.json(), { status: "ok", moved: 1 });
+
+    const bad = await post("chat", { questionId: 5 });
+    assert.equal(bad.status, 400);
+    const unknown = await post("chat", { questionId: "zzz" });
+    assert.equal(((await unknown.json()) as { status: string }).status, "invalid");
+    const missing = await fetch(t.url("/api/batches/ffffffffffffffffffffffff/chat"), { method: "POST", headers: { ...t.auth(), "content-type": "application/json" }, body: "{}" });
+    assert.equal(missing.status, 404);
+  } finally {
+    await t.close();
+  }
+});
+
+test("POST cancel needs confirm:true, then cancels through cancelBatch and tells the asker", async () => {
+  const t = await rig();
+  try {
+    const id = createBatch(t.store, THREE_QUESTIONS);
+    await startBatch(t.store, t.port, id);
+    const post = (body: unknown) =>
+      fetch(t.url(`/api/batches/${id}/cancel`), { method: "POST", headers: { ...t.auth(), "content-type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await post({})).status, 400);
+    assert.equal((await post({ confirm: "yes" })).status, 400);
+    assert.equal(t.store.getBatch(id)!.status, "pending");
+    assert.equal(t.results.length, 0);
+
+    const ok = await post({ confirm: true });
+    assert.deepEqual(await ok.json(), { status: "ok" });
+    assert.equal(t.store.getBatch(id)!.status, "cancelled");
+    assert.equal(t.results.length, 1);
+    assert.equal(t.results[0]!.status, "cancelled");
+    assert.ok(t.port.resolvedViews.includes("cancelled:"));
+
+    const again = await post({ confirm: true });
+    assert.equal(((await again.json()) as { status: string }).status, "conflict");
+    assert.equal(t.results.length, 1);
+    // A cancelled set can no longer be moved to chat.
+    const move = await fetch(t.url(`/api/batches/${id}/chat`), { method: "POST", headers: { ...t.auth(), "content-type": "application/json" }, body: "{}" });
+    assert.equal(((await move.json()) as { status: string }).status, "conflict");
+  } finally {
+    await t.close();
+  }
+});

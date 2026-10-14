@@ -48,7 +48,7 @@ export interface SubmitOutcome {
 
 const isLive = (status: string): boolean => status === "pending" || status === "awaiting_text";
 
-function resolvedReason(status: string): string {
+export function resolvedReason(status: string): string {
   switch (status) {
     case "answered":
       return "Already answered in chat. Your answer was not used.";
@@ -63,7 +63,7 @@ function resolvedReason(status: string): string {
   }
 }
 
-function batchReason(status: string): string {
+export function batchReason(status: string): string {
   switch (status) {
     case "cancelled":
       return "This set was cancelled.";
@@ -117,16 +117,10 @@ interface Planned {
 // One submit at a time per batch, so two phones (or a double tap) cannot interleave.
 const chains = new Map<string, Promise<unknown>>();
 
-export function applyBatchAnswers(
-  store: Store,
-  port: OutboundPort,
-  onResolved: OnResolved,
-  batchId: string,
-  submissions: Submission[],
-  now: Date = new Date(),
-): Promise<SubmitOutcome> {
+// Runs `task` after every earlier task for the same batch has finished.
+export function runExclusive<T>(batchId: string, task: () => Promise<T>): Promise<T> {
   const previous = chains.get(batchId) ?? Promise.resolve();
-  const run = previous.then(() => doApply(store, port, onResolved, batchId, submissions, now));
+  const run = previous.then(task);
   const tail = run.then(
     () => undefined,
     () => undefined,
@@ -136,6 +130,17 @@ export function applyBatchAnswers(
     if (chains.get(batchId) === tail) chains.delete(batchId);
   });
   return run;
+}
+
+export function applyBatchAnswers(
+  store: Store,
+  port: OutboundPort,
+  onResolved: OnResolved,
+  batchId: string,
+  submissions: Submission[],
+  now: Date = new Date(),
+): Promise<SubmitOutcome> {
+  return runExclusive(batchId, () => doApply(store, port, onResolved, batchId, submissions, now));
 }
 
 async function doApply(

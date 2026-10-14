@@ -10,7 +10,9 @@ import http from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Store } from "../core/store.ts";
 import type { OutboundPort, OnResolved } from "../core/interaction.ts";
-import { applyBatchAnswers } from "../core/answers.ts";
+import { applyBatchAnswers, runExclusive } from "../core/answers.ts";
+import { openInChat } from "../core/chat-move.ts";
+import { cancelBatch } from "../core/interaction.ts";
 import type { Submission } from "../core/answers.ts";
 import { validateInitData } from "./initdata.ts";
 import { listView, detailView } from "./views.ts";
@@ -129,6 +131,22 @@ export function parseSubmissions(raw: string): Submission[] | undefined {
   return out;
 }
 
+function parseObject(raw: string): Record<string, unknown> | undefined {
+  try {
+    const value = JSON.parse(raw === "" ? "{}" : raw) as unknown;
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function cancelSet(deps: MiniappServerDeps, batchId: string): Promise<{ status: "ok" | "conflict"; reason?: string }> {
+  const batch = deps.store.getBatch(batchId);
+  if (!batch || batch.status !== "pending") return { status: "conflict", reason: "This set is no longer open." };
+  await cancelBatch(deps.store, deps.port, deps.onResolved, batchId);
+  return { status: "ok" };
+}
+
 export function createMiniappServer(deps: MiniappServerDeps): http.Server {
   const prefix = `/${deps.secret}`;
 
@@ -150,7 +168,7 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
       return send(res, 200, PAGE_CSS, { "content-type": "text/css; charset=utf-8" });
     }
 
-    const apiMatch = /^\/api\/batches(?:\/([^/]+)(\/answers)?)?$/.exec(rest);
+    const apiMatch = /^\/api\/batches(?:\/([^/]+)(?:\/(answers|chat|cancel))?)?$/.exec(rest);
     if (!apiMatch) return send(res, 404, "");
 
     const auth = validateInitData(headerValue(req.headers["x-telegram-init-data"]), {
@@ -161,14 +179,14 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
     if (!auth.ok) return send(res, 401, "");
 
     const batchId = apiMatch[1];
-    const isAnswers = apiMatch[2] !== undefined;
+    const action = apiMatch[2];
     if (batchId === undefined) {
       if (req.method !== "GET") return send(res, 405, "");
       return sendJson(res, 200, listView(deps.store));
     }
     if (!BATCH_ID.test(batchId)) return sendJson(res, 404, { error: "not_found" });
 
-    if (!isAnswers) {
+    if (action === undefined) {
       if (req.method !== "GET") return send(res, 405, "");
       const detail = detailView(deps.store, batchId);
       return detail ? sendJson(res, 200, detail) : sendJson(res, 404, { error: "not_found" });
@@ -183,6 +201,22 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
     } catch (error) {
       res.setHeader("connection", "close");
       return sendJson(res, error instanceof BodyTooLarge ? 413 : 400, { error: "bad_request" });
+    }
+    if (action === "chat" || action === "cancel") {
+      const parsed = parseObject(raw);
+      if (!parsed) return sendJson(res, 400, { error: "bad_request" });
+      if (action === "chat") {
+        const questionId = parsed.questionId;
+        if (questionId !== undefined && (typeof questionId !== "string" || questionId.length === 0 || questionId.length > MAX_ID_LENGTH)) {
+          return sendJson(res, 400, { error: "bad_request" });
+        }
+        const moved = await openInChat(deps.store, deps.port, deps.onResolved, batchId, questionId);
+        if (moved.status === "unknown") return sendJson(res, 404, { error: "not_found" });
+        return sendJson(res, 200, moved);
+      }
+      // Cancelling needs an explicit confirm: the page asks, and the server will not act without it.
+      if (parsed.confirm !== true) return sendJson(res, 400, { error: "bad_request" });
+      return sendJson(res, 200, await runExclusive(batchId, () => cancelSet(deps, batchId)));
     }
     const submissions = parseSubmissions(raw);
     if (!submissions) return sendJson(res, 400, { error: "bad_request" });

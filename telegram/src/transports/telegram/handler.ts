@@ -26,6 +26,7 @@ import {
   renderForceReplyPrompt,
   renderResolvedView,
   renderHeader,
+  renderMovedView,
   renderBatchDone,
   decodeCallback,
 } from "./render.ts";
@@ -143,9 +144,9 @@ export function createTelegramPort(api: TelegramApi, hostname: string, render: D
         }
       }
     },
-    async sendQuestion(batch, question: Question, questionRow: QuestionRow, index, total, selected): Promise<SentQuestion> {
+    async sendQuestion(batch, question: Question, questionRow: QuestionRow, index, total, selected, opts): Promise<SentQuestion> {
       const view = renderQuestionView({ shortId: questionRow.short_id, index, total, question, selected });
-      const sent = await api.sendMessage(batch.chat_id, view.text, { html: true, replyMarkup: view.replyMarkup });
+      const sent = await api.sendMessage(batch.chat_id, view.text, { html: true, replyMarkup: view.replyMarkup, replyToMessageId: opts?.replyToMessageId });
       if (question.type === "text") {
         const prompt = renderForceReplyPrompt();
         const forceSent = await api.sendMessage(batch.chat_id, prompt.text, { replyMarkup: prompt.replyMarkup });
@@ -161,6 +162,17 @@ export function createTelegramPort(api: TelegramApi, hostname: string, render: D
       } catch {
         // message may already be edited/deleted; best-effort
       }
+    },
+    async markMoved(batch, question: Question, oldMessageId: number, oldForceReplyMessageId: number | null) {
+      try {
+        await api.editMessageText(batch.chat_id, oldMessageId, renderMovedView(question), { html: true, replyMarkup: { inline_keyboard: [] } });
+      } catch {
+        // best-effort: the old copy is dead either way (handleCallback checks moved messages)
+      }
+      if (oldForceReplyMessageId) await api.deleteMessage(batch.chat_id, oldForceReplyMessageId);
+    },
+    async retract(batch, messageId: number) {
+      await api.deleteMessage(batch.chat_id, messageId);
     },
     async deleteForceReply(batch, questionRow: QuestionRow) {
       if (questionRow.force_reply_message_id) await api.deleteMessage(batch.chat_id, questionRow.force_reply_message_id);
@@ -266,6 +278,11 @@ async function handleCallback(ctx: HandlerContext, cq: TgCallbackQuery): Promise
   const row = ctx.store.getQuestionByShortId(decoded.shortId);
   if (!row) {
     await ctx.api.answerCallbackQuery(cq.id, "This question is already resolved.").catch(() => {});
+    return;
+  }
+  // A question moved to a newer message (Mini App "Open in chat") has one live copy only.
+  if (cq.message && ctx.store.isMovedMessage(row.id, cq.message.message_id)) {
+    await ctx.api.answerCallbackQuery(cq.id, "This question moved. Answer it in the newer message below.", true).catch(() => {});
     return;
   }
   const isLive = row.status === "pending" || row.status === "awaiting_text";
@@ -475,6 +492,11 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     const row = ctx.store.listPendingQuestions().find((r) => r.force_reply_message_id === replyToId && r.status === "awaiting_text");
     if (row) {
       await applyAnswerText(ctx.store, ctx.port, ctx.onResolved, row.id, text);
+      return;
+    }
+    // A reply to the reply prompt of a question that has since moved to a newer message.
+    if (ctx.store.questionForMovedForceReply(replyToId)) {
+      await ctx.api.sendMessage(String(message.chat.id), "That question moved. Answer it in the newer message below.", { replyToMessageId: message.message_id });
       return;
     }
     // A reply to something other than a tracked question prompt is ordinary conversation.
