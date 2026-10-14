@@ -171,3 +171,113 @@ test("tg setup keeps the miniapp block when it rewrites config.json", async () =
     await h.teardown();
   }
 });
+
+test("Open in chat through the daemon: reply to the original, old buttons dead, new buttons answer the asker", async () => {
+  const h = await setupHarness();
+  try {
+    const port = await freePort();
+    writeConfig(h, { miniapp: { port, secret: SECRET, publicUrl: "https://redd.example.ts.net" } });
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setChatMenuButton"));
+
+    const payload = { version: 1, title: "Move me", questions: [{ id: "a", prompt: "Pick one", type: "single", options: [{ value: "x", label: "X" }, { value: "y", label: "Y" }] }] };
+    const askProc = h.spawnCli(["ask", "--json", JSON.stringify(payload)]);
+    let stdout = "";
+    askProc.stdout!.on("data", (c) => (stdout += c.toString()));
+    const isQuestion = (m: { method: string; body: Record<string, unknown> }) => m.method === "sendMessage" && JSON.stringify(m.body.reply_markup ?? "").includes('"q:');
+    await waitUntil(() => h.fake.sent.some(isQuestion));
+    const original = h.fake.sent.find(isQuestion)!;
+    const shortId = /"q:([a-z0-9]+):s:0"/.exec(JSON.stringify(original.body.reply_markup))![1]!;
+
+    const base = `http://127.0.0.1:${port}/${SECRET}`;
+    const headers = { "x-telegram-init-data": initDataFor(Number(h.userId), Math.floor(Date.now() / 1000), {}, "123456789:FAKE-TOKEN-FOR-TESTS-0123456789"), "content-type": "application/json" };
+    const list = (await (await fetch(`${base}/api/batches`, { headers })).json()) as { batches: Array<{ id: string }> };
+    const res = await fetch(`${base}/api/batches/${list.batches[0]!.id}/chat`, { method: "POST", headers, body: "{}" });
+    assert.deepEqual(await res.json(), { status: "ok", moved: 1 });
+
+    // The new copy is a reply to the original, with live buttons.
+    const copies = h.fake.sent.filter(isQuestion);
+    assert.equal(copies.length, 2);
+    assert.deepEqual(copies[1]!.body.reply_parameters, { message_id: original.messageId, allow_sending_without_reply: true });
+    // The original was edited to a note with no buttons.
+    const edit = h.fake.sent.find((m) => m.method === "editMessageText" && m.body.message_id === original.messageId)!;
+    assert.match(String(edit.body.text), /moved to the message below/);
+    assert.deepEqual(edit.body.reply_markup, { inline_keyboard: [] });
+
+    // A tap on the OLD message is refused and does not answer the question.
+    h.fake.pushCallback({ chatId: Number(h.chatId), userId: Number(h.userId), data: `q:${shortId}:s:1`, messageId: original.messageId });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "answerCallbackQuery" && String(m.body.text ?? "").includes("moved")));
+    assert.equal(stdout, "");
+    // A tap on the NEW message answers it.
+    h.fake.pushCallback({ chatId: Number(h.chatId), userId: Number(h.userId), data: `q:${shortId}:s:1`, messageId: copies[1]!.messageId });
+    const exitCode = await new Promise<number | null>((resolve) => askProc.once("close", resolve));
+    assert.equal(exitCode, 0);
+    assert.equal(JSON.parse(stdout.trim().split("\n").pop()!).answers.a.value, "y");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("Cancel through the daemon resolves the waiting asker as cancelled", async () => {
+  const h = await setupHarness();
+  try {
+    const port = await freePort();
+    writeConfig(h, { miniapp: { port, secret: SECRET, publicUrl: "https://redd.example.ts.net" } });
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const payload = { version: 1, questions: [{ id: "a", prompt: "Pick", type: "single", options: [{ value: "x", label: "X" }] }] };
+    const askProc = h.spawnCli(["ask", "--json", JSON.stringify(payload)]);
+    let stdout = "";
+    askProc.stdout!.on("data", (c) => (stdout += c.toString()));
+    await waitUntil(() => h.fake.sent.some((m) => JSON.stringify(m.body.reply_markup ?? "").includes('"q:')));
+    const base = `http://127.0.0.1:${port}/${SECRET}`;
+    const headers = { "x-telegram-init-data": initDataFor(Number(h.userId), Math.floor(Date.now() / 1000), {}, "123456789:FAKE-TOKEN-FOR-TESTS-0123456789"), "content-type": "application/json" };
+    const list = (await (await fetch(`${base}/api/batches`, { headers })).json()) as { batches: Array<{ id: string }> };
+    const res = await fetch(`${base}/api/batches/${list.batches[0]!.id}/cancel`, { method: "POST", headers, body: JSON.stringify({ confirm: true }) });
+    assert.deepEqual(await res.json(), { status: "ok" });
+    await new Promise<number | null>((resolve) => askProc.once("close", resolve));
+    assert.equal(JSON.parse(stdout.trim().split("\n").pop()!).status, "cancelled");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a reply to the retired reply prompt of a moved text question is told it moved, not filed as chat", async () => {
+  const h = await setupHarness();
+  try {
+    const port = await freePort();
+    writeConfig(h, { miniapp: { port, secret: SECRET, publicUrl: "https://redd.example.ts.net" } });
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const payload = { version: 1, questions: [{ id: "a", prompt: "Say something", type: "text" }] };
+    const askProc = h.spawnCli(["ask", "--json", JSON.stringify(payload)]);
+    let stdout = "";
+    askProc.stdout!.on("data", (c) => (stdout += c.toString()));
+    const isPrompt = (m: { method: string; body: Record<string, unknown> }) => m.method === "sendMessage" && m.body.text === "Reply to this message with your answer.";
+    await waitUntil(() => h.fake.sent.some(isPrompt));
+    const oldPrompt = h.fake.sent.find(isPrompt)!;
+
+    const base = `http://127.0.0.1:${port}/${SECRET}`;
+    const headers = { "x-telegram-init-data": initDataFor(Number(h.userId), Math.floor(Date.now() / 1000), {}, "123456789:FAKE-TOKEN-FOR-TESTS-0123456789"), "content-type": "application/json" };
+    const list = (await (await fetch(`${base}/api/batches`, { headers })).json()) as { batches: Array<{ id: string }> };
+    await fetch(`${base}/api/batches/${list.batches[0]!.id}/chat`, { method: "POST", headers, body: "{}" });
+    await waitUntil(() => h.fake.sent.filter(isPrompt).length === 2);
+
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "late answer", replyToMessageId: oldPrompt.messageId });
+    await waitUntil(() => h.fake.sent.some((m) => String(m.body.text ?? "").startsWith("That question moved")));
+    assert.equal(stdout, "");
+    // It was not filed as free text for the maestro inbox either.
+    assert.ok(!h.fake.sent.some((m) => String(m.body.text ?? "").startsWith("Added ")));
+    // A reply to the NEW prompt answers the question.
+    const newPrompt = h.fake.sent.filter(isPrompt)[1]!;
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "real answer", replyToMessageId: newPrompt.messageId });
+    await new Promise<number | null>((resolve) => askProc.once("close", resolve));
+    assert.equal(JSON.parse(stdout.trim().split("\n").pop()!).answers.a.value, "real answer");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});

@@ -132,12 +132,15 @@ export class TelegramApi {
     return this.call<unknown[]>("getUpdates", { offset, timeout: timeoutSeconds, allowed_updates: ["message", "callback_query"] }, signal, timeoutSeconds * 1000 + POLL_MARGIN_MS);
   }
 
-  async sendMessage(chatId: string, text: string, opts: { html?: boolean; replyMarkup?: ReplyMarkup } = {}): Promise<SendMessageResult> {
+  // replyToMessageId sends the message as a reply to that message. It still sends if the
+  // original has been deleted.
+  async sendMessage(chatId: string, text: string, opts: { html?: boolean; replyMarkup?: ReplyMarkup; replyToMessageId?: number } = {}): Promise<SendMessageResult> {
     return this.call<SendMessageResult>("sendMessage", {
       chat_id: chatId,
       text,
       parse_mode: opts.html ? "HTML" : undefined,
       reply_markup: opts.replyMarkup,
+      reply_parameters: opts.replyToMessageId ? { message_id: opts.replyToMessageId, allow_sending_without_reply: true } : undefined,
     });
   }
 

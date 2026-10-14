@@ -116,6 +116,10 @@ export function renderResolvedView(question: Question, kind: ResolvedKind, answe
   return `${prompt}\n<i>⏰ expired</i>`;
 }
 
+export function renderMovedView(question: Question): string {
+  return `↪ <b>${escapeHtml(question.prompt)}</b>\n<i>moved to the message below</i>`;
+}
+
 export function renderHeader(payload: AskPayload, hostname: string): string | undefined {
   if (!payload.title && !payload.message) return undefined;
   const parts: string[] = [];

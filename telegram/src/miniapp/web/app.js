@@ -17,6 +17,10 @@
     sending: false,
     finished: null,
     error: null,
+    menu: false, // the header "…" menu is open
+    sheet: null, // the long-press sheet: { batch, confirm }
+    confirmCancel: false, // the header menu is asking to confirm a cancel
+    toast: null,
   };
 
   if (tg) {
@@ -87,6 +91,7 @@
   // ---- navigation ----
 
   function goList() {
+    state.menu = false;
     state.screen = 'list';
     state.detail = null;
     state.finished = null;
@@ -104,6 +109,8 @@
   }
 
   function openSet(id) {
+    state.menu = false;
+    state.confirmCancel = false;
     state.answers = loadDraft(id);
     state.results = Object.create(null);
     state.finished = null;
@@ -216,6 +223,57 @@
     }).catch(function (error) { state.sending = false; fail(error); });
   }
 
+  // ---- moving to chat, cancelling, copying ----
+
+  // The toast belongs to no screen, so it survives the navigation that follows a failure.
+  function showToast(text, ms) {
+    state.toast = text;
+    render();
+    setTimeout(function () { if (state.toast === text) { state.toast = null; render(); } }, ms || 2500);
+  }
+
+  // Reposts the open question (or one question) in the chat, then closes the app so the chat shows.
+  function openInChat(batchId, questionId) {
+    state.menu = false;
+    state.sheet = null;
+    var body = questionId === undefined ? {} : { questionId: questionId };
+    api('batches/' + batchId + '/chat', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      if (r.status === 200 && r.body.status === 'ok') {
+        if (tg) { try { tg.close(); return; } catch (e) { /* fall through */ } }
+        showToast('Opened in chat.');
+        return;
+      }
+      if (state.screen === 'set') openSet(batchId); else loadList();
+      showToast(r.status === 200 && r.body.reason ? r.body.reason : 'Could not move this to the chat.', 6000);
+    }, fail);
+  }
+
+  function cancelSet(batchId) {
+    state.menu = false;
+    state.confirmCancel = false;
+    state.sheet = null;
+    api('batches/' + batchId + '/cancel', { method: 'POST', body: JSON.stringify({ confirm: true }) }).then(function (r) {
+      if (r.status === 200 && r.body.status === 'ok') { clearDraft(batchId); state.screen = 'list'; state.detail = null; loadList(); showToast('Set cancelled.'); return; }
+      goList();
+      showToast(r.status === 200 && r.body.reason ? r.body.reason : 'Could not cancel this set.', 6000);
+    }, fail);
+  }
+
+  function copyText(text) {
+    state.menu = false;
+    var done = function () { showToast('Copied.'); };
+    var fallback = function () {
+      var box = h('textarea', { 'aria-hidden': 'true' });
+      box.value = text;
+      document.body.appendChild(box);
+      box.select();
+      try { document.execCommand('copy'); done(); } catch (e) { showToast('Could not copy.'); }
+      document.body.removeChild(box);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  }
+
   // ---- rendering ----
 
   function renderList() {
@@ -233,16 +291,44 @@
       var due = deadline(b.timeoutAt);
       var bar = h('div', { class: 'bar' }, h('div'));
       bar.firstChild.style.width = (b.total ? Math.round(100 * b.done / b.total) : 0) + '%';
-      nodes.push(h('button', { class: 'card', onclick: function () { openSet(b.id); } },
+      var card = h('button', { class: 'card', oncontextmenu: function (e) { e.preventDefault(); } },
         h('h2', { text: b.title }),
         h('div', { class: 'meta hint' },
           h('span', { text: b.asker }),
           h('span', { text: b.done + ' of ' + b.total + ' answered' }),
           h('span', { text: ago(b.createdAt) }),
           due ? h('span', { text: due }) : null),
-        bar));
+        bar);
+      onLongPress(card, function () { state.sheet = { batch: b, confirm: false }; render(); }, function () { openSet(b.id); });
+      nodes.push(card);
     });
     return nodes;
+  }
+
+  // Calls onLong after a half second hold (touch or mouse), or onTap for a short press. A move or
+  // scroll cancels both, so scrolling the list never opens a card.
+  function onLongPress(el, onLong, onTap) {
+    var timer = null;
+    var fired = false;
+    var startX = 0;
+    var startY = 0;
+    var cancel = function () { if (timer) { clearTimeout(timer); timer = null; } };
+    el.addEventListener('pointerdown', function (e) {
+      fired = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      cancel();
+      timer = setTimeout(function () { timer = null; fired = true; try { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium'); } catch (x) { /* ignore */ } onLong(); }, 500);
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) cancel();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (name) { el.addEventListener(name, cancel); });
+    el.addEventListener('click', function (e) {
+      if (fired) { fired = false; e.preventDefault(); return; }
+      onTap();
+    });
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); if (!fired) { cancel(); fired = true; onLong(); } });
   }
 
   function optionNode(q, opt, a, rerender) {
@@ -280,7 +366,11 @@
 
   function questionNode(q, index, total) {
     var card = h('section', { class: 'card' });
-    card.appendChild(h('div', { class: 'qnum', text: 'Question ' + (index + 1) + ' of ' + total }));
+    var head = h('div', { class: 'row qhead' }, h('div', { class: 'qnum', text: 'Question ' + (index + 1) + ' of ' + total }));
+    if (q.state === 'open') {
+      head.appendChild(h('button', { class: 'link inchat', 'aria-label': 'Open this question in chat', text: 'In chat', onclick: function () { openInChat(state.detail.id, q.id); } }));
+    }
+    card.appendChild(head);
     card.appendChild(h('p', { class: 'prompt', text: q.prompt }));
 
     if (q.state !== 'open') {
@@ -325,8 +415,6 @@
     }
     var problem = resultNote(q);
     if (problem) card.appendChild(problem);
-    // PR 2 adds the per-question "In chat" link here.
-    card.appendChild(h('div', { 'data-slot': 'question-actions' }));
     return card;
   }
 
@@ -353,13 +441,55 @@
     button.disabled = state.sending || buildSubmission().length === 0;
   }
 
+  function menuItem(label, hint, onclick, danger) {
+    return h('button', { class: 'menu-item' + (danger ? ' danger' : ''), onclick: onclick },
+      h('span', { text: label }),
+      hint ? h('span', { class: 'hint', text: hint }) : null);
+  }
+
+  function setMenu(d) {
+    if (state.confirmCancel) {
+      return h('div', { class: 'menu', role: 'menu' },
+        h('p', { class: 'menu-text', text: 'Cancel this set? The agent that asked gets a cancelled result.' }),
+        menuItem('Yes, cancel the set', null, function () { cancelSet(d.id); }, true),
+        menuItem('Keep it', null, function () { state.confirmCancel = false; render(); }));
+    }
+    return h('div', { class: 'menu', role: 'menu' },
+      menuItem('Open in chat', 'The bot posts the open question again at the bottom of the chat', function () { openInChat(d.id); }),
+      menuItem('Copy set title', null, function () { copyText(d.title); }),
+      menuItem('Cancel this set', null, function () { state.confirmCancel = true; render(); }, true));
+  }
+
+  function renderSheet() {
+    var b = state.sheet.batch;
+    var items;
+    if (state.sheet.confirm) {
+      items = [
+        h('p', { class: 'menu-text', text: 'Cancel "' + b.title + '"? The agent that asked gets a cancelled result.' }),
+        menuItem('Yes, cancel the set', null, function () { cancelSet(b.id); }, true),
+        menuItem('Keep it', null, function () { state.sheet.confirm = false; render(); }),
+      ];
+    } else {
+      items = [
+        menuItem('Answer here', null, function () { state.sheet = null; openSet(b.id); }),
+        menuItem('Open in chat', 'Closes the app; the bot reposts the open question as a reply to the original', function () { openInChat(b.id); }),
+        menuItem('Cancel this set', null, function () { state.sheet.confirm = true; render(); }, true),
+      ];
+    }
+    return h('div', {},
+      h('div', { class: 'scrim', onclick: function () { state.sheet = null; render(); } }),
+      h('div', { class: 'sheet', role: 'dialog', 'aria-label': 'Actions for ' + b.title },
+        h('div', { class: 'menu stacked' }, items),
+        h('button', { class: 'menu-item close', text: 'Close', onclick: function () { state.sheet = null; render(); } })));
+  }
+
   function renderSet() {
     var d = state.detail;
     var nodes = [];
     nodes.push(h('div', { class: 'row' },
       h('button', { class: 'link', text: '‹ Back', onclick: goList }),
-      // PR 2 adds the "…" menu here.
-      h('div', { 'data-slot': 'set-menu' })));
+      h('button', { class: 'dots', 'aria-label': 'More: open this set in chat, copy its title, or cancel it', 'aria-expanded': state.menu ? 'true' : 'false', text: '…', onclick: function () { state.menu = !state.menu; state.confirmCancel = false; render(); } })));
+    if (state.menu) nodes.push(setMenu(d));
     nodes.push(h('h1', { text: d.title }));
     nodes.push(h('div', { class: 'hint', text: 'Asked by ' + d.asker + ' · ' + ago(d.createdAt) + ' · read at ' + time(d.readAt) }));
     if (d.message) nodes.push(h('p', { class: 'message', text: d.message }));
@@ -393,6 +523,8 @@
     }
     var nodes = state.screen === 'set' && state.detail ? renderSet() : state.screen === 'finished' && state.finished ? renderFinished() : renderList();
     nodes.forEach(function (n) { app.appendChild(n); });
+    if (state.sheet && state.screen === 'list') app.appendChild(renderSheet());
+    if (state.toast) app.appendChild(h('div', { class: 'toast', role: 'status', text: state.toast }));
     updateSendButton();
     window.scrollTo(0, scroll);
   }

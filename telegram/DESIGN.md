@@ -52,6 +52,7 @@ telegram/
       store.ts              SQLite schema + repository (questions, answers, audit, updates seen)
       interaction.ts        transport-neutral state machine for one question batch
       answers.ts            applies a whole page of Mini App answers through interaction.ts
+      chat-move.ts          "Open in chat": reposts a live question as a reply, retires the old copy
       markdown.ts           Markdown → Telegram HTML subset (bold/italic/code/pre/links/lists→bullets)
     miniapp/
       server.ts             loopback HTTP server inside the daemon: page shell + /api routes
@@ -166,9 +167,10 @@ Layout A of the approved design: a list of open question sets (newest first; tit
 session, "N of M answered", age, deadline, progress bar, "read at" time) and a set screen with one
 card per question (radio cards for single choice, checkboxes for multiple choice, "Other, or a
 note" when `allowOther` is set, a skip control only where the chat flow shows Skip, `(Recommended)`
-labels shown as a RECOMMENDED tag) and a sticky "Send N answers" button. Not built yet (PR 2): the
-"…" menu, the per-question "In chat" link, and the long-press sheet. Their slots are marked
-`data-slot` in `web/app.js`.
+labels shown as a RECOMMENDED tag) and a sticky "Send N answers" button. Added later (2026-10-14,
+same day, Reid's decision in the tooling pane): the header "…" menu (Open in chat, Copy set title,
+Cancel this set), a per-question "In chat" link, and a long press on a list card (Answer here, Open
+in chat, Cancel this set). See "Open in chat" below.
 
 **Where it runs.** In the daemon process, because only the daemon can resolve a waiting `tg ask`
 caller. It is isolated: it starts only when `config.json` has a `miniapp` block, it binds
@@ -200,6 +202,28 @@ the first of them. A question marked live for a submit that then fails is put ba
 Submits for one batch run one at a time. `advanceOrFinish` no longer sends the next chat question
 while a chat message is still live, or finishes the batch while any question is live; for the chat
 flow, which keeps one question live, nothing changes.
+
+**Open in chat, and Cancel.** Telegram has no link to one message in a private chat, so "Open in
+chat" is a repost, not a jump. The page calls `POST /api/batches/:id/chat` (optionally with a
+`questionId`) and then `Telegram.WebApp.close()`; `core/chat-move.ts` sends the question again as a
+reply to its original message (`reply_parameters`, still sent if the original was deleted), with
+live buttons and any options already ticked. The old copy has to stop taking answers, so: the new
+message id is stored and the move is written to the audit trail (`question_moved`) before the old
+message is edited; the old message becomes "moved to the message below" with no buttons; and
+`handleCallback` refuses any tap on a message recorded as moved, so the old buttons are dead even if
+the edit failed or was slow. A question answered while the new message was being sent is a conflict
+and the new message is deleted. Moves, submits and cancels for one batch run one at a time.
+
+For the whole set, the chat flow shows one question at a time, so "Open in chat" reposts the
+question that is live in chat now, and the rest follow in order once it is answered, exactly as
+before (if nothing is live yet, the next waiting question is sent). For one question that has not
+been shown yet, it is sent now, ahead of its turn; `advanceOrFinish` then holds the next question
+back only for a live question that comes before it, so the questions skipped over still appear. A
+choice question whose "Other" prompt was open starts again from its buttons. Answers typed in the
+page but not sent stay in the page's draft, not in the store.
+
+`POST /api/batches/:id/cancel` goes through `cancelBatch`. The page asks to confirm, and the server
+refuses without `{"confirm": true}`. Both routes need the same initData as every other route.
 
 **Config** (hand-set in `config.json`; `tg setup` keeps it): `miniapp.port` (local port),
 `miniapp.secret` (16+ chars of letters, digits, `_`, `-`), `miniapp.publicUrl` (the Funnel https

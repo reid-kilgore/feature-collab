@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS audit (
   question_id TEXT,
   detail_json TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_audit_question ON audit(question_id);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
@@ -293,6 +294,36 @@ export class Store {
         merged.resolved_at,
         id,
       );
+  }
+
+  // True when `messageId` was this question's chat message before it was moved (reposted) to a
+  // newer one. The moves are recorded in the audit trail, so this survives a restart.
+  isMovedMessage(questionId: string, messageId: number): boolean {
+    const row = this.db
+      .prepare("SELECT 1 AS hit FROM audit WHERE kind = 'question_moved' AND question_id = ? AND json_extract(detail_json, '$.from') = ? LIMIT 1")
+      .get(questionId, messageId);
+    return Boolean(row);
+  }
+
+  // The question whose reply prompt `messageId` was before a move, if any.
+  questionForMovedForceReply(messageId: number): string | undefined {
+    const row = this.db
+      .prepare("SELECT question_id FROM audit WHERE kind = 'question_moved' AND json_extract(detail_json, '$.fromForce') = ? LIMIT 1")
+      .get(messageId) as { question_id: string } | undefined;
+    return row?.question_id;
+  }
+
+  // Runs `fn` so that all of its writes happen or none do.
+  inTransaction<T>(fn: () => T): T {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   listPendingQuestions(): QuestionRow[] {

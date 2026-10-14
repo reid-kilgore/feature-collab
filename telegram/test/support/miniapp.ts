@@ -32,6 +32,11 @@ export interface FakePort extends OutboundPort {
   deletedForceReplies: number;
   done: boolean;
   failNextSend: boolean;
+  sends: Array<{ index: number; replyTo?: number; messageId: number; forceReplyMessageId?: number }>;
+  moved: Array<{ oldMessageId: number; oldForceReplyMessageId: number | null }>;
+  retracted: number[];
+  // Runs inside sendQuestion, to simulate something happening while the message is being sent.
+  duringSend?: () => void | Promise<void>;
 }
 
 export function makeFakePort(): FakePort {
@@ -42,15 +47,28 @@ export function makeFakePort(): FakePort {
     deletedForceReplies: 0,
     done: false,
     failNextSend: false,
+    sends: [],
+    moved: [],
+    retracted: [],
     async sendHeader() {},
-    async sendQuestion(_batch, _question, _row, index) {
+    async sendQuestion(_batch, question, _row, index, _total, _selected, opts) {
       if (port.failNextSend) {
         port.failNextSend = false;
         throw new Error("telegram down");
       }
       port.sentQuestions++;
       port.sentIndexes.push(index);
-      return { messageId: 100 + port.sentQuestions };
+      const sent: { messageId: number; forceReplyMessageId?: number } = { messageId: 100 + port.sentQuestions };
+      if (question.type === "text") sent.forceReplyMessageId = 500 + port.sentQuestions;
+      port.sends.push({ index, replyTo: opts?.replyToMessageId, ...sent });
+      await port.duringSend?.();
+      return sent;
+    },
+    async markMoved(_batch, _question, oldMessageId, oldForceReplyMessageId) {
+      port.moved.push({ oldMessageId, oldForceReplyMessageId });
+    },
+    async retract(_batch, messageId) {
+      port.retracted.push(messageId);
     },
     async editResolved(_batch, _question, _row, kind, text) {
       port.resolvedViews.push(`${kind}:${text ?? ""}`);

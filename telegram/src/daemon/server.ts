@@ -675,7 +675,7 @@ async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSe
   }
 }
 
-async function recoverOnStartup(store: Store, port: ReturnType<typeof createTelegramPort>, onResolved: OnResolved, logFn: (l: string) => void): Promise<void> {
+export async function recoverOnStartup(store: Store, port: ReturnType<typeof createTelegramPort>, onResolved: OnResolved, logFn: (l: string) => void): Promise<void> {
   const pending = store.listPendingBatches();
   for (const batch of pending) {
     if (isBatchTimedOut(batch)) {
@@ -691,12 +691,13 @@ async function recoverOnStartup(store: Store, port: ReturnType<typeof createTele
     }
     const questions = store.listQuestionsForBatch(batch.id);
     const live = questions.find((q) => q.status === "pending" || q.status === "awaiting_text");
-    if (!live) {
-      // Nothing sent yet (crash between insert and send), or a "waiting" head-of-line question.
+    // Nothing sent yet (crash between insert and send); a "waiting" head-of-line question; or a
+    // question moved to chat ahead of its turn, with the questions before it still waiting.
+    const anyWaiting = questions.some((q) => q.status === "waiting");
+    if (!live || anyWaiting) {
       try {
-        const started = questions.some((q) => q.status !== "waiting");
-        if (started) await advanceOrFinish(store, port, onResolved, batch.id);
-        else await startBatch(store, port, batch.id);
+        if (questions.every((q) => q.status === "waiting")) await startBatch(store, port, batch.id);
+        else await advanceOrFinish(store, port, onResolved, batch.id);
       } catch (error) {
         logFn(`recovery startBatch failed for ${batch.id}: ${(error as Error).message}`);
       }
