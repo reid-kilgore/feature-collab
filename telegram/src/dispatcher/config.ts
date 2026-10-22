@@ -41,7 +41,7 @@ export interface DispatcherConfig {
   // claudeBin: the claude executable. A tmux window does not read the user's shell profile, so a
   // `claude` installed in a directory only the profile adds to PATH (~/.local/bin) is not found there;
   // give the full path in that case.
-  session: { tmuxSession: string; window: string; cwd: string; allowedTools: string[]; claudeBin: string };
+  session: { tmuxSession: string; window: string; cwd: string; allowedTools: string[]; claudeBin: string; name?: string };
   inboxCommands: boolean;
   defaultTarget: string | undefined;
   targets: Target[];
@@ -138,6 +138,9 @@ export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
       cwd: str(sessionRaw.cwd, "session.cwd", "~"),
       allowedTools: toolsRaw as string[],
       claudeBin: str(sessionRaw.claudeBin, "session.claudeBin", "claude"),
+      // A fixed display name for the session, so other sessions can address it; without one the name is
+      // derived from the directory and can change between starts.
+      ...(sessionRaw.name !== undefined ? { name: str(sessionRaw.name, "session.name", "", NAME) } : {}),
     },
     inboxCommands: r.inboxCommands === true,
     defaultTarget,

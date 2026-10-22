@@ -134,6 +134,8 @@ export function buildDispatcherCommand(config: DispatcherConfig, protocolFile: s
     shq(KICKOFF),
     "--model",
     shq(config.model),
+    // before --allowed-tools: that option is variadic and would swallow anything after it
+    ...(config.session.name ? ["--name", shq(config.session.name)] : []),
     "--allowed-tools",
     shq(config.session.allowedTools.join(",")),
     "--append-system-prompt-file",
