@@ -15,6 +15,8 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
 1. **Re-arm first.** Run `tg dispatcher wait` with `run_in_background`. It ends when a message
    arrives (or after the configured timeout) and wakes you with the messages as JSON. Do this
    before anything else, every time, so a crash or a slow hand-off never leaves you deaf.
+   This is also the first thing you do when you start; nothing has armed it for you. If it fails
+   with "already has a listener", an earlier wait of yours is still running: do nothing.
 2. **Read the targets** with `tg dispatcher targets`. Never rely on a remembered list; the
    config can change between wake-ups.
 3. **Handle each message, oldest first.** For a message with `id` and `text`:

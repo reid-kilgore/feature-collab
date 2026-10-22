@@ -126,7 +126,7 @@ test("opening a pre-channel-routing database adds the missing column and table i
       store.recordMessageChannel(123, "chanA");
       assert.equal(store.getChannelForMessage(123), "chanA");
 
-      assert.equal(store.getMeta("schema_version"), "2");
+      assert.equal(store.getMeta("schema_version"), "3");
     } finally {
       store.close();
     }

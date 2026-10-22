@@ -13,7 +13,7 @@ import type { AskPayload, DocumentInput } from "../contract/payload.ts";
 import { extractMarkdownImageRefs, isImagePath } from "../core/diagrams.ts";
 import type { Level } from "../contract/notify.ts";
 import { readPresence, setPresence, describePresence } from "../presence.ts";
-import { getToken, readConfig, configExists, shortHostname, redact } from "../config.ts";
+import { getToken, readConfig, configExists, shortHostname, redact, tmuxBin } from "../config.ts";
 import type {
   DaemonRequest,
   DaemonResponse,
@@ -88,8 +88,8 @@ function printUsage(): void {
   console.error(`tg <command> [options]
 
 Commands:
-  ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default]
-  send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID]
+  ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default] [--from ADDRESS]
+  send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID] [--from ADDRESS]
   status
   pending
   cancel <id|all>
@@ -107,12 +107,13 @@ Commands:
 
 // ---- ask ----
 
-function parseAskArgs(argv: string[]): { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default" } {
-  const result: { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default" } = {};
+function parseAskArgs(argv: string[]): { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string } {
+  const result: { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string } = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--file") result.file = argv[++i];
     else if (arg === "--json") result.json = argv[++i];
+    else if (arg === "--from") result.from = argv[++i];
     else if (arg === "--timeout") result.timeoutSeconds = parseDuration(argv[++i] ?? "");
     else if (arg === "--on-timeout") {
       const v = argv[++i];
@@ -196,6 +197,7 @@ async function cmdAsk(argv: string[]): Promise<void> {
     payload,
     askerPath,
     askerTmuxWindow,
+    askerAddress: cleanSender(args.from ?? process.env.AGENT_TELEGRAM_FROM) ?? tmuxAddress(),
     timeoutSeconds: args.timeoutSeconds,
     onTimeout: args.onTimeout,
   };
@@ -315,12 +317,35 @@ function resolveChannel(explicit: string | undefined): string {
   return process.cwd();
 }
 
-// Who sent a message, as a short name for the italic last line: the tmux window when there is one,
-// else the explicit channel (a path by its last directory, a bare pane id not at all).
-function senderName(explicitChannel: string | undefined): string | undefined {
-  const window = bestEffortTmuxWindow();
-  if (window) return window;
-  const channel = explicitChannel ?? process.env.AGENT_TELEGRAM_CHANNEL;
+// The sender's tmux address, session:window, asked of the sender's own pane. Undefined outside tmux or
+// when tmux does not answer.
+function tmuxAddress(): string | undefined {
+  if (!process.env.TMUX) return undefined;
+  try {
+    const pane = process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : [];
+    return cleanSender(execFileSync(tmuxBin(), ["display-message", "-p", ...pane, "#S:#W"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+  } catch {
+    return undefined;
+  }
+}
+
+// An address a caller passed is shown to Reid: drop control characters, cap the length.
+function cleanSender(text: string | undefined): string | undefined {
+  const cleaned = (text ?? "").replace(/[\u0000-\u001f\u007f]+/g, "").trim().slice(0, 80);
+  return cleaned || undefined;
+}
+
+// Who sent a message, for the italic last line. An address the caller passed (--from, or
+// AGENT_TELEGRAM_FROM, for a caller that reaches this machine over ssh and so has no TMUX here) wins.
+// Next the sender's own tmux address, whenever it is in tmux. Outside tmux, only when the sender gave a
+// title or a channel: the channel (a path by its last directory, a bare pane id not at all).
+function senderName(args: { from?: string; channel?: string; title?: string }): string | undefined {
+  const given = cleanSender(args.from ?? process.env.AGENT_TELEGRAM_FROM);
+  if (given) return given;
+  const address = tmuxAddress();
+  if (address) return address;
+  const channel = args.channel ?? process.env.AGENT_TELEGRAM_CHANNEL;
+  if (!args.title && !channel) return undefined;
   if (!channel || /^%\d+$/.test(channel)) return undefined;
   if (channel.startsWith("/")) return path.basename(channel) || undefined;
   return channel;
@@ -335,6 +360,7 @@ function parseSendArgs(argv: string[]): {
   stdin: boolean;
   channel?: string;
   replyToMessageId?: number;
+  from?: string;
 } {
   let level: Level = "info";
   let title: string | undefined;
@@ -343,6 +369,7 @@ function parseSendArgs(argv: string[]): {
   let stdin = false;
   let channel: string | undefined;
   let replyToMessageId: number | undefined;
+  let from: string | undefined;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -359,6 +386,8 @@ function parseSendArgs(argv: string[]): {
       filePath = argv[++i];
     } else if (arg === "--channel") {
       channel = argv[++i];
+    } else if (arg === "--from") {
+      from = argv[++i];
     } else if (arg === "--reply-to") {
       replyToMessageId = Number(argv[++i]);
       if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0) throw new Error("--reply-to needs a Telegram message id");
@@ -368,7 +397,7 @@ function parseSendArgs(argv: string[]): {
       positional.push(arg!);
     }
   }
-  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId };
+  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -397,8 +426,7 @@ async function cmdSend(argv: string[]): Promise<void> {
     caption,
     channel: resolveChannel(args.channel),
     replyToMessageId: args.replyToMessageId,
-    // Named only when the sender gave a title or a channel; a bare tg send is just the text.
-    sender: args.title || args.channel || process.env.AGENT_TELEGRAM_CHANNEL ? senderName(args.channel) : undefined,
+    sender: senderName(args),
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {

@@ -39,8 +39,12 @@ tg recv --wait --timeout 4h     # block for Reid's next message; text is his ins
 ```
 
 A message starts with its content: no header line. `warning` and `error` put one ⚠️ or ❌ at
-the start of the first line. If you pass `--title` or `--channel`, the sending session's short
-name (its tmux window, else the channel) is a small italic last line, so you can tell who sent it.
+the start of the first line. A small italic last line says who sent it: the sender's tmux address
+(`session:window`, for example `ship:geo`) whenever it runs inside tmux. Outside tmux it is the
+channel's name, and only when you pass `--title` or `--channel`. A caller that reaches this machine
+over ssh has no tmux here, so it passes its own address: `ssh host "tg send --from ship:geo 'text'"`
+(or the environment variable `AGENT_TELEGRAM_FROM`); get it with `tmux display-message -p '#S:#W'`.
+`tg ask` shows the same address as the last line of its header and in the "Answers sent to the agent" footer; it takes `--from` and `AGENT_TELEGRAM_FROM` the same way.
 
 `tg ask` documents must be `{id, title, markdown}` or `{id, title, path}`:
 

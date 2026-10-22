@@ -90,3 +90,105 @@ test("a path channel is shown by its last directory name, and a pane id is never
     await h.teardown();
   }
 });
+
+// ---- the sender line shows the tmux address (session:window) ----
+
+import { writeFileSync, chmodSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+function tmuxStub(h: Awaited<ReturnType<typeof setupHarness>>, answer: string): string {
+  const stub = path.join(h.home, "tmux-stub.cjs");
+  writeFileSync(
+    stub,
+    `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(require("node:path").join(__dirname, "tmux.log"), JSON.stringify(process.argv.slice(2)) + "\\n");\nprocess.stdout.write(${JSON.stringify(answer)} + "\\n");\n`,
+  );
+  chmodSync(stub, 0o755);
+  return stub;
+}
+
+test("inside tmux, a bare tg send ends with the session:window address, asked of the sender's own pane", async () => {
+  const h = await setupHarness();
+  try {
+    h.env.TMUX = "/tmp/tmux-501/default,1,0";
+    h.env.TMUX_PANE = "%5";
+    h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub(h, "ship:geo");
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await h.runCli(["send", "Build finished"]);
+    assert.equal(await sentText(h), "Build finished\n<i>ship:geo</i>");
+    const call = JSON.parse(readFileSync(path.join(h.home, "tmux.log"), "utf8").trim().split("\n")[0]!);
+    assert.deepEqual(call, ["display-message", "-p", "-t", "%5", "#S:#W"]);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("inside tmux the address is shown with a title too, and replaces the channel name", async () => {
+  const h = await setupHarness();
+  try {
+    h.env.TMUX = "/tmp/tmux-501/default,1,0";
+    h.env.TMUX_PANE = "%5";
+    h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub(h, "ship:geo");
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await h.runCli(["send", "--title", "Done", "--channel", "review-bot", "ok"]);
+    assert.equal(await sentText(h), "<b>Done</b>\nok\n<i>ship:geo</i>");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a caller outside tmux can pass its address: AGENT_TELEGRAM_FROM, and --from wins over it", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    h.env.AGENT_TELEGRAM_FROM = "ship:remote";
+    await h.runCli(["send", "from env"]);
+    assert.equal(await sentText(h), "from env\n<i>ship:remote</i>");
+    h.fake.sent.length = 0;
+    await h.runCli(["send", "--from", "review:other", "from flag"]);
+    assert.equal(await sentText(h), "from flag\n<i>review:other</i>");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a passed address is cleaned: control characters dropped, length capped, and the text is escaped", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await h.runCli(["send", "--from", `a<b>\u0007${"x".repeat(200)}`, "hi"]);
+    const text = await sentText(h);
+    const sender = /<i>(.*)<\/i>$/.exec(text)![1]!;
+    assert.ok(sender.startsWith("a&lt;b&gt;x"));
+    assert.ok(!/\u0007/.test(text));
+    assert.ok(sender.length <= 80 + "&lt;&gt;".length * 2);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a tmux that fails to answer leaves the old rule: bare text, no sender", async () => {
+  const h = await setupHarness();
+  try {
+    h.env.TMUX = "/tmp/tmux-501/default,1,0";
+    h.env.TMUX_PANE = "%5";
+    const stub = path.join(h.home, "tmux-fail.cjs");
+    writeFileSync(stub, "#!/usr/bin/env node\nprocess.exit(1);\n");
+    chmodSync(stub, 0o755);
+    h.env.AGENT_TELEGRAM_TMUX_BIN = stub;
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await h.runCli(["send", "just text"]);
+    assert.equal(await sentText(h), "just text");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});

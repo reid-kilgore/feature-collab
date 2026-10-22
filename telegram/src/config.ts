@@ -72,6 +72,15 @@ export function configDir(): string {
   return testHome ? path.join(testHome, "config") : path.join(homedir(), ".config", "agent-telegram");
 }
 
+// The tmux executable. Tests must never reach the real tmux, so under AGENT_TELEGRAM_HOME the override
+// is required (the same fail-closed guard as the maestro, ssh and Telegram API bases).
+export function tmuxBin(): string {
+  const override = process.env.AGENT_TELEGRAM_TMUX_BIN;
+  if (override) return override;
+  if (testHome) throw new Error("refusing to run the real tmux under AGENT_TELEGRAM_HOME (test mode): set AGENT_TELEGRAM_TMUX_BIN to a stub first");
+  return "tmux";
+}
+
 export function stateDir(): string {
   return testHome ? path.join(testHome, "state") : path.join(homedir(), ".local", "state", "agent-telegram");
 }

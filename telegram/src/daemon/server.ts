@@ -511,7 +511,7 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
         }
         case "ask": {
           const payload = validatePayload(request.payload);
-          const batchId = createAskBatch(deps, payload, request.askerPath, request.askerTmuxWindow, request.timeoutSeconds, request.onTimeout);
+          const batchId = createAskBatch(deps, payload, request.askerPath, request.askerTmuxWindow, request.timeoutSeconds, request.onTimeout, request.askerAddress);
           write({ id: batchId });
           const resultPromise = new Promise<AskResult>((resolve) => {
             const list = deps.waiters.get(batchId) ?? [];
@@ -805,6 +805,7 @@ function createAskBatch(
   askerTmuxWindow: string | undefined,
   timeoutSeconds: number | undefined,
   onTimeout: "cancel" | "default" | undefined,
+  askerAddress?: string,
 ): string {
   const id = newId();
   const effectiveTimeoutSeconds = timeoutSeconds ?? payload.timeoutSeconds;
@@ -814,6 +815,7 @@ function createAskBatch(
     status: "pending",
     asker_path: askerPath,
     asker_tmux_window: askerTmuxWindow ?? null,
+    asker_address: askerAddress ?? null,
     payload_json: JSON.stringify(payload),
     timeout_at: timeoutAt,
     on_timeout: onTimeout ?? payload.onTimeout ?? "cancel",

@@ -36,8 +36,10 @@ tg send --image ./screenshot.png "Before/after diff"
 
 Levels: `info` (default), `success`, `warning`, `error`. Body is Markdown. A message starts with its
 content, with no header. Only `warning` and `error` add one emoji (⚠️ or ❌) at the start of the first
-line. If you pass `--title` or `--channel`, your tmux window name (else the channel) is added as a small
-italic last line, so Reid can tell which session sent it.
+line. Your tmux address (`session:window`) is added as a small italic last line whenever you run inside tmux, so Reid
+can tell which session sent it. If you reach `tg` over ssh, your tmux is not visible there: pass
+`--from "$(tmux display-message -p '#S:#W')"` (or set `AGENT_TELEGRAM_FROM`). Outside tmux the channel's name is
+shown only when you pass `--title` or `--channel`. `tg ask` shows the same address, and takes `--from` the same way.
 
 ## When to use `tg ask`
 
