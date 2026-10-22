@@ -24,6 +24,8 @@ export interface BatchRow {
   status: BatchStatus;
   asker_path: string;
   asker_tmux_window: string | null;
+  // session:window (or an address the asker passed): shown in the header and the footer.
+  asker_address: string | null;
   payload_json: string;
   timeout_at: string | null;
   on_timeout: OnTimeout | null;
@@ -56,6 +58,7 @@ CREATE TABLE IF NOT EXISTS batches (
   status TEXT NOT NULL,
   asker_path TEXT NOT NULL,
   asker_tmux_window TEXT,
+  asker_address TEXT,
   payload_json TEXT NOT NULL,
   timeout_at TEXT,
   on_timeout TEXT,
@@ -127,7 +130,7 @@ CREATE TABLE IF NOT EXISTS message_channel (
 // explicitly checking for and adding columns/tables introduced after a table's original
 // release, so restarting the daemon on an existing state.sqlite never fails with
 // "no such column" again.
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
@@ -172,6 +175,10 @@ function migrate(db: DatabaseSync): void {
       ] as const) {
         if (!columnExists(db, "inbox", column)) db.exec(`ALTER TABLE inbox ADD COLUMN ${column} ${type}`);
       }
+    }
+    // v3: who is asking, as an address (tmux session:window, or one the caller passed). Additive.
+    if (tableExists(db, "batches") && !columnExists(db, "batches", "asker_address")) {
+      db.exec("ALTER TABLE batches ADD COLUMN asker_address TEXT");
     }
     if (!tableExists(db, "message_inquiry")) {
       db.exec("CREATE TABLE message_inquiry (message_id INTEGER PRIMARY KEY, inquiry_id TEXT NOT NULL, at TEXT NOT NULL)");
@@ -226,13 +233,13 @@ export class Store {
 
   // ---- batches ----
 
-  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json">): void {
+  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json" | "asker_address"> & { asker_address?: string | null }): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
         `INSERT INTO batches (id, created_at, updated_at, resolved_at, status, asker_path, asker_tmux_window,
-          payload_json, timeout_at, on_timeout, chat_id, user_id, result_json)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          payload_json, timeout_at, on_timeout, chat_id, user_id, result_json, asker_address)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
       )
       .run(
         row.id,
@@ -246,6 +253,7 @@ export class Store {
         row.on_timeout,
         row.chat_id,
         row.user_id,
+        row.asker_address ?? null,
       );
   }
 

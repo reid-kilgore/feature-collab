@@ -119,16 +119,19 @@ export function renderMovedView(question: Question): string {
   return `↪ <b>${escapeHtml(question.prompt)}</b>\n<i>moved to the message below</i>`;
 }
 
-export function renderHeader(payload: AskPayload): string | undefined {
+export function renderHeader(payload: AskPayload, askerAddress?: string): string | undefined {
   if (!payload.title && !payload.message) return undefined;
   const parts: string[] = [];
   if (payload.title) parts.push(`📋 <b>${escapeHtml(payload.title)}</b>`);
   if (payload.message) parts.push(markdownToTelegramHtml(payload.message));
+  if (askerAddress) parts.push(`<i>${escapeHtml(askerAddress)}</i>`);
   return parts.join("\n");
 }
 
-export function renderBatchDone(askerBasename: string, tmuxWindow?: string): string {
-  const where = tmuxWindow ? `${askerBasename}, ${tmuxWindow}` : askerBasename;
+export function renderBatchDone(askerBasename: string, tmuxWindow?: string, askerAddress?: string): string {
+  // The address (session:window) says more than the window name alone, so it replaces it.
+  const who = askerAddress ?? tmuxWindow;
+  const where = who ? `${askerBasename}, ${who}` : askerBasename;
   return `✅ Answers sent to the agent (${escapeHtml(where)})`;
 }
 

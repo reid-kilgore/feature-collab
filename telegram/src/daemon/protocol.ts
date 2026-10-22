@@ -26,6 +26,8 @@ export interface AskRequest {
   payload: AskPayload;
   askerPath: string;
   askerTmuxWindow?: string;
+  // Who is asking, as an address: shown in the header and the footer. Not part of the result.
+  askerAddress?: string;
   timeoutSeconds?: number;
   onTimeout?: "cancel" | "default";
 }

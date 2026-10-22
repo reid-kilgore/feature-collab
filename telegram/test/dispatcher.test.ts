@@ -782,3 +782,28 @@ test("a failed hand-off tells Reid what failed on short lines", async () => {
     await h.teardown();
   }
 });
+
+test("the kickoff prompt does not arm a wait, so the skill's re-arm-first rule arms exactly one", async () => {
+  const h = await setupHarness();
+  try {
+    const tmuxStub = path.join(h.home, "tmux-stub.cjs");
+    writeFileSync(tmuxStub, `#!/usr/bin/env node\nconst a = process.argv.slice(2); require("node:fs").appendFileSync(require("node:path").join(__dirname, "tmux.log"), JSON.stringify(a) + "\\n"); if (a[0] === "list-windows") process.exit(1);\n`);
+    chmodSync(tmuxStub, 0o755);
+    h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub;
+    writeConfig(h);
+    const daemon = await start(h);
+    assert.equal((await h.runCli(["dispatcher", "start"])).code, 0);
+    const create = readFileSync(path.join(h.home, "tmux.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((c: string[]) => c[0] === "new-session")!;
+    const command = create[create.length - 1] as string;
+    assert.match(command, /Load the telegram-dispatcher skill and follow it/);
+    assert.doesNotMatch(command, /dispatcher wait/, "the skill's first step arms the wait; the kickoff must not arm a second");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the protocol says a refused second wait is harmless", async () => {
+  const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /already has a listener/);
+});

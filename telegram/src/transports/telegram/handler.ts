@@ -120,7 +120,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
     async sendHeader(batch, payload: AskPayload) {
       const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
       const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
-      const text = renderHeader(headerPayload);
+      const text = renderHeader(headerPayload, batch.asker_address ?? undefined);
       if (text) await api.sendMessage(batch.chat_id, text, { html: true });
       if (messageParts?.diagrams.length) {
         await sendDiagrams(api, batch.chat_id, payload.title ?? "Message", messageParts.diagrams, render);
@@ -185,7 +185,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
       if (questionRow.force_reply_message_id) await api.deleteMessage(batch.chat_id, questionRow.force_reply_message_id);
     },
     async sendBatchDone(batch: BatchRow) {
-      const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined);
+      const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined, batch.asker_address ?? undefined);
       await api.sendMessage(batch.chat_id, text, { html: true });
     },
   };

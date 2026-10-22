@@ -121,7 +121,7 @@ tg send --file path ["caption"]                    sendDocument
 tg send -                                          body from stdin
 ```
 
-Level: info and success add nothing (the message starts with its content); warning and error put one ⚠️ or ❌ at the start of the first line. (Superseded 2026-10-22: there used to be a header line "<level emoji> 🖥 <host>" on every message.) Title bold on its own line. When the sender gave a title or a channel, the sending session's short name (tmux window, else channel) is a small italic last line. Body Markdown → Telegram HTML; on a
+Level: info and success add nothing (the message starts with its content); warning and error put one ⚠️ or ❌ at the start of the first line. (Superseded 2026-10-22: there used to be a header line "<level emoji> 🖥 <host>" on every message.) Title bold on its own line. When the sender gave a title or a channel, a small italic last line names the sender: its tmux address `session:window` whenever it is in tmux, or an address passed with `--from` / `AGENT_TELEGRAM_FROM` (for callers over ssh); otherwise the channel's name, and only when a title or channel was given. When the sender gave a title or a channel, the old rule applied (superseded 2026-10-22). Body Markdown → Telegram HTML; on a
 Telegram parse error, retry as plain text (never fail a notification because of formatting).
 Messages >4096 chars are split on paragraph boundaries. Exit 0 on delivery.
 

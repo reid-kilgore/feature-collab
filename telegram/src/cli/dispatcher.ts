@@ -7,7 +7,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { oneShot } from "./client.ts";
-import { isTestMode, stateDir, redact } from "../config.ts";
+import { stateDir, redact, tmuxBin } from "../config.ts";
 import { readDispatcherConfig, expandHome } from "../dispatcher/config.ts";
 import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
 import { DISPATCHER_PROTOCOL } from "../dispatcher/protocol.ts";
@@ -114,19 +114,12 @@ function placeholders(argv: string[]): string[] {
 
 // ---- start / stop / status ----
 
-function tmuxBin(): string {
-  const override = process.env.AGENT_TELEGRAM_TMUX_BIN;
-  if (override) return override;
-  // Same fail-closed guard as the maestro and ssh binaries: a test must never reach the real tmux.
-  if (isTestMode()) throw new Error("refusing to run the real tmux under AGENT_TELEGRAM_HOME (test mode): set AGENT_TELEGRAM_TMUX_BIN to a stub first");
-  return "tmux";
-}
-
 function shq(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
-const KICKOFF = "You are the Telegram dispatcher. Load the telegram-dispatcher skill and follow it. Your first action is `tg dispatcher wait` in the background.";
+// The kickoff does not start a wait itself: the skill's first step does, so exactly one is armed.
+const KICKOFF = "You are the Telegram dispatcher. Load the telegram-dispatcher skill and follow it.";
 
 export function buildDispatcherCommand(config: DispatcherConfig, protocolFile: string): string {
   const claude = [
