@@ -98,12 +98,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const home = __dirname;
 fs.appendFileSync(path.join(home, "ssh-invocations.log"), "1\\n");
+fs.appendFileSync(path.join(home, "ssh-argv.log"), JSON.stringify(process.argv.slice(2)) + "\\n");
 const outputFile = path.join(home, "ssh-output.txt");
 if (fs.existsSync(outputFile)) process.stdout.write(fs.readFileSync(outputFile, "utf8"));
 if (fs.existsSync(path.join(home, "ssh-hang"))) {
-  setInterval(() => {}, 1000 * 1000);
+  // Waits like ssh waiting for a Tailscale check to be approved; a file called ssh-release is the approval.
+  setInterval(() => {
+    if (fs.existsSync(path.join(home, "ssh-release"))) process.exit(0);
+  }, 50);
 } else {
-  process.exit(0);
+  process.exit(fs.existsSync(path.join(home, "ssh-fail")) ? 255 : 0);
 }
 `;
 

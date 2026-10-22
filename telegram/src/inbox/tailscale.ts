@@ -47,7 +47,25 @@ export function parseUnreachableAlias(warning: string): string | undefined {
   return match?.[1];
 }
 
-export type TailscaleCheckResult = { kind: "link"; url: string } | { kind: "no-link"; detail: string };
+// exitCode is set when the ssh ended before the result was known: 0 means the connection worked (no check
+// is needed), anything else is a failure. It is undefined when the watch window ran out with ssh still
+// running (a slow connect), and null when ssh was killed by a signal.
+export type TailscaleCheckResult = { kind: "link"; url: string } | { kind: "no-link"; detail: string; exitCode?: number | null };
+
+// One pending check per alias, shared by the /inbox command and the standing watch, so the two never
+// start a second ssh for the same pair. The value carries the link once one has been found.
+export interface PendingTailscaleCheck {
+  link?: string;
+}
+export const pendingTailscaleChecks = new Map<string, PendingTailscaleCheck>();
+
+export interface StartCheckOptions {
+  // Probe `alias` from this host instead of from here: `ssh via "ssh alias true"`. The check text the
+  // inner ssh prints comes back on the outer one's stderr, so the same parser finds the link.
+  via?: string;
+  // How long a pending check may wait for approval before it is killed. Default 10 minutes.
+  hardKillMs?: number;
+}
 
 export interface TailscaleCheckHandle {
   // Resolves once we know whether a check link appeared, without waiting for the ssh
@@ -62,7 +80,7 @@ export interface TailscaleCheckHandle {
 // Starts `ssh <alias> true` and watches its output for a Tailscale SSH check link. Callers are
 // responsible for validating `alias` first (see isValidAlias and the host allowlist in
 // handler.ts) — this function does not shell out through anything a message could inject into.
-export function startTailscaleCheck(alias: string): TailscaleCheckHandle {
+export function startTailscaleCheck(alias: string, options: StartCheckOptions = {}): TailscaleCheckHandle {
   let bin: string;
   try {
     bin = resolveSshBin();
@@ -70,7 +88,14 @@ export function startTailscaleCheck(alias: string): TailscaleCheckHandle {
     return { result: Promise.resolve({ kind: "no-link", detail: (error as TailscaleCheckError).message }), child: undefined };
   }
 
-  const child = spawn(bin, ["-o", "ConnectTimeout=8", alias, "true"], {
+  if (!isValidAlias(alias) || (options.via !== undefined && !isValidAlias(options.via))) {
+    return { result: Promise.resolve({ kind: "no-link", detail: "not a valid ssh alias" }), child: undefined };
+  }
+  // BatchMode: never stop to ask for a password. A Tailscale check is not a prompt; it still prints its link.
+  const target = options.via
+    ? [options.via, `ssh -o BatchMode=yes -o ConnectTimeout=8 ${alias} true`]
+    : [alias, "true"];
+  const child = spawn(bin, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", ...target], {
     env: maestroEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -81,7 +106,7 @@ export function startTailscaleCheck(alias: string): TailscaleCheckHandle {
     } catch {
       // already gone
     }
-  }, HARD_KILL_MS);
+  }, options.hardKillMs ?? HARD_KILL_MS);
   child.once("close", () => clearTimeout(hardKill));
 
   const result = new Promise<TailscaleCheckResult>((resolve) => {
@@ -90,11 +115,11 @@ export function startTailscaleCheck(alias: string): TailscaleCheckHandle {
 
     const firstLine = (): string => combined.split("\n").find((line) => line.trim())?.trim() ?? "(no output)";
 
-    const finishNoLink = () => {
+    const finishNoLink = (exitCode?: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(watchTimer);
-      resolve({ kind: "no-link", detail: firstLine() });
+      resolve({ kind: "no-link", detail: firstLine(), ...(exitCode !== undefined ? { exitCode } : {}) });
     };
 
     const finishLink = (url: string) => {
@@ -123,11 +148,11 @@ export function startTailscaleCheck(alias: string): TailscaleCheckHandle {
     child.stderr?.on("data", onData);
     child.on("error", (error) => {
       combined += (error as Error).message;
-      finishNoLink();
+      finishNoLink(255);
     });
-    child.on("close", finishNoLink);
+    child.on("close", (code) => finishNoLink(code));
 
-    const watchTimer = setTimeout(finishNoLink, WATCH_MS);
+    const watchTimer = setTimeout(() => finishNoLink(), WATCH_MS);
   });
 
   return { result, child };

@@ -33,6 +33,8 @@ import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, AskResult } from "../contract/payload.ts";
 import { markdownToTelegramHtml, splitMessage } from "../core/markdown.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
+import { TailscaleWatcher, readTailscaleWatchConfig } from "../inbox/tailscale-watch.ts";
+import { pendingTailscaleChecks } from "../inbox/tailscale.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
 import { listView } from "../miniapp/views.ts";
@@ -278,6 +280,25 @@ export async function runDaemon(): Promise<void> {
   const poller = new Poller(store, api, ctx, log);
   poller.start();
 
+  // The standing Tailscale re-approval watch: off unless tailscale.json exists. It talks to Reid through
+  // the same chat as everything else, and a failure in it is logged, never raised.
+  const tailscaleWatcher = new TailscaleWatcher({
+    send: async (html, url) => {
+      await api.sendMessage(config.chatId, html, {
+        html: true,
+        ...(url ? { replyMarkup: { inline_keyboard: [[{ text: "Approve", url }]] } } : {}),
+      });
+    },
+    now: () => Date.now(),
+    localName: hostname,
+    getMeta: (key) => store.getMeta(key),
+    setMeta: (key, value) => store.setMeta(key, value),
+    log,
+    config: () => readTailscaleWatchConfig(log),
+    pending: pendingTailscaleChecks,
+  });
+  tailscaleWatcher.start();
+
   const sweepTimer = setInterval(() => {
     sweepExpired(store, port, onResolved).catch((error) => log(`sweep error: ${(error as Error).message}`));
   }, SWEEP_INTERVAL_MS);
@@ -347,6 +368,7 @@ export async function runDaemon(): Promise<void> {
     forceExitTimer.unref();
     try {
       clearInterval(sweepTimer);
+      tailscaleWatcher.stop();
       menuUpdater?.stop();
       for (const socket of openSockets) socket.destroy();
       await Promise.race([poller.stop(), sleep(2500)]);

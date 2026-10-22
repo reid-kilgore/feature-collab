@@ -99,6 +99,20 @@ Every message is kept in `~/.local/state/agent-telegram/inquiries.jsonl`. `tg in
 dispatcher's queue. Removing `dispatcher.json`, or setting `"enabled": false`, restores the
 old routing at once, with no restart. Details: `DESIGN-dispatcher.md`.
 
+## Tailscale re-approval watch
+
+If your laptops reach each other over Tailscale SSH, an approval lapses now and then and ssh waits for a
+login link. Create `~/.config/agent-telegram/tailscale.json` and the daemon probes on a timer and sends you the
+link with an Approve button, once, then tells you when it works again:
+
+```
+{ "version": 1, "local": "mbp", "hosts": ["duo"],
+  "reverse": [{ "via": "duo", "target": "mbp" }], "interval": "10m", "reminder": "1h" }
+```
+
+`hosts` are ssh aliases probed from this machine. `reverse` probes the way back by asking the other machine to
+run the probe, which works while the first direction does. Delete the file to switch it off; no restart needed.
+
 ## Skill
 
 Symlink `skill/` into `~/.claude/skills/telegram` so Claude Code picks it up, and/or paste

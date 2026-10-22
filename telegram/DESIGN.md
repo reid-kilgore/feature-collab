@@ -411,3 +411,31 @@ message — the same disposition `/ask` uses.
 Photos and documents (no `message.text`) are unaffected: they still go to the local inbox only, as
 before. A bare caption rarely stands on its own in the maestro recent-items list the way a full
 text message does, so this fallback is text-only.
+
+## Tailscale re-approval watch (added 2026-10-22)
+
+Tailscale SSH between the laptops asks for a fresh browser approval now and then. The first sign is an
+`ssh` that prints "Tailscale SSH requires an additional check", then a login link, then waits. The daemon
+watches for that on a timer so the link reaches Reid on Telegram before something else fails on it.
+
+- Off unless `~/.config/agent-telegram/tailscale.json` exists. It is reread on every tick, so changes need no
+  restart. `{"version":1,"local":"mbp","hosts":["duo"],"reverse":[{"via":"duo","target":"mbp"}],"interval":"10m","reminder":"1h"}`.
+  A bad file turns the watch off and the reason is written to the daemon log.
+- Each tick runs `ssh -o BatchMode=yes -o ConnectTimeout=8 <host> true` for each host, through
+  `startTailscaleCheck`. Probes are asynchronous and each has its own kill timer, because `ConnectTimeout`
+  bounds only the connect, not the wait for approval. A pair that already has a probe waiting is skipped.
+  `/inbox` shares the same pending-check table, so the two never start a second ssh for one pair.
+- A check link is sent once as a message with an Approve button. Each probe makes a new link, and a link whose
+  ssh was killed is dead, so the waiting ssh is kept for the reminder interval (default 1 hour). If it expires
+  unapproved, the next tick sends a fresh link marked "Still waiting", not before the reminder interval has
+  passed since the last notice.
+- When the waiting ssh exits 0 (approved), "works again" is sent at once. A host that is merely unreachable
+  (asleep, offline) is silent.
+- The other direction: `ssh -o BatchMode=yes -o ConnectTimeout=8 <via> "ssh -o BatchMode=yes -o ConnectTimeout=8 <target> true"`.
+  The inner ssh's check text comes back on the outer ssh's stderr, so the same parser finds the link. It works
+  only while here-to-via works, so it is tried only when that probe went through, and straight away when a
+  waiting forward probe clears. Both directions usually lapse together, so the second link follows the first
+  approval within seconds.
+- Not done: a job on the other laptop. Its `ssh back` is the very link that is down, so it cannot notify.
+- State (`ok`, `needs_check`, `unreachable`, last notice time) is kept in the `meta` table, so a restart does not
+  repeat a notice.
