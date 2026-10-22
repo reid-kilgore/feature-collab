@@ -882,3 +882,64 @@ test("the protocol tells the session to re-arm after a wait that failed because 
   const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
   assert.match(DISPATCHER_PROTOCOL.join("\n"), /lost the daemon/);
 });
+
+// ---- which tmux session a new Claude session opens in ----
+
+async function newSessionArgv(h: Harness, session: Record<string, unknown>, inTmux: boolean): Promise<string[]> {
+  const allowed = path.join(h.home, "proj");
+  mkdirSync(allowed, { recursive: true });
+  const stub = path.join(h.home, "tmux-stub.cjs");
+  writeFileSync(stub, `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(require("node:path").join(__dirname, "tmux.log"), JSON.stringify(process.argv.slice(2)) + "\\n");\n`);
+  chmodSync(stub, 0o755);
+  h.env.AGENT_TELEGRAM_TMUX_BIN = stub;
+  if (inTmux) h.env.TMUX = "/tmp/tmux-501/default,1,0";
+  writeConfig(h, {
+    session,
+    targets: [{ name: "session", description: "start a session", builtin: "claude-session", allowedCwds: [allowed], ack: "ok" }],
+    defaultTarget: "session",
+  });
+  const daemon = await start(h);
+  say(h, "do a thing");
+  await waitUntil(() => reactions(h).length >= 1);
+  const id = inquiryLines(h)[0]!.id as string;
+  const r = await h.runCli(["dispatch", "session", "--inquiry", id, "--param", `cwd=${allowed}`]);
+  assert.equal(r.code, 0, r.stderr);
+  daemon.kill("SIGKILL");
+  return JSON.parse(readFileSync(path.join(h.home, "tmux.log"), "utf8").trim().split("\n").pop()!);
+}
+
+test("a session.tmuxSession set in the config is where the new window opens", async () => {
+  const h = await setupHarness();
+  try {
+    const argv = await newSessionArgv(h, { tmuxSession: "ship", window: "tg-dispatcher", cwd: "~" }, true);
+    const t = argv.indexOf("-t");
+    assert.ok(t >= 0, "new-window is given a target session");
+    assert.equal(argv[t + 1], "ship:");
+    assert.equal(argv[0], "new-window");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("without a tmuxSession in the config, a dispatcher inside tmux opens the window in its own session (no -t)", async () => {
+  const h = await setupHarness();
+  try {
+    const argv = await newSessionArgv(h, { window: "tg-dispatcher", cwd: "~" }, true);
+    assert.equal(argv[0], "new-window");
+    assert.ok(!argv.includes("-t"), "tmux uses the session of the pane that ran the command");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("without a tmuxSession and outside tmux, the window opens in the default session, never in whichever was used last", async () => {
+  const h = await setupHarness();
+  try {
+    const argv = await newSessionArgv(h, { window: "tg-dispatcher", cwd: "~" }, false);
+    const t = argv.indexOf("-t");
+    assert.ok(t >= 0);
+    assert.equal(argv[t + 1], "main:");
+  } finally {
+    await h.teardown();
+  }
+});

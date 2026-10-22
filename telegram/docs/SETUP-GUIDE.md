@@ -233,9 +233,17 @@ something to say.
 
 The same works for product work: "Draft a one-page spec for the export feature in the docs folder."
 
-A new session is an ordinary Claude session. It asks before anything risky, and if it needs a decision it
-asks on the phone with `tg ask`. The folder must have been opened in Claude once on this computer, or the
-new session stops at the trust question. Open each allowed folder in Claude once to avoid that.
+A new session is an ordinary Claude session. It uses the person's own default model and permission mode,
+the same as when they start `claude` themselves, and it opens as a new window in the same tmux session as
+the dispatcher (or in the session named by `session.tmuxSession`). It asks before risky steps only if their
+settings make it ask. In an automatic mode it will not ask at all; in a stricter mode it waits for an answer
+inside its tmux window, where nobody may be looking. **Help the person choose a permission mode on purpose**
+before they rely on this, and tell them how to watch the windows (`tmux attach`). If a session needs a
+decision it can ask on the phone with `tg ask`.
+
+**Required, once for each allowed folder:** open `claude` in that folder yourself and answer "Yes, I trust this
+folder". The dispatcher cannot answer that question. Without it a new session in that folder stops at the
+trust question and never starts working.
 
 ### 6.2 A session needs a Tailscale approval
 
