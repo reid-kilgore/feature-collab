@@ -43,3 +43,23 @@ test("the protocol reminder carries a one-line formatting rule", () => {
   assert.match(DISPATCHER_PROTOCOL.join("\n"), /phone/i);
   assert.match(DISPATCHER_PROTOCOL.join("\n"), /no tables/i);
 });
+
+// The setup guide is handed to someone who is not the maintainer, so it names none of the maintainer's tools,
+// people, machines or paths.
+test("docs/SETUP-GUIDE.md names no maintainer tools, people, machines or paths", () => {
+  const text = readFileSync(path.join(root, "docs/SETUP-GUIDE.md"), "utf8");
+  for (const forbidden of [/maestro/i, /\breid\b/i, /\bmbp\b/, /\bduo\b/i, /REDD/i, /\/Users\//, /passcom/i]) {
+    assert.doesNotMatch(text, forbidden);
+  }
+});
+
+test("docs/SETUP-GUIDE.md covers every part it promises", () => {
+  const text = readFileSync(path.join(root, "docs/SETUP-GUIDE.md"), "utf8");
+  for (const heading of [/## Part 1\. Create the bot/, /## Part 2\. Install the tool/, /## Part 3\. Link the skills/, /## Part 4\. The dispatcher/, /## Part 5\. Optional: Tailscale/, /## Part 6\. What to use it for/, /## Part 7\. Safety/]) {
+    assert.match(text, heading);
+  }
+  for (const needle of [/BotFather/, /tg setup/, /tg doctor/, /launchd/, /telegram-dispatcher/, /dispatcher\.json/, /claude-session|new-session/, /tg dispatcher start/, /tailscale\.json/, /device-code/, /tg ask/, /"enabled": false/, /tg dispatcher stop/]) {
+    assert.match(text, needle);
+  }
+  assert.doesNotMatch(text, /\d{6,}:[A-Za-z0-9_-]{30,}/, "no bot token shaped string");
+});
