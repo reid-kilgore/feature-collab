@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "enabled": true,
+  "channel": "dispatcher",
+  "model": "sonnet",
+  "waitTimeout": "1h",
+  "liveReplyTtl": "15m",
+  "downNoticeAfter": "2m",
+  "session": {
+    "tmuxSession": "main",
+    "window": "tg-dispatcher",
+    "cwd": "~",
+    "allowedTools": ["Bash(tg:*)"]
+  },
+  "inboxCommands": false,
+  "defaultTarget": "notes",
+  "targets": [
+    {
+      "name": "notes",
+      "description": "Anything that is a note, an idea or a reminder: append it to a file.",
+      "argv": ["sh", "-c", "cat >> \"$1\" && echo saved", "sh", "/path/to/telegram-notes.md"],
+      "ack": "Saved to your notes file."
+    },
+    {
+      "name": "new-session",
+      "description": "A self-contained coding task: start a new Claude session in a project directory. Needs --param cwd=<one of the allowed directories>.",
+      "builtin": "claude-session",
+      "allowedCwds": ["~/projects/example"],
+      "ack": "Started a Claude session in {{cwd}}."
+    }
+  ]
+}

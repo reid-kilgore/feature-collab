@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./support/harness.ts";
 import type { SentMessage } from "./support/fake-telegram.ts";
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;

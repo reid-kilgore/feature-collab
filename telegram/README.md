@@ -58,6 +58,29 @@ for the full agent-facing contract, including timeouts, defaults, and conversati
 Other commands: `tg status`, `tg pending`, `tg cancel <id|all>`, `tg wait <id>`,
 `tg doctor`, `tg daemon` (foreground, what launchd runs).
 
+## Dispatcher: one session that listens for your bare messages
+
+By default a plain message you send the bot goes to whichever coding session last sent you
+something. With a dispatcher, it goes to one dedicated session that decides where the work
+should go and tells you. The dispatcher never does the work itself: it can only run the
+targets you list.
+
+1. Copy `examples/dispatcher.example.json` to `~/.config/agent-telegram/dispatcher.json`.
+   Set `targets` (each one is a command that reads your message on standard input, or the
+   built-in `claude-session` that starts a new session in an allowed directory) and
+   `defaultTarget`. Everything else has a default.
+2. Link the skill: `ln -s "$(pwd)/skill/dispatcher" ~/.claude/skills/telegram-dispatcher`.
+3. `tg doctor` checks the file. `tg dispatcher start` opens a tmux window running a Claude
+   session as the dispatcher; `tg dispatcher stop` closes it.
+4. Send the bot a message. A 👀 reaction means the dispatcher has it, ✍ means it is queued
+   because the dispatcher is not listening (you also get one notice per outage), and 🫡 means
+   it was handed off. The acknowledgement is a reply under your message.
+
+Every message is kept in `~/.local/state/agent-telegram/inquiries.jsonl`. `tg inquiries list
+--open` shows what has not been routed, and `tg inquiries revive <id>` puts one back in the
+dispatcher's queue. Removing `dispatcher.json`, or setting `"enabled": false`, restores the
+old routing at once, with no restart. Details: `DESIGN-dispatcher.md`.
+
 ## Skill
 
 Symlink `skill/` into `~/.claude/skills/telegram` so Claude Code picks it up, and/or paste

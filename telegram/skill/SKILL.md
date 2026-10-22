@@ -151,7 +151,13 @@ Same Bash-timeout problem as `tg ask`: use `run_in_background` and poll, or acce
     stderr; it is never dropped silently.
 - A reply to a live `tg ask` question always goes to that question, never to the inbox.
   Everything else Reid sends — text, photos, documents — goes to the inbox for `tg recv`.
-- Plain text that isn't a reply to a live question also becomes a maestro inbox item (like
-  `/ask`), so a message with no session running `tg recv` still gets triaged instead of
-  sitting unread. A reply to an earlier message carries a short quote of it for context.
-  Photos and documents are inbox-only, unchanged.
+- When a dispatcher is configured (`dispatcher.json`), a message that is not a reply to a
+  live question goes to the dispatcher session, not to whichever session sent last. The one
+  exception is a reply to a message you sent, while you are still listening (or stopped
+  listening within the last few minutes): that reaches you. Without a dispatcher, such a
+  message goes to the channel that is listening, or that sent most recently.
+- Each received message may carry `tgMessageId` (the Telegram id of the user's message),
+  `replyTo` (`messageId`, `quote`, `channel`) and `inquiry`. To answer under the user's
+  message instead of at the bottom of the chat, pass `tg send --reply-to <tgMessageId> ...`.
+- Every message from the user is also kept in an append-only log (`tg inquiries list`), so
+  nothing is lost when a session ends before it reads its inbox.

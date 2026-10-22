@@ -18,6 +18,10 @@ import {
   ensureDirs,
 } from "../config.ts";
 import { Store, newId, newShortId } from "../core/store.ts";
+import { appendInquiry, entryFromInboxRow, findInquiry, readInquiries } from "../core/inquiry-log.ts";
+import { activeDispatcher, readDispatcherConfig } from "../dispatcher/config.ts";
+import { BOT_COMMANDS_INBOX } from "../transports/telegram/handler.ts";
+import { REACTION_HANDED_OFF } from "../transports/telegram/reactions.ts";
 import type { QuestionStatus } from "../core/store.ts";
 import { TelegramApi, classifyAttachment } from "../transports/telegram/api.ts";
 import { createTelegramPort, BOT_COMMANDS, OPEN_COMMAND } from "../transports/telegram/handler.ts";
@@ -32,7 +36,14 @@ import { renderNotification } from "../transports/telegram/render.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
 import { listView } from "../miniapp/views.ts";
-import type { DaemonRequest, DaemonResponse, ChannelStatus } from "./protocol.ts";
+import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus } from "./protocol.ts";
+
+interface ChannelEntry {
+  lastSendAt: number;
+  listening: number;
+  // When the last listener on this channel went away (0 = never), for "is this channel live".
+  lastListenEndAt: number;
+}
 
 const SWEEP_INTERVAL_MS = 30000;
 
@@ -83,7 +94,7 @@ export async function runDaemon(): Promise<void> {
     }
   };
 
-  // `tg recv --wait` listeners: a count (for the 👀 vs 📥 reaction) plus a list of
+  // `tg recv --wait` listeners: a count (for the 👀 vs ✍ reaction) plus a list of
   // resolvers woken whenever handler.ts records a new inbox message.
   let listeningCount = 0;
   let inboxWaiters: Array<() => void> = [];
@@ -96,11 +107,11 @@ export async function runDaemon(): Promise<void> {
 
   // Per-channel activity, for "Inbox routing with several agents": in-memory only (a
   // daemon restart just falls back to "unrouted" until a channel sends or listens again).
-  const channelState = new Map<string, { lastSendAt: number; listening: number }>();
-  const touchChannel = (channel: string): { lastSendAt: number; listening: number } => {
+  const channelState = new Map<string, ChannelEntry>();
+  const touchChannel = (channel: string): ChannelEntry => {
     let entry = channelState.get(channel);
     if (!entry) {
-      entry = { lastSendAt: 0, listening: 0 };
+      entry = { lastSendAt: 0, listening: 0, lastListenEndAt: 0 };
       channelState.set(channel, entry);
     }
     return entry;
@@ -108,8 +119,55 @@ export async function runDaemon(): Promise<void> {
   const markSend = (channel: string) => {
     touchChannel(channel).lastSendAt = Date.now();
   };
+  // The dispatcher being down is announced once per outage (section 3 of DESIGN-dispatcher.md):
+  // a timer starts when a message is queued for it, the notice goes out if the message is still
+  // unread when the timer fires, and the next time the dispatcher listens re-arms the notice.
+  let outageNotified = false;
+  let downTimer: ReturnType<typeof setTimeout> | undefined;
   const markListen = (channel: string, delta: 1 | -1) => {
-    touchChannel(channel).listening += delta;
+    const entry = touchChannel(channel);
+    entry.listening += delta;
+    if (delta === -1) entry.lastListenEndAt = Date.now();
+    if (delta === 1 && channel === activeDispatcher()?.channel) dispatcherSeen();
+  };
+  // The dispatcher has just read its queue, so it is alive: the next outage gets its own notice.
+  const dispatcherSeen = () => {
+    outageNotified = false;
+    if (downTimer) clearTimeout(downTimer);
+    downTimer = undefined;
+  };
+  const isChannelListening = (channel: string): boolean => (channelState.get(channel)?.listening ?? 0) > 0;
+  const isChannelLive = (channel: string, ttlSeconds: number): boolean => {
+    const entry = channelState.get(channel);
+    if (!entry) return false;
+    return entry.listening > 0 || (entry.lastListenEndAt > 0 && Date.now() - entry.lastListenEndAt < ttlSeconds * 1000);
+  };
+  const dispatcherStatus = (): DispatcherStatus => {
+    const state = readDispatcherConfig();
+    if (state.state === "absent") return { mode: "off" };
+    if (state.state === "invalid") return { mode: "invalid", error: state.error };
+    if (!state.config.enabled) return { mode: "disabled", channel: state.config.channel };
+    return {
+      mode: "on",
+      channel: state.config.channel,
+      listening: isChannelListening(state.config.channel),
+      queued: store.countUnreadForChannel(state.config.channel),
+    };
+  };
+  const dispatcherQueued = () => {
+    const d = activeDispatcher();
+    if (!d || outageNotified || downTimer) return;
+    downTimer = setTimeout(() => {
+      downTimer = undefined;
+      const now = activeDispatcher();
+      if (!now || outageNotified || isChannelListening(now.channel)) return;
+      const queued = store.countUnreadForChannel(now.channel);
+      if (queued === 0) return;
+      outageNotified = true;
+      api
+        .sendMessage(config.chatId, `Dispatcher is not listening. ${queued} message${queued === 1 ? " is" : "s are"} queued and will be handled when it returns.`)
+        .catch((error) => log(`dispatcher down notice failed: ${(error as Error).message}`));
+    }, d.downNoticeAfterSeconds * 1000);
   };
   // Reply-to routing is tried first by the caller; this covers steps 2-3: prefer a
   // currently-listening channel (ties broken by most recent send), else the channel that
@@ -162,6 +220,16 @@ export async function runDaemon(): Promise<void> {
     notifyInbox,
     channelForMessage: (messageId) => store.getChannelForMessage(messageId),
     pickActiveChannel,
+    dispatcher: () => activeDispatcher(),
+    isChannelLive,
+    isChannelListening,
+    dispatcherQueued,
+    dispatcherStatus,
+    inboxCommandsEnabled: () => {
+      const state = readDispatcherConfig();
+      return state.state !== "ok" || state.config.inboxCommands;
+    },
+    logInquiry: (entry) => appendInquiry(entry),
     get miniappUrl() {
       return miniappUrl;
     },
@@ -179,7 +247,10 @@ export async function runDaemon(): Promise<void> {
     }
   }
   try {
-    await api.setMyCommands(miniappUrl ? [...BOT_COMMANDS, OPEN_COMMAND] : BOT_COMMANDS);
+    const dispatcherAtStart = readDispatcherConfig();
+    const inboxCommandsAtStart = dispatcherAtStart.state !== "ok" || dispatcherAtStart.config.inboxCommands;
+    const menu = inboxCommandsAtStart ? BOT_COMMANDS : BOT_COMMANDS.filter((c) => !BOT_COMMANDS_INBOX.includes(c.command));
+    await api.setMyCommands(miniappUrl ? [...menu, OPEN_COMMAND] : menu);
   } catch (error) {
     log(`setMyCommands failed: ${(error as Error).message}`);
   }
@@ -237,12 +308,15 @@ export async function runDaemon(): Promise<void> {
       config,
       startedAt,
       registerInboxWaiter,
+      notifyInbox,
+      dispatcherSeen,
       addListener,
       isListening,
       markSend,
       markListen,
       channelState,
       isShuttingDown,
+      dispatcherStatus,
       menuChanged: () => menuChanged(),
     }).catch((error) => {
       log(`connection error: ${(error as Error).message}`);
@@ -373,12 +447,15 @@ interface ConnectionDeps {
   config: { chatId: string; userId: string; botUsername: string };
   startedAt: Date;
   registerInboxWaiter: (resolve: () => void) => void;
+  notifyInbox: () => void;
+  dispatcherSeen: () => void;
   addListener: (delta: 1 | -1) => void;
   isListening: () => boolean;
   markSend: (channel: string) => void;
   markListen: (channel: string, delta: 1 | -1) => void;
-  channelState: Map<string, { lastSendAt: number; listening: number }>;
+  channelState: Map<string, ChannelEntry>;
   isShuttingDown: () => boolean;
+  dispatcherStatus: () => DispatcherStatus;
   // A set was created (resolved sets are reported through onResolved): the menu count may differ.
   menuChanged: () => void;
 }
@@ -398,7 +475,11 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
     }
   });
 
+  // Callbacks to run when the client goes away, so a `recv --wait` blocked on the inbox stops
+  // waiting for a reader that no longer exists (see the recv case below).
+  const closeHooks = new Set<() => void>();
   socket.on("close", () => {
+    for (const hook of [...closeHooks]) hook();
     // Only a genuine CLI disconnect cancels the question. A daemon-initiated shutdown
     // (graceful restart) destroys this same socket, but the batch must stay pending so a
     // restarted daemon resumes it and `tg wait <id>` can still re-attach (DESIGN.md: "A
@@ -424,8 +505,8 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
     try {
       switch (request.op) {
         case "notify": {
-          await sendNotification(deps, request);
-          write({ ok: true });
+          const messageId = await sendNotification(deps, request);
+          write({ ok: true, ...(messageId !== undefined ? { messageId } : {}) });
           return;
         }
         case "ask": {
@@ -471,15 +552,22 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             unreadInbox: deps.store.countUnreadInbox(),
             listening: deps.isListening(),
             channels,
+            dispatcher: deps.dispatcherStatus(),
           });
           return;
         }
         case "recv": {
           const channel = request.channel;
+          if (!request.peek && channel === activeDispatcher()?.channel) deps.dispatcherSeen();
           const takeUnread = () => deps.store.listUnreadInboxForChannel(channel);
           let unread = takeUnread();
 
           if (unread.length === 0 && request.wait) {
+            // One listener on the dispatcher channel: a second would race the first for messages.
+            if (channel === activeDispatcher()?.channel && (deps.channelState.get(channel)?.listening ?? 0) > 0) {
+              write({ error: `the dispatcher channel "${channel}" already has a listener; only one session may run as the dispatcher` });
+              return;
+            }
             deps.addListener(1);
             deps.markListen(channel, 1);
             const deadline = request.timeoutSeconds ? Date.now() + request.timeoutSeconds * 1000 : undefined;
@@ -490,25 +578,26 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
               if (remainingMs !== undefined && remainingMs <= 0) break;
               const arrived = await new Promise<boolean>((resolve) => {
                 let settled = false;
-                const onArrive = () => {
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const finish = (value: boolean) => {
                   if (settled) return;
                   settled = true;
-                  resolve(true);
+                  if (timer) clearTimeout(timer);
+                  closeHooks.delete(onClose);
+                  resolve(value);
                 };
-                deps.registerInboxWaiter(onArrive);
-                if (remainingMs !== undefined) {
-                  setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    resolve(false);
-                  }, remainingMs);
-                }
+                const onClose = () => finish(false);
+                closeHooks.add(onClose);
+                deps.registerInboxWaiter(() => finish(true));
+                if (remainingMs !== undefined) timer = setTimeout(() => finish(false), remainingMs);
               });
               if (!arrived) break;
               unread = takeUnread();
             }
             deps.addListener(-1);
             deps.markListen(channel, -1);
+            // The reader died while we waited: leave the message unread for the next listener.
+            if (!socket.writable) return;
             if (unread.length === 0) {
               write({ version: 1, status: "timeout", messages: [] });
               return;
@@ -521,9 +610,89 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             ...(row.text !== null ? { text: row.text } : {}),
             ...(row.photo_path ? { photoPath: row.photo_path } : {}),
             ...(row.file_path ? { filePath: row.file_path } : {}),
+            ...(row.tg_message_id !== null ? { tgMessageId: row.tg_message_id } : {}),
+            ...(row.reply_to_message_id !== null
+              ? {
+                  replyTo: {
+                    messageId: row.reply_to_message_id,
+                    ...(row.reply_quote ? { quote: row.reply_quote } : {}),
+                    ...(row.reply_channel ? { channel: row.reply_channel } : {}),
+                  },
+                }
+              : {}),
+            ...(row.inquiry_id ? { inquiry: row.inquiry_id } : {}),
           }));
-          if (!request.peek) deps.store.consumeInbox(unread.map((r) => r.id));
-          write({ version: 1, status: "received", messages });
+          // Consume only once the reply has been handed to a live socket. A reply written to a
+          // closed socket is lost, and so would the message be if it were already consumed.
+          if (!socket.writable) return;
+          const consumeIds = request.peek ? [] : unread.map((r) => r.id);
+          socket.write(JSON.stringify({ version: 1, status: "received", messages }) + "\n", (error) => {
+            if (!error && consumeIds.length) deps.store.consumeInbox(consumeIds);
+          });
+          return;
+        }
+        case "inquiry": {
+          const known = findInquiry(readInquiries(), request.id);
+          if (!known) {
+            write({ error: `unknown inquiry ${request.id}` });
+            return;
+          }
+          const at = new Date().toISOString();
+          if (request.action === "state") {
+            appendInquiry({ op: "state", id: known.id, at, state: request.state ?? "handed_off", ...(request.target ? { target: request.target } : {}), ...(request.ref ? { ref: request.ref } : {}) });
+            if ((request.state ?? "handed_off") === "handed_off" && known.tgMessageId) {
+              void deps.api.setMessageReaction(deps.config.chatId, known.tgMessageId, REACTION_HANDED_OFF);
+            }
+            write({ ok: true });
+            return;
+          }
+          if (request.action === "asked") {
+            if (request.tgMessageId === undefined) {
+              write({ error: "asked needs tgMessageId" });
+              return;
+            }
+            appendInquiry({ op: "asked", id: known.id, at, tgMessageId: request.tgMessageId });
+            deps.store.recordMessageInquiry(request.tgMessageId, known.id);
+            write({ ok: true });
+            return;
+          }
+          // revive: put the logged text back in the dispatcher's inbox as a new unread row.
+          const dispatcher = activeDispatcher();
+          if (!dispatcher) {
+            write({ error: "no dispatcher is configured and enabled; there is nowhere to revive to" });
+            return;
+          }
+          const reviveId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          deps.store.addRevivedInbox({
+            id: reviveId,
+            text: known.text,
+            photo_path: known.photoPath,
+            file_path: known.filePath,
+            channel: dispatcher.channel,
+            tg_message_id: known.tgMessageId,
+            inquiry_id: known.id,
+          });
+          appendInquiry({ op: "revived", id: known.id, at, row: reviveId });
+          deps.notifyInbox();
+          write({ ok: true, revived: true });
+          return;
+        }
+        case "quarantine": {
+          // Move unrouted unread messages out of the shared inbox into the inquiry log as
+          // "legacy". Each line is written before its row is consumed, so a crash in between
+          // duplicates a line on re-run at worst, and never loses a message.
+          const rows = deps.store.listUnroutedUnread();
+          if (!request.dryRun) {
+            const logged = new Set(readInquiries().map((i) => i.id));
+            for (const row of rows) {
+              // A row the log already has (received since this build) gets a state line; an older
+              // one is logged now, as legacy.
+              if (logged.has(row.id)) appendInquiry({ op: "state", id: row.id, at: new Date().toISOString(), state: "legacy" });
+              else appendInquiry(entryFromInboxRow(row, "legacy"));
+              deps.store.consumeInbox([row.id]);
+            }
+          }
+          write({ quarantined: rows.length, dryRun: request.dryRun });
           return;
         }
         case "pending": {
@@ -644,13 +813,18 @@ async function sendNotification(
     filePath?: string;
     caption?: string;
     channel: string;
+    replyToMessageId?: number;
+    inquiryId?: string;
   },
-): Promise<void> {
+): Promise<number | undefined> {
   const bodyHtml = request.body ? markdownToTelegramHtml(request.body) : undefined;
   const text = renderNotification(request.level, deps.hostname, request.title, bodyHtml);
 
+  let firstMessageId: number | undefined;
   const recordSent = (messageId: number) => {
+    if (firstMessageId === undefined) firstMessageId = messageId;
     deps.store.recordMessageChannel(messageId, request.channel);
+    if (request.inquiryId) deps.store.recordMessageInquiry(messageId, request.inquiryId);
     deps.markSend(request.channel);
   };
 
@@ -671,24 +845,26 @@ async function sendNotification(
     if (caption !== undefined && !captionFits) {
       await sendTextWithFallback(deps, caption, recordSent);
     }
-    return;
+    return firstMessageId;
   }
 
-  await sendTextWithFallback(deps, text, recordSent);
+  await sendTextWithFallback(deps, text, recordSent, request.replyToMessageId);
+  return firstMessageId;
 }
 
-async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSent: (messageId: number) => void): Promise<void> {
+async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSent: (messageId: number) => void, replyToMessageId?: number): Promise<void> {
   const chunks = splitMessage(html);
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
+    const replyTo = index === 0 ? replyToMessageId : undefined;
     try {
-      const sent = await deps.api.sendMessage(deps.config.chatId, chunk, { html: true });
+      const sent = await deps.api.sendMessage(deps.config.chatId, chunk, { html: true, replyToMessageId: replyTo });
       recordSent(sent.message_id);
     } catch (error) {
       const message = (error as Error).message ?? "";
       if (message.toLowerCase().includes("parse")) {
         // Formatting must never sink a notification: retry as plain text with tags stripped.
         const plain = chunk.replace(/<[^>]+>/g, "");
-        const sent = await deps.api.sendMessage(deps.config.chatId, plain);
+        const sent = await deps.api.sendMessage(deps.config.chatId, plain, { replyToMessageId: replyTo });
         recordSent(sent.message_id);
       } else {
         throw error;

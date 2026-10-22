@@ -389,7 +389,11 @@ else the absolute cwd; overridable with `--channel <key>` or `AGENT_TELEGRAM_CHA
 `tg recv` returns only messages routed to its channel plus unrouted ones. `/status` lists channels
 with their last activity and unread counts, so Reid can see who is listening.
 
-### Maestro fallback for unsolicited text (added 2026-09-26)
+### Maestro fallback for unsolicited text (added 2026-09-26; REMOVED 2026-10-22)
+
+Superseded by the dispatcher: plain text is no longer copied to the external inbox. See
+`DESIGN-dispatcher.md`. `/ask`, `/add` and `/inbox` remain, behind `inboxCommands` in
+`dispatcher.json` when that file exists. The text below is the removed behaviour, kept for history.
 
 The inbox above only helps when some session is actually running `tg recv`. Often none is: Reid
 sends a message or replies to an old one, no session is listening, and it used to sit unread until

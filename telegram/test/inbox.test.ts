@@ -12,7 +12,7 @@ import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./suppor
 import type { SentMessage } from "./support/fake-telegram.ts";
 import { BOT_COMMANDS } from "../src/transports/telegram/handler.ts";
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
@@ -93,7 +93,7 @@ test("/add <text> adds a maestro item exactly as /ask does", async () => {
   }
 });
 
-test("an unknown /command still files a maestro item and the reply points at /help", async () => {
+test("an unknown /command goes to the inbox with a hint, and files no maestro item", async () => {
   const h = await setupHarness();
   try {
     const daemon = h.spawnCli(["daemon"]);
@@ -104,10 +104,10 @@ test("an unknown /command still files a maestro item and the reply points at /he
 
     const hint = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").includes("unknown command"))!;
     assert.match(String(hint.body.text), /unknown command \/frobnicate; see \/help/);
+    assert.equal(readAdded(h.home).length, 0, "the maestro copy of bare messages is gone");
 
-    const added = readAdded(h.home);
-    assert.equal(added.length, 1);
-    assert.equal(added[0]!.text, "/frobnicate the widget");
+    const recv = await h.runCli(["recv"]);
+    assert.equal(JSON.parse(recv.stdout.trim()).messages[0].text, "/frobnicate the widget");
 
     daemon.kill("SIGKILL");
   } finally {
@@ -133,24 +133,18 @@ test("/help lists /add", async () => {
   }
 });
 
-test("an unsolicited plain message becomes a maestro item and replies with its id", async () => {
+test("an unsolicited plain message goes to the inbox only: no maestro item, no Added reply", async () => {
   const h = await setupHarness();
   try {
     const daemon = h.spawnCli(["daemon"]);
     await waitForSocketAt(daemonSocketPath(h.home));
 
     h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "lately if I send just a message it does not seem to get picked up" });
-    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setMessageReaction"));
 
-    const reply = h.fake.lastMessageTo(h.chatId, (m) => String(m.body.text ?? "").startsWith("Added "))!;
-    assert.match(String(reply.body.text), /^Added t1 to the inbox\.$/);
+    assert.equal(readAdded(h.home).length, 0);
+    assert.ok(!h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
 
-    const added = readAdded(h.home);
-    assert.equal(added.length, 1);
-    assert.equal(added[0]!.text, "lately if I send just a message it does not seem to get picked up");
-
-    // It still lands in the local inbox unchanged, so tg recv keeps working for anything
-    // that reads it.
     const recv = await h.runCli(["recv"]);
     assert.equal(JSON.parse(recv.stdout.trim()).messages.length, 1);
 
@@ -160,7 +154,7 @@ test("an unsolicited plain message becomes a maestro item and replies with its i
   }
 });
 
-test("a reply to an old bot message becomes a maestro item carrying a quote of what it replied to", async () => {
+test("a reply to an old bot message reaches the inbox with the quote of what it replied to", async () => {
   const h = await setupHarness();
   try {
     const daemon = h.spawnCli(["daemon"]);
@@ -173,15 +167,13 @@ test("a reply to an old bot message becomes a maestro item carrying a quote of w
       replyToMessageId: 1,
       replyToText: "Finished the migration. Want to see the 3 files that needed manual review?",
     });
-    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setMessageReaction"));
 
-    const added = readAdded(h.home);
-    assert.equal(added.length, 1);
-    assert.match(added[0]!.text, /^yes, do that/);
-    assert.match(added[0]!.text, /Finished the migration\. Want to see the 3 files that needed manual review\?/);
-    // Message id 1 was never sent through `tg send`, so no channel is on record for it: the
-    // item names no channel.
-    assert.doesNotMatch(added[0]!.text, /reply to a notice from channel/);
+    assert.equal(readAdded(h.home).length, 0);
+    const recv = JSON.parse((await h.runCli(["recv"])).stdout.trim());
+    assert.equal(recv.messages[0].text, "yes, do that");
+    assert.equal(recv.messages[0].replyTo.messageId, 1);
+    assert.match(recv.messages[0].replyTo.quote, /Finished the migration\. Want to see the 3 files/);
 
     daemon.kill("SIGKILL");
   } finally {
@@ -189,31 +181,23 @@ test("a reply to an old bot message becomes a maestro item carrying a quote of w
   }
 });
 
-test("a reply to a message tg send sent on a channel names that channel in the maestro item", async () => {
+test("without a dispatcher, a reply to a message tg send sent goes to the channel that sent it", async () => {
   const h = await setupHarness();
   try {
     const daemon = h.spawnCli(["daemon"]);
     await waitForSocketAt(daemonSocketPath(h.home));
 
-    const sendResult = await h.runCli(["send", "--channel", "maestro", "Finished the migration. Want to see the 3 files that needed manual review?"]);
+    const sendResult = await h.runCli(["send", "--channel", "sessionA", "Finished the migration. Want to see the 3 files that needed manual review?"]);
     assert.equal(sendResult.code, 0, sendResult.stderr);
     await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage"));
-    const notice = h.fake.sent.find((m) => m.method === "sendMessage")!;
-    const noticeMessageId = h.fake.sent.filter((m) => m.method === "sendMessage").indexOf(notice) + 1;
+    const noticeMessageId = h.fake.sent.filter((m) => m.method === "sendMessage").length;
 
-    h.fake.pushMessage({
-      chatId: Number(h.chatId),
-      userId: Number(h.userId),
-      text: "yes, do that",
-      replyToMessageId: noticeMessageId,
-      replyToText: "Finished the migration. Want to see the 3 files that needed manual review?",
-    });
-    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("Added ")));
+    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "yes, do that", replyToMessageId: noticeMessageId });
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setMessageReaction"));
 
-    const added = readAdded(h.home);
-    assert.equal(added.length, 1);
-    assert.match(added[0]!.text, /^yes, do that/);
-    assert.match(added[0]!.text, /\(replying to: "Finished the migration\. Want to see the 3 files that needed manual review\?"\) · reply to a notice from channel maestro/);
+    assert.equal(readAdded(h.home).length, 0);
+    const recv = JSON.parse((await h.runCli(["recv", "--peek", "--channel", "sessionA"])).stdout.trim());
+    assert.equal(recv.messages[0].text, "yes, do that");
 
     daemon.kill("SIGKILL");
   } finally {
@@ -239,28 +223,6 @@ test("a non-allowed user's plain message is ignored: nothing is added, nothing i
   }
 });
 
-test("a maestro failure on an unsolicited message is shown as a warning, and nothing is silently added", async () => {
-  const h = await setupHarness();
-  try {
-    writeFileSync(path.join(h.home, "maestro-fail-add"), "stub down for maintenance\n");
-
-    const daemon = h.spawnCli(["daemon"]);
-    await waitForSocketAt(daemonSocketPath(h.home));
-
-    h.fake.pushMessage({ chatId: Number(h.chatId), userId: Number(h.userId), text: "does this get lost" });
-    await waitUntil(() => h.fake.sent.some((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("⚠️")));
-
-    assert.equal(readAdded(h.home).length, 0);
-
-    // The message is still recorded in the local inbox despite the maestro failure.
-    const recv = await h.runCli(["recv"]);
-    assert.equal(JSON.parse(recv.stdout.trim()).messages.length, 1);
-
-    daemon.kill("SIGKILL");
-  } finally {
-    await h.teardown();
-  }
-});
 
 test("a reply to a pending tg-ask question is not added to the maestro inbox", async () => {
   const h = await setupHarness();

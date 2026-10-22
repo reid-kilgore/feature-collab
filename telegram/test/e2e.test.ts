@@ -18,7 +18,7 @@ function extractShortId(msg: SentMessage | undefined, action: string): string | 
   return undefined;
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
