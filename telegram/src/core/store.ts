@@ -99,9 +99,19 @@ CREATE TABLE IF NOT EXISTS inbox (
   photo_path TEXT,
   file_path TEXT,
   channel TEXT,
-  consumed_at TEXT
+  consumed_at TEXT,
+  tg_message_id INTEGER,
+  reply_to_message_id INTEGER,
+  reply_quote TEXT,
+  reply_channel TEXT,
+  inquiry_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_inbox_unread ON inbox(consumed_at);
+CREATE TABLE IF NOT EXISTS message_inquiry (
+  message_id INTEGER PRIMARY KEY,
+  inquiry_id TEXT NOT NULL,
+  at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS message_channel (
   message_id INTEGER PRIMARY KEY,
   channel TEXT NOT NULL,
@@ -117,7 +127,7 @@ CREATE TABLE IF NOT EXISTS message_channel (
 // explicitly checking for and adding columns/tables introduced after a table's original
 // release, so restarting the daemon on an existing state.sqlite never fails with
 // "no such column" again.
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
@@ -147,6 +157,24 @@ function migrate(db: DatabaseSync): void {
         channel TEXT NOT NULL,
         at TEXT NOT NULL
       )`);
+    }
+
+    // v2: the dispatcher (DESIGN-dispatcher.md) records, per inbound message, the Telegram message
+    // it came from, what it replied to, and the inquiry it belongs to. Additive only: an older
+    // build ignores the extra columns and the extra table.
+    if (tableExists(db, "inbox")) {
+      for (const [column, type] of [
+        ["tg_message_id", "INTEGER"],
+        ["reply_to_message_id", "INTEGER"],
+        ["reply_quote", "TEXT"],
+        ["reply_channel", "TEXT"],
+        ["inquiry_id", "TEXT"],
+      ] as const) {
+        if (!columnExists(db, "inbox", column)) db.exec(`ALTER TABLE inbox ADD COLUMN ${column} ${type}`);
+      }
+    }
+    if (!tableExists(db, "message_inquiry")) {
+      db.exec("CREATE TABLE message_inquiry (message_id INTEGER PRIMARY KEY, inquiry_id TEXT NOT NULL, at TEXT NOT NULL)");
     }
 
     db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
@@ -341,10 +369,55 @@ export class Store {
     photo_path: string | null;
     file_path: string | null;
     channel: string | null;
+    tg_message_id?: number | null;
+    reply_to_message_id?: number | null;
+    reply_quote?: string | null;
+    reply_channel?: string | null;
+    inquiry_id?: string | null;
   }): void {
     this.db
-      .prepare("INSERT INTO inbox (id, update_id, at, text, photo_path, file_path, channel, consumed_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)")
-      .run(row.id, row.update_id, new Date().toISOString(), row.text, row.photo_path, row.file_path, row.channel);
+      .prepare(
+        `INSERT INTO inbox (id, update_id, at, text, photo_path, file_path, channel, consumed_at,
+          tg_message_id, reply_to_message_id, reply_quote, reply_channel, inquiry_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.update_id,
+        new Date().toISOString(),
+        row.text,
+        row.photo_path,
+        row.file_path,
+        row.channel,
+        row.tg_message_id ?? null,
+        row.reply_to_message_id ?? null,
+        row.reply_quote ?? null,
+        row.reply_channel ?? null,
+        row.inquiry_id ?? null,
+      );
+  }
+
+  countUnreadForChannel(channel: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) as c FROM inbox WHERE consumed_at IS NULL AND channel = ?").get(channel) as { c: number };
+    return row.c;
+  }
+
+  // ---- message_inquiry (which inquiry a message we sent belongs to) ----
+
+  recordMessageInquiry(messageId: number, inquiryId: string): void {
+    this.db
+      .prepare("INSERT INTO message_inquiry (message_id, inquiry_id, at) VALUES (?, ?, ?) ON CONFLICT(message_id) DO UPDATE SET inquiry_id = excluded.inquiry_id")
+      .run(messageId, inquiryId, new Date().toISOString());
+  }
+
+  getInquiryForMessage(messageId: number): string | undefined {
+    const row = this.db.prepare("SELECT inquiry_id FROM message_inquiry WHERE message_id = ?").get(messageId) as { inquiry_id: string } | undefined;
+    return row?.inquiry_id;
+  }
+
+  // Puts an inbox row back in the unread state under `channel` (inquiry revive).
+  addRevivedInbox(row: { id: string; text: string | null; photo_path: string | null; file_path: string | null; channel: string; tg_message_id: number | null; inquiry_id: string }): void {
+    this.addInboxMessage({ ...row, update_id: null });
   }
 
   // A channel sees its own routed messages plus anything unrouted (channel IS NULL).
@@ -352,6 +425,11 @@ export class Store {
     return this.db
       .prepare("SELECT * FROM inbox WHERE consumed_at IS NULL AND (channel = ? OR channel IS NULL) ORDER BY at")
       .all(channel) as unknown as InboxRow[];
+  }
+
+  // Unread rows with no channel: visible to every `tg recv` caller, whoever listens next.
+  listUnroutedUnread(): InboxRow[] {
+    return this.db.prepare("SELECT * FROM inbox WHERE consumed_at IS NULL AND channel IS NULL ORDER BY at").all() as unknown as InboxRow[];
   }
 
   countUnreadInbox(): number {
@@ -394,6 +472,11 @@ export interface InboxRow {
   file_path: string | null;
   channel: string | null;
   consumed_at: string | null;
+  tg_message_id: number | null;
+  reply_to_message_id: number | null;
+  reply_quote: string | null;
+  reply_channel: string | null;
+  inquiry_id: string | null;
 }
 
 export function newId(): string {

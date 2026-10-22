@@ -13,6 +13,10 @@ export interface NotifyRequest {
   filePath?: string;
   caption?: string;
   channel: string;
+  // Send as a Telegram reply to this message, and remember which inquiry it belongs to so that
+  // Reid's answer to it carries the inquiry along (DESIGN-dispatcher.md, section 4).
+  replyToMessageId?: number;
+  inquiryId?: string;
 }
 
 export interface AskRequest {
@@ -50,6 +54,31 @@ export interface RecvRequest {
   channel: string;
 }
 
+export interface InquiryRequest {
+  op: "inquiry";
+  action: "state" | "asked" | "revive";
+  id: string;
+  state?: "handed_off" | "dropped";
+  target?: string;
+  ref?: string;
+  tgMessageId?: number;
+}
+
+export interface InquiryResponse {
+  ok: true;
+  revived?: boolean;
+}
+
+export interface QuarantineRequest {
+  op: "quarantine";
+  dryRun: boolean;
+}
+
+export interface QuarantineResponse {
+  quarantined: number;
+  dryRun: boolean;
+}
+
 export type DaemonRequest =
   | NotifyRequest
   | AskRequest
@@ -57,10 +86,14 @@ export type DaemonRequest =
   | PendingRequest
   | CancelRequest
   | WaitRequest
-  | RecvRequest;
+  | RecvRequest
+  | QuarantineRequest
+  | InquiryRequest;
 
 export interface NotifyResponse {
   ok: true;
+  // The first Telegram message the notification produced.
+  messageId?: number;
 }
 
 export interface AskAcceptedResponse {
@@ -83,6 +116,16 @@ export interface StatusResponse {
   unreadInbox: number;
   listening: boolean;
   channels: ChannelStatus[];
+  dispatcher: DispatcherStatus;
+}
+
+export interface DispatcherStatus {
+  // "off" = no dispatcher.json, "invalid" = unreadable (see error), "disabled" = enabled:false.
+  mode: "off" | "invalid" | "disabled" | "on";
+  error?: string;
+  channel?: string;
+  listening?: boolean;
+  queued?: number;
 }
 
 export interface ChannelStatus {
@@ -98,6 +141,9 @@ export interface InboxMessage {
   text?: string;
   photoPath?: string;
   filePath?: string;
+  tgMessageId?: number;
+  replyTo?: { messageId: number; quote?: string; channel?: string };
+  inquiry?: string;
 }
 
 export interface RecvResponse {
@@ -135,4 +181,6 @@ export type DaemonResponse =
   | PendingResponse
   | CancelResponse
   | RecvResponse
+  | QuarantineResponse
+  | InquiryResponse
   | ErrorResponse;

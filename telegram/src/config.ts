@@ -96,6 +96,11 @@ export function lockFile(): string {
   return path.join(stateDir(), "daemon.lock");
 }
 
+// Append-only record of every inbound message (see DESIGN-dispatcher.md, "Inquiry log").
+export function inquiriesFile(): string {
+  return path.join(stateDir(), "inquiries.jsonl");
+}
+
 export function inboxDir(): string {
   return path.join(stateDir(), "inbox");
 }

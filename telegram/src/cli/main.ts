@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { oneShot, connectToDaemon, sendRequest, readResponses } from "./client.ts";
 import { runSetup } from "./setup.ts";
+import { cmdDispatcher, cmdDispatch, cmdInquiries, dispatcherDoctor } from "./dispatcher.ts";
 import { runDaemon } from "../daemon/server.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, DocumentInput } from "../contract/payload.ts";
@@ -23,6 +24,7 @@ import type {
   PendingResponse,
   CancelResponse,
   RecvResponse,
+  QuarantineResponse,
 } from "../daemon/protocol.ts";
 
 async function main(): Promise<void> {
@@ -52,6 +54,18 @@ async function main(): Promise<void> {
     case "recv":
       await cmdRecv(rest);
       return;
+    case "dispatcher":
+      await cmdDispatcher(rest);
+      return;
+    case "dispatch":
+      await cmdDispatch(rest);
+      return;
+    case "inquiries":
+      await cmdInquiries(rest);
+      return;
+    case "quarantine":
+      await cmdQuarantine(rest);
+      return;
     case "presence":
       cmdPresence(rest);
       return;
@@ -75,12 +89,16 @@ function printUsage(): void {
 
 Commands:
   ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default]
-  send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH]
+  send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID]
   status
   pending
   cancel <id|all>
   wait <id>
   recv [--wait] [--timeout DURATION] [--peek] [--channel KEY]
+  dispatcher wait | targets | start | stop | status
+  dispatch <target> --inquiry ID [--param k=v] [--note TEXT] | dispatch ask ID "question"
+  inquiries list [--open] [--since 7d] | show ID | mark ID --state dropped|handed_off | revive ID|--all-open
+  quarantine [--dry-run]
   presence [show] | away [--note TEXT] [--for DURATION|--no-expiry] [--by WHO] | present [--note TEXT] [--by WHO]
   daemon
   setup [--token T] [--chat-id ID]
@@ -305,6 +323,7 @@ function parseSendArgs(argv: string[]): {
   filePath?: string;
   stdin: boolean;
   channel?: string;
+  replyToMessageId?: number;
 } {
   let level: Level = "info";
   let title: string | undefined;
@@ -312,6 +331,7 @@ function parseSendArgs(argv: string[]): {
   let filePath: string | undefined;
   let stdin = false;
   let channel: string | undefined;
+  let replyToMessageId: number | undefined;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -328,13 +348,16 @@ function parseSendArgs(argv: string[]): {
       filePath = argv[++i];
     } else if (arg === "--channel") {
       channel = argv[++i];
+    } else if (arg === "--reply-to") {
+      replyToMessageId = Number(argv[++i]);
+      if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0) throw new Error("--reply-to needs a Telegram message id");
     } else if (arg === "-") {
       stdin = true;
     } else {
       positional.push(arg!);
     }
   }
-  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel };
+  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -362,6 +385,7 @@ async function cmdSend(argv: string[]): Promise<void> {
     filePath: args.filePath,
     caption,
     channel: resolveChannel(args.channel),
+    replyToMessageId: args.replyToMessageId,
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {
@@ -404,6 +428,13 @@ async function cmdStatus(): Promise<void> {
     console.log(`last update: ${status.lastUpdateAgeSeconds === null ? "never" : `${status.lastUpdateAgeSeconds}s ago`}`);
     console.log(`daemon started: ${status.startedAt}`);
     console.log(describePresence(readPresence()));
+    const d = status.dispatcher;
+    if (d) {
+      if (d.mode === "off") console.log("dispatcher: off");
+      else if (d.mode === "invalid") console.log(`dispatcher: OFF (dispatcher.json invalid: ${d.error})`);
+      else if (d.mode === "disabled") console.log("dispatcher: disabled");
+      else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
+    }
     if (status.channels.length) {
       console.log("channels:");
       for (const c of status.channels) {
@@ -585,6 +616,34 @@ async function cmdRecv(argv: string[]): Promise<void> {
   }
 }
 
+// ---- quarantine ----
+
+// Unrouted unread messages reach whichever session runs `tg recv` next, however old they are.
+// This moves them into the inquiry log (state "legacy") and marks them consumed. Messages bound to
+// a channel are left alone.
+async function cmdQuarantine(argv: string[]): Promise<void> {
+  const dryRun = argv.includes("--dry-run");
+  const unknown = argv.filter((a) => a !== "--dry-run");
+  if (unknown.length) {
+    console.error(`Unknown argument: ${unknown[0]}`);
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const response = await oneShot({ op: "quarantine", dryRun });
+    if ("error" in response) {
+      console.error(redact((response as ErrorResponse).error));
+      process.exitCode = 1;
+      return;
+    }
+    const { quarantined } = response as QuarantineResponse;
+    console.log(dryRun ? `dry run: ${quarantined} unrouted unread message(s) would be quarantined` : `quarantined ${quarantined} unrouted unread message(s)`);
+  } catch (error) {
+    console.error(redact((error as Error).message));
+    process.exitCode = 1;
+  }
+}
+
 // ---- doctor ----
 
 function parseSetupArgs(argv: string[]): { token?: string; chatId?: string; userId?: string } {
@@ -606,6 +665,7 @@ async function cmdDoctor(): Promise<void> {
   if (config) {
     console.log(`config: chatId=${config.chatId} userId=${config.userId} bot=@${config.botUsername}`);
   }
+  for (const line of dispatcherDoctor()) console.log(line);
   try {
     const response = await oneShot({ op: "status" });
     if ("error" in response) {

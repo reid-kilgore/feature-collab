@@ -167,9 +167,13 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     MAESTRO_INBOX_DIR: maestroInboxDir,
     // Never the real ssh on PATH: see SSH_STUB_SOURCE above for how tests drive it.
     AGENT_TELEGRAM_SSH_BIN: sshStubPath,
-    // Fast windows so a test doesn't have to wait out the real 15s/10min ones.
-    AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "500",
-    AGENT_TELEGRAM_TAILSCALE_HARDKILL_MS: "3000",
+    // Shorter windows than the real 15s/10min ones, but not so short that a loaded machine
+    // loses the race: the check's watch window starts when ssh is spawned, and a stub that is
+    // a node process needs well over 500ms to start when the host is busy. A window that
+    // expires first reports "no link appeared" and never sends the button, which no wait in
+    // a test can recover from (seen at host load above 80: 20 of 20 runs failed at 500ms).
+    AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "6000",
+    AGENT_TELEGRAM_TAILSCALE_HARDKILL_MS: "15000",
   };
 
   // Live enforcement of the invariant, on the exact value about to be handed to every spawned
@@ -194,12 +198,19 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     });
   };
 
+  // Every process spawned through spawnCli, so teardown can end the ones a test did not. A test
+  // that fails before its own daemon.kill() would otherwise leak a daemon that holds the runner's
+  // stdio open, and the test file then hangs until the outer timeout.
+  const spawned = new Set<ChildProcess>();
   const spawnCli = (args: string[]): ChildProcess => {
-    return spawn(process.execPath, [tgBin, ...args], { env });
+    const child = spawn(process.execPath, [tgBin, ...args], { env });
+    spawned.add(child);
+    child.once("close", () => spawned.delete(child));
+    return child;
   };
 
   const socketPath = path.join(home, "state", "daemon.sock");
-  const waitForSocket = async (timeoutMs = 5000): Promise<void> => {
+  const waitForSocket = async (timeoutMs = 20000): Promise<void> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (existsSync(socketPath)) return;
@@ -225,6 +236,9 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     },
     async teardown() {
       if (daemonProc) daemonProc.kill("SIGKILL");
+      const leftover = [...spawned];
+      for (const child of leftover) child.kill("SIGKILL");
+      await Promise.all(leftover.filter((c) => c.exitCode === null && c.signalCode === null).map((c) => new Promise((resolve) => c.once("close", resolve))));
       await fake.stop();
       rmSync(home, { recursive: true, force: true });
     },
@@ -235,7 +249,7 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function waitForSocketAt(socketPath: string, timeoutMs = 5000): Promise<void> {
+export async function waitForSocketAt(socketPath: string, timeoutMs = 20000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(socketPath)) return;

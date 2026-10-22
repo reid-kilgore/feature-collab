@@ -30,6 +30,10 @@ import {
   renderBatchDone,
   decodeCallback,
 } from "./render.ts";
+import { REACTION_DELIVERED, REACTION_QUEUED } from "./reactions.ts";
+import type { DispatcherStatus } from "../../daemon/protocol.ts";
+import type { DispatcherConfig } from "../../dispatcher/config.ts";
+import type { ReceivedEntry } from "../../core/inquiry-log.ts";
 import { maestroAdd, maestroRecent, MaestroError } from "../../inbox/maestro.ts";
 import { renderInboxList, renderInboxDetail, decodeInboxCallback, escapeHtml, truncate } from "../../inbox/render.ts";
 import { startTailscaleCheck, parseUnreachableAlias, isValidAlias } from "../../inbox/tailscale.ts";
@@ -45,6 +49,9 @@ const INBOX_HOSTS = ["local", "duo"];
 // The commands Telegram's "/" menu shows, registered with setMyCommands at daemon start
 // (see src/daemon/server.ts) and listed by /help below. Keep these two uses in sync: one
 // source of truth for what a command is called and what it does.
+// The three commands that call the external inbox tool; dispatcher.json can turn them off.
+export const BOT_COMMANDS_INBOX = ["ask", "add", "inbox"];
+
 export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "status", description: "pending questions, unread inbox count, listening state" },
   { command: "pending", description: "resend the current question" },
@@ -197,6 +204,17 @@ export interface HandlerContext {
   // several agents"): resolve which channel a free-form message belongs to.
   channelForMessage: (messageId: number) => string | undefined;
   pickActiveChannel: () => string | undefined;
+  // The dispatcher (DESIGN-dispatcher.md): its config when it is on, else undefined and routing
+  // is the old order. isChannelLive: listening now, or stopped listening within `ttlSeconds`.
+  dispatcher: () => DispatcherConfig | undefined;
+  isChannelLive: (channel: string, ttlSeconds: number) => boolean;
+  isChannelListening: (channel: string) => boolean;
+  // Called when a message was queued for a dispatcher that is not listening.
+  dispatcherQueued: () => void;
+  // False only when a valid dispatcher.json turns the /ask, /add and /inbox commands off.
+  inboxCommandsEnabled: () => boolean;
+  logInquiry: (entry: ReceivedEntry) => void;
+  dispatcherStatus: () => DispatcherStatus;
   // The Mini App's https URL, set only when the Mini App is configured and running.
   miniappUrl?: string;
 }
@@ -457,8 +475,8 @@ async function addToMaestroAsk(ctx: HandlerContext, chatId: number, text: string
 }
 
 // A Telegram reply carries the full replied-to message back to us. Quote the first 200
-// characters of it so a maestro item made from a bare "yes" or "do that" still carries what
-// it was answering, without pulling in the whole prior conversation.
+// characters of it so a bare "yes" or "do that" still carries what it was answering, without
+// pulling in the whole prior conversation.
 const REPLY_QUOTE_LIMIT = 200;
 
 function replyQuote(replyTo: TgMessage["reply_to_message"]): string | undefined {
@@ -467,16 +485,12 @@ function replyQuote(replyTo: TgMessage["reply_to_message"]): string | undefined 
   return quoted.slice(0, REPLY_QUOTE_LIMIT);
 }
 
-// The maestro item made from a reply quotes what was replied to. When that message was one
-// `tg send` sent on a recorded channel, name the channel too, so the item doesn't read as an
-// answer to nobody in particular. Reuses the same message_channel lookup that routes the reply
-// itself (ctx.channelForMessage), rather than a second one.
-function replySuffix(ctx: HandlerContext, replyTo: TgMessage["reply_to_message"]): string {
-  const quoted = replyQuote(replyTo);
-  if (!quoted) return "";
-  const channel = replyTo ? ctx.channelForMessage(replyTo.message_id) : undefined;
-  const channelNote = channel ? ` · reply to a notice from channel ${channel}` : "";
-  return `\n\n(replying to: "${quoted}")${channelNote}`;
+function helpText(ctx: HandlerContext): string {
+  const inbox = ctx.inboxCommandsEnabled()
+    ? "/ask <text> - add an item to the maestro inbox\n/add <text> - same as /ask\n/inbox - recent items you added, tap one for its detail and trail\n"
+    : "";
+  const open = ctx.miniappUrl ? "/open - open your questions in the mini app\n" : "";
+  return `Commands:\n/status - pending questions, unread inbox count, dispatcher and listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n${inbox}${open}/help - this message\n\nAnything else you send goes to the dispatcher session when one is running, otherwise to the agent's inbox (tg recv).`;
 }
 
 async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<void> {
@@ -507,9 +521,18 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     const uptimeSeconds = Math.floor((Date.now() - ctx.daemonStartedAt.getTime()) / 1000);
     const unread = ctx.store.countUnreadInbox();
     const listening = ctx.isListening() ? "yes" : "no";
+    const d = ctx.dispatcherStatus();
+    const dispatcherLine =
+      d.mode === "on"
+        ? `\nDispatcher: ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`
+        : d.mode === "invalid"
+          ? `\nDispatcher: dispatcher.json is invalid (${d.error}); it is off`
+          : d.mode === "disabled"
+            ? "\nDispatcher: disabled"
+            : "";
     await ctx.api.sendMessage(
       String(message.chat.id),
-      `Pending questions: ${pending.length}\nUnread inbox: ${unread}\nAgent listening: ${listening}\nDaemon uptime: ${uptimeSeconds}s`,
+      `Pending questions: ${pending.length}\nUnread inbox: ${unread}\nAgent listening: ${listening}${dispatcherLine}\nDaemon uptime: ${uptimeSeconds}s`,
     );
     return;
   }
@@ -548,7 +571,8 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     return;
   }
   // /add is an alias of /ask (matches `maestro add`): same command, same behavior.
-  if (/^\/(?:ask|add)(?:@\w+)?(?:\s|$)/.test(text)) {
+  const inboxCommandsOn = ctx.inboxCommandsEnabled();
+  if (inboxCommandsOn && /^\/(?:ask|add)(?:@\w+)?(?:\s|$)/.test(text)) {
     const match = /^\/(?:ask|add)(?:@\w+)?(?:\s+([\s\S]+))?$/.exec(text);
     const body = match?.[1]?.trim();
     const commandName = text.startsWith("/add") ? "/add" : "/ask";
@@ -569,14 +593,14 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
     });
     return;
   }
-  if (text === "/inbox") {
+  if (inboxCommandsOn && text === "/inbox") {
     await sendInboxList(ctx, message.chat.id);
     return;
   }
   if (text === "/help") {
     await ctx.api.sendMessage(
       String(message.chat.id),
-      `Commands:\n/status - pending questions, unread inbox count, listening state\n/pending - resend the current question\n/cancel - cancel the current question batch\n/ask <text> - add an item to the maestro inbox\n/add <text> - same as /ask\n/inbox - recent items you added, tap one for its detail and trail\n${ctx.miniappUrl ? "/open - open your questions in the mini app\n" : ""}/help - this message\n\nAnything else you send goes to the maestro inbox, and still to the agent's inbox (tg recv).`,
+      helpText(ctx),
     );
     return;
   }
@@ -587,24 +611,13 @@ async function handleMessage(ctx: HandlerContext, message: TgMessage): Promise<v
   const unknownCommand = /^\/(\S+)/.exec(text);
   if (unknownCommand) {
     await addToInbox(ctx, message);
-    const body = `${text}${replySuffix(ctx, message.reply_to_message)}`;
-    await addToMaestroAsk(ctx, message.chat.id, body);
-    await ctx.api.sendMessage(String(message.chat.id), `unknown command /${unknownCommand[1]}; see /help`);
+    await ctx.api.sendMessage(String(message.chat.id), `unknown command /${unknownCommand[1]}; see /help`, { replyToMessageId: message.message_id });
     return;
   }
 
-  // Not a reply to a live question, not a command: this is unsolicited text or an attachment.
-  // It still goes to the agent's inbox unchanged (tg recv keeps seeing every message, so
-  // nothing that already reads that inbox breaks). A plain text message additionally becomes
-  // a maestro inbox item, exactly as /ask does, so a message with no session listening for it
-  // still gets triaged instead of sitting unread. Photos and documents (no message.text) are
-  // left as inbox-only, same as before: maestro items are for text a person can triage from
-  // the recent-items list, and a bare caption rarely stands on its own there.
+  // Not a reply to a live question, not a command: unsolicited text or an attachment. It goes to
+  // the inbox, routed by addToInbox (the dispatcher when one is configured).
   await addToInbox(ctx, message);
-  if (text) {
-    const body = `${text}${replySuffix(ctx, message.reply_to_message)}`;
-    await addToMaestroAsk(ctx, message.chat.id, body);
-  }
 }
 
 async function addToInbox(ctx: HandlerContext, message: TgMessage): Promise<void> {
@@ -623,17 +636,69 @@ async function addToInbox(ctx: HandlerContext, message: TgMessage): Promise<void
   const text = message.text ?? message.caption ?? null;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // Routing (DESIGN.md "Inbox routing with several agents"): a reply to a message we sent
-  // routes to that message's channel; otherwise the currently-listening (or most recently
-  // sending) channel; otherwise unrouted, where any `tg recv` may consume it.
-  const replyChannel = message.reply_to_message ? ctx.channelForMessage(message.reply_to_message.message_id) : undefined;
-  const channel = replyChannel ?? ctx.pickActiveChannel() ?? null;
+  // Routing. With a dispatcher configured (DESIGN-dispatcher.md): a reply to a message from a
+  // channel that is live goes to that channel; everything else goes to the dispatcher, a reply
+  // to a stale channel carrying that channel's name and a quote. Without one (the old order,
+  // DESIGN.md "Inbox routing with several agents"): reply to a message we sent, else the
+  // listening or most recently sending channel, else unrouted.
+  const replyTo = message.reply_to_message;
+  const replyChannel = replyTo ? ctx.channelForMessage(replyTo.message_id) : undefined;
+  const inquiryId = replyTo ? ctx.store.getInquiryForMessage(replyTo.message_id) : undefined;
+  const dispatcher = ctx.dispatcher();
+  let channel: string | null;
+  let staleReplyChannel: string | null = null;
+  if (dispatcher) {
+    if (replyChannel && replyChannel !== dispatcher.channel && ctx.isChannelLive(replyChannel, dispatcher.liveReplyTtlSeconds)) {
+      channel = replyChannel;
+    } else {
+      channel = dispatcher.channel;
+      if (replyChannel && replyChannel !== dispatcher.channel) staleReplyChannel = replyChannel;
+    }
+  } else {
+    channel = replyChannel ?? ctx.pickActiveChannel() ?? null;
+  }
+  const quote = replyQuote(replyTo) ?? null;
 
-  ctx.store.addInboxMessage({ id, update_id: null, text, photo_path: photoPath, file_path: filePath, channel });
+  ctx.store.addInboxMessage({
+    id,
+    update_id: null,
+    text,
+    photo_path: photoPath,
+    file_path: filePath,
+    channel,
+    tg_message_id: message.message_id,
+    reply_to_message_id: replyTo?.message_id ?? null,
+    reply_quote: quote,
+    reply_channel: staleReplyChannel,
+    inquiry_id: inquiryId ?? null,
+  });
+  // The log line is written before anyone can consume the row, so a message is on disk even if
+  // the process dies before a listener reads it.
+  try {
+    ctx.logInquiry({
+      op: "received",
+      id,
+      at: new Date().toISOString(),
+      state: "received",
+      text,
+      photoPath,
+      filePath,
+      routedTo: channel,
+      tgMessageId: message.message_id,
+      replyToMessageId: replyTo?.message_id ?? null,
+      replyToQuote: quote,
+      replyToChannel: staleReplyChannel,
+      inquiry: inquiryId ?? null,
+    });
+  } catch (error) {
+    ctx.store.appendAudit("inquiry_log_error", null, null, { message: (error as Error).message });
+  }
   ctx.notifyInbox();
 
-  const reaction = ctx.isListening() ? "👀" : "📥";
-  await ctx.api.setMessageReaction(String(message.chat.id), message.message_id, reaction);
+  const toDispatcher = dispatcher !== undefined && channel === dispatcher.channel;
+  const listening = toDispatcher ? ctx.isChannelListening(channel!) : ctx.isListening();
+  if (toDispatcher && !listening) ctx.dispatcherQueued();
+  await ctx.api.setMessageReaction(String(message.chat.id), message.message_id, listening ? REACTION_DELIVERED : REACTION_QUEUED);
 }
 
 async function downloadAttachment(ctx: HandlerContext, fileId: string, ext: string): Promise<string | null> {
