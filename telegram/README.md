@@ -1,8 +1,8 @@
 # agent-telegram
 
-A laptop-local tool that lets a coding agent (Claude Code, Codex, any shell) send Reid
-messages, images, and files over Telegram, and ask him blocking structured questions that
-he answers from his phone. See `DESIGN.md` for the full design.
+A laptop-local tool that lets a coding agent (Claude Code, Codex, any shell) send you
+messages, images, and files over Telegram, and ask you blocking structured questions that
+you answer from your phone. See `DESIGN.md` for the full design.
 
 ## Install
 
@@ -35,7 +35,7 @@ tg send --image ./screenshot.png "Before/after"
 
 tg ask --json '{"version":1,"questions":[{"id":"go","prompt":"Deploy now?","type":"single","required":true,"options":[{"value":"yes","label":"Yes"},{"value":"no","label":"No"}]}]}'
 
-tg recv --wait --timeout 4h     # block for Reid's next message; text is his instruction to you
+tg recv --wait --timeout 4h     # block for the user's next message; the text is their instruction to you
 ```
 
 A message starts with its content: no header line. `warning` and `error` put one ⚠️ or ❌ at
@@ -59,7 +59,7 @@ or the newest `~/Library/Caches/ms-playwright/chromium*` install on the machine 
 daemon (mermaid is loaded from the pinned jsdelivr CDN, so it needs network). If rendering
 fails, the fence source is sent as a code block and the daemon logs a warning.
 
-`tg ask` prints exactly the `ask-questions` result shape to stdout. See `skill/SKILL.md`
+`tg ask` prints one JSON result to stdout. See `skill/SKILL.md`
 for the full agent-facing contract, including timeouts, defaults, and conversation mode
 (`tg send` / `tg recv --wait` loop).
 
@@ -106,8 +106,8 @@ login link. Create `~/.config/agent-telegram/tailscale.json` and the daemon prob
 link with an Approve button, once, then tells you when it works again:
 
 ```
-{ "version": 1, "local": "mbp", "hosts": ["duo"],
-  "reverse": [{ "via": "duo", "target": "mbp" }], "interval": "10m", "reminder": "1h" }
+{ "version": 1, "local": "laptop1", "hosts": ["laptop2"],
+  "reverse": [{ "via": "laptop2", "target": "laptop1" }], "interval": "10m", "reminder": "1h" }
 ```
 
 `hosts` are ssh aliases probed from this machine. `reverse` probes the way back by asking the other machine to
