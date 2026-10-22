@@ -131,7 +131,7 @@ const KICKOFF = "You are the Telegram dispatcher. Load the telegram-dispatcher s
 
 export function buildDispatcherCommand(config: DispatcherConfig, protocolFile: string): string {
   const claude = [
-    "claude",
+    shq(expandHome(config.session.claudeBin)),
     shq(KICKOFF),
     "--model",
     shq(config.model),
@@ -329,7 +329,7 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
       const cwd = allowedCwd(target, cwdParam);
       if (!cwd) throw new Error(`cwd "${cwdParam}" is not one of this target's allowedCwds`);
       values.cwd = cwd;
-      result = await runCommand([tmuxBin(), "new-window", "-d", "-c", cwd, "-n", `tg-${inquiry.id.slice(-6)}`, "claude", text], "");
+      result = await runCommand([tmuxBin(), "new-window", "-d", "-c", cwd, "-n", `tg-${inquiry.id.slice(-6)}`, expandHome(config.session.claudeBin), text], "");
       if (result.ok) result.stdout = path.basename(cwd);
     }
   } catch (error) {
@@ -471,7 +471,7 @@ export function dispatcherDoctor(): string[] {
     if (bin && !onPath(bin)) lines.push(`  warning: target "${t.name}": "${bin}" is not on PATH`);
     for (const cwd of t.allowedCwds ?? []) if (!existsSync(expandHome(cwd))) lines.push(`  warning: target "${t.name}": allowed directory ${cwd} does not exist`);
   }
-  if (!onPath("claude")) lines.push("  warning: `claude` is not on PATH, so `tg dispatcher start` cannot start a session");
+  if (!onPath(c.session.claudeBin)) lines.push(`  warning: \`${c.session.claudeBin}\` was not found, so \`tg dispatcher start\` cannot start a session (a tmux window does not read your shell profile; set session.claudeBin to the full path)`);
   if (!onPath("tmux")) lines.push("  warning: `tmux` is not on PATH, so `tg dispatcher start` cannot start a window");
   return lines;
 }

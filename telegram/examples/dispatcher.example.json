@@ -10,7 +10,8 @@
     "tmuxSession": "main",
     "window": "tg-dispatcher",
     "cwd": "~",
-    "allowedTools": ["Bash(tg:*)"]
+    "allowedTools": ["Bash(tg:*)"],
+    "claudeBin": "claude"
   },
   "inboxCommands": false,
   "defaultTarget": "notes",

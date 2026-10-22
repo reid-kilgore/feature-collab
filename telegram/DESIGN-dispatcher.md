@@ -40,7 +40,7 @@ Phase 1 is the above, plus the one threading slice that is nearly free: the ackn
    - `api.ts:202-206` swallows the error, so when nobody listens Reid gets no feedback at all. This is part of why messages feel lost.
    - Use ✍ for "recorded, queued", 👀 for "dispatcher has it", 🫡 for "handed off". All three are in the allowed list.
 
-3. **Eleven unread messages are stranded right now, and any new `tg recv` session will receive them. [FH for the counts, arithmetic for the 11]**
+3. **Eighteen unread messages are stranded across stale channels. [FH: `tg status` on mbp before the rollout, 2026-10-22]** An earlier draft here said 11 of them were unrouted; that was an arithmetic error from reading a truncated status listing. `tg quarantine --dry-run` on mbp reported 0 unrouted. The 18 sit on dead channels such as old tmux pane ids, which a new session can inherit if tmux reuses the pane id.
    - `ssh mbp tg status` today: `unread inbox: 18`, `listening: false`. The channels table lists 7 of those unread (1 + 5 + 1), so I infer 11 are unrouted. `server.ts` deletes the `(unrouted)` bucket from that table, which is why none is shown.
    - `listUnreadInboxForChannel` (`store.ts`) returns `channel = ? OR channel IS NULL`. The skill tells sessions that received text is Reid's instruction.
    - Rollout must quarantine these (section 8).

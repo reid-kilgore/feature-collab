@@ -17,6 +17,9 @@ test("defaults fill in everything but the targets", () => {
   assert.equal(c.downNoticeAfterSeconds, 120);
   assert.deepEqual(c.session.allowedTools, ["Bash(tg:*)"]);
   assert.equal(c.inboxCommands, false);
+  assert.equal(c.session.claudeBin, "claude");
+  assert.equal(parseDispatcherConfig({ ...base, session: { claudeBin: "~/.local/bin/claude" } }).session.claudeBin, "~/.local/bin/claude");
+  assert.throws(() => parseDispatcherConfig({ ...base, session: { claudeBin: "claude; rm -rf" } }), /claudeBin/);
   assert.equal(c.targets[0]!.ack, "Sent to {{name}}.");
 });
 

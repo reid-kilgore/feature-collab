@@ -505,7 +505,7 @@ test("the claude-session target starts a tmux window only in an allowed director
     assert.equal(ok.code, 0, ok.stderr);
     const logged = JSON.parse(readFileSync(path.join(h.home, "tmux.log"), "utf8").trim());
     assert.equal(logged[0], "new-window");
-    assert.ok(logged.includes("claude"));
+    assert.ok(logged.includes("claude"), "defaults to claude on PATH");
     assert.equal(logged[logged.length - 1], "build me a thing");
     daemon.kill("SIGKILL");
   } finally {
@@ -528,7 +528,7 @@ if (args[0] === "list-windows") { const f = path.join(__dirname, "tmux-windows")
     );
     chmodSync(tmuxStub, 0o755);
     h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub;
-    writeConfig(h, { session: { tmuxSession: "ship", window: "tg-dispatcher", cwd: "~", allowedTools: ["Bash(tg:*)", "SendMessage"] }, model: "sonnet" });
+    writeConfig(h, { session: { tmuxSession: "ship", window: "tg-dispatcher", cwd: "~", allowedTools: ["Bash(tg:*)", "SendMessage"], claudeBin: "/opt/fake/bin/claude" }, model: "sonnet" });
     const daemon = await start(h);
 
     const started = await h.runCli(["dispatcher", "start"]);
@@ -537,7 +537,7 @@ if (args[0] === "list-windows") { const f = path.join(__dirname, "tmux-windows")
     const create = calls.find((c: string[]) => c[0] === "new-session")!;
     assert.deepEqual(create.slice(0, 5), ["new-session", "-d", "-s", "ship", "-n"]);
     const command = create[create.length - 1] as string;
-    assert.match(command, /^while :; do claude '.*Telegram dispatcher.*' --model 'sonnet' --allowed-tools 'Bash\(tg:\*\),SendMessage' --append-system-prompt-file '.*dispatcher-protocol\.md'; sleep 5; done$/);
+    assert.match(command, /^while :; do '\/opt\/fake\/bin\/claude' '.*Telegram dispatcher.*' --model 'sonnet' --allowed-tools 'Bash\(tg:\*\),SendMessage' --append-system-prompt-file '.*dispatcher-protocol\.md'; sleep 5; done$/);
     assert.ok(existsSync(path.join(h.home, "state", "dispatcher-protocol.md")));
 
     // a window of that name already exists: refuse
