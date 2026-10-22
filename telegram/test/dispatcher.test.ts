@@ -710,3 +710,33 @@ test("trial needs a valid dispatcher.json", async () => {
     await h.teardown();
   }
 });
+
+test("session.name is passed to claude with --name, ahead of the variadic --allowed-tools", async () => {
+  const h = await setupHarness();
+  try {
+    const tmuxStub = path.join(h.home, "tmux-stub.cjs");
+    writeFileSync(tmuxStub, `#!/usr/bin/env node\nconst a = process.argv.slice(2); require("node:fs").appendFileSync(require("node:path").join(__dirname, "tmux.log"), JSON.stringify(a) + "\\n"); if (a[0] === "list-windows") process.exit(1);\n`);
+    chmodSync(tmuxStub, 0o755);
+    h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub;
+    writeConfig(h, { session: { tmuxSession: "ship", window: "tg-dispatcher", cwd: "~", name: "TG-DISPATCHER" } });
+    const daemon = await start(h);
+    const started = await h.runCli(["dispatcher", "start"]);
+    assert.equal(started.code, 0, started.stderr);
+    const create = readFileSync(path.join(h.home, "tmux.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((c: string[]) => c[0] === "new-session")!;
+    const command = create[create.length - 1] as string;
+    assert.match(command, / --model 'sonnet' --name 'TG-DISPATCHER' --allowed-tools /);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the protocol says to use an exact address as given and to look up only a bare name", async () => {
+  const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
+  const text = DISPATCHER_PROTOCOL.join("\n");
+  assert.match(text, /exact address/);
+  assert.match(text, /\[ref\]/);
+  assert.match(text, /session_/);
+  assert.match(text, /bridge:/);
+  assert.match(text, /[Oo]nly when .* bare name/);
+});

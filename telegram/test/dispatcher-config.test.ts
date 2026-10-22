@@ -59,3 +59,9 @@ test("missing file is absent, a bad file is invalid with a reason, a good one is
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("session.name is optional, safe, and carried through", () => {
+  assert.equal(parseDispatcherConfig(base).session.name, undefined);
+  assert.equal(parseDispatcherConfig({ ...base, session: { name: "TG-DISPATCHER" } }).session.name, "TG-DISPATCHER");
+  assert.throws(() => parseDispatcherConfig({ ...base, session: { name: "bad name; x" } }), /session\.name/);
+});

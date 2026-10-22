@@ -26,9 +26,10 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
    - If two targets fit equally, or none fits, ask instead of guessing:
      `tg dispatch ask <id> "your question"`. The user's answer comes back as a new message
      that carries an `inquiry` field naming the earlier one.
-4. **If `tg dispatch` prints a `nudge`**, send it with the SendMessage tool, to the `to` it
-   names, with the `message` it gives, unchanged. Before the first nudge after a wake-up, run
-   ListAgents and find the live row whose name is exactly `to`; other rows may share the
+4. **If `tg dispatch` prints a `nudge`**, send it with the SendMessage tool, with the `message`
+   it gives, unchanged. If `to` is an exact address (a name followed by a `[ref]`, or a string
+   starting with `session_` or `bridge:`), send to it exactly as given. Only if `to` is a bare name, run
+   ListAgents first and find the live row whose name is exactly `to`; other rows may share the
    prefix. If SendMessage refuses the bare name as ambiguous, send to `"<to> [<ref>]"` with that
    row's ref. If no live row matches, tell the user with
    `tg send --reply-to <tgMessageId> "could not reach <to> directly; the item is filed"`.
