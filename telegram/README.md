@@ -81,6 +81,11 @@ targets you list.
    because the dispatcher is not listening (you also get one notice per outage), and 🫡 means
    it was handed off. The acknowledgement is a reply under your message.
 
+Unread messages left on channels nobody is listening on (for example an old tmux pane id) can
+reach a new session that gets the same id. `tg quarantine --stale-channels --older 1d --dry-run`
+lists them by channel; without `--dry-run` it moves them into the log as `legacy`. The
+dispatcher's own queue is never touched.
+
 Every message is kept in `~/.local/state/agent-telegram/inquiries.jsonl`. `tg inquiries list
 --open` shows what has not been routed, and `tg inquiries revive <id>` puts one back in the
 dispatcher's queue. Removing `dispatcher.json`, or setting `"enabled": false`, restores the

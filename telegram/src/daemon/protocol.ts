@@ -82,11 +82,16 @@ export interface TrialResponse {
 export interface QuarantineRequest {
   op: "quarantine";
   dryRun: boolean;
+  // Also (instead of the unrouted rows) take unread rows on channels nobody is listening on that are
+  // older than `olderSeconds`.
+  staleChannels?: boolean;
+  olderSeconds?: number;
 }
 
 export interface QuarantineResponse {
   quarantined: number;
   dryRun: boolean;
+  byChannel?: Array<{ channel: string; count: number; oldest: string }>;
 }
 
 export type DaemonRequest =
