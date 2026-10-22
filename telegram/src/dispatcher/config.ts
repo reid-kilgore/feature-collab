@@ -38,7 +38,10 @@ export interface DispatcherConfig {
   waitTimeoutSeconds: number;
   liveReplyTtlSeconds: number;
   downNoticeAfterSeconds: number;
-  session: { tmuxSession: string; window: string; cwd: string; allowedTools: string[] };
+  // claudeBin: the claude executable. A tmux window does not read the user's shell profile, so a
+  // `claude` installed in a directory only the profile adds to PATH (~/.local/bin) is not found there;
+  // give the full path in that case.
+  session: { tmuxSession: string; window: string; cwd: string; allowedTools: string[]; claudeBin: string };
   inboxCommands: boolean;
   defaultTarget: string | undefined;
   targets: Target[];
@@ -134,6 +137,7 @@ export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
       window: str(sessionRaw.window, "session.window", "tg-dispatcher"),
       cwd: str(sessionRaw.cwd, "session.cwd", "~"),
       allowedTools: toolsRaw as string[],
+      claudeBin: str(sessionRaw.claudeBin, "session.claudeBin", "claude"),
     },
     inboxCommands: r.inboxCommands === true,
     defaultTarget,

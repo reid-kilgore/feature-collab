@@ -70,6 +70,8 @@ targets you list.
    built-in `claude-session` that starts a new session in an allowed directory) and
    `defaultTarget`. Everything else has a default.
 2. Link the skill: `ln -s "$(pwd)/skill/dispatcher" ~/.claude/skills/telegram-dispatcher`.
+   A tmux window does not read your shell profile, so if `claude` lives in a directory only
+   your profile adds to PATH (for example `~/.local/bin`), set `session.claudeBin` to its full path.
 3. `tg doctor` checks the file. `tg dispatcher start` opens a tmux window running a Claude
    session as the dispatcher; `tg dispatcher stop` closes it.
 4. Send the bot a message. A 👀 reaction means the dispatcher has it, ✍ means it is queued
