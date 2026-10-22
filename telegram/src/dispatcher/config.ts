@@ -171,3 +171,11 @@ export function activeDispatcher(file?: string): DispatcherConfig | undefined {
   const state = readDispatcherConfig(file);
   return state.state === "ok" && state.config.enabled ? state.config : undefined;
 }
+
+// The config when the file is valid, whether or not "enabled" is true. "enabled" decides only whether the
+// daemon routes real Telegram messages to the dispatcher; the session commands, and the single-listener
+// rule, work either way so a new install can be started and tried before it goes live.
+export function validDispatcher(file?: string): DispatcherConfig | undefined {
+  const state = readDispatcherConfig(file);
+  return state.state === "ok" ? state.config : undefined;
+}

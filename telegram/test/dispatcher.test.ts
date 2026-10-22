@@ -626,3 +626,87 @@ test("tg send --reply-to sends the message as a reply", async () => {
     await h.teardown();
   }
 });
+
+// ---- a disabled dispatcher can still be run and tried (rollout step 8) ----
+
+test("with enabled false, the session commands work and a trial message reaches the waiting dispatcher", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h, { enabled: false });
+    const daemon = await start(h);
+    const w = spawnWait(h);
+    await waitUntil(async () => /a session is listening on dispatcher/.test((await h.runCli(["status"])).stdout));
+    const trial = await h.runCli(["dispatcher", "trial", "TOOLING rollout test, ignore"]);
+    assert.equal(trial.code, 0, trial.stderr);
+    assert.equal(await w.closed, 0, w.err());
+    const out = JSON.parse(w.out().trim());
+    assert.equal(out.messages[0].text, "TOOLING rollout test, ignore");
+    assert.equal(out.messages[0].tgMessageId, undefined, "a trial message has no Telegram message");
+
+    const logged = inquiryLines(h).find((l) => l.op === "received")!;
+    assert.equal(logged.text, "TOOLING rollout test, ignore");
+    assert.equal(logged.routedTo, "dispatcher");
+
+    // dispatching it works, and the acknowledgement is a plain message (nothing to reply under)
+    const r = await h.runCli(["dispatch", "plain", "--inquiry", out.messages[0].id, "--note", "trial"]);
+    assert.equal(r.code, 0, r.stderr);
+    const ack = h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Sent to plain"))!;
+    assert.equal(ack.body.reply_parameters, undefined);
+    assert.match(String(ack.body.text), /trial/);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("with enabled false, real Telegram messages keep the old routing, not the dispatcher", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h, { enabled: false });
+    const daemon = await start(h);
+    say(h, "an ordinary message");
+    await waitUntil(() => reactions(h).length >= 1);
+    assert.equal(inquiryLines(h)[0]!.routedTo, null, "unrouted, as before the dispatcher existed");
+    assert.equal(JSON.parse((await h.runCli(["recv", "--peek", "--channel", "somebody"])).stdout.trim()).messages.length, 1);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("with enabled false, only one dispatcher listener is still allowed, and start builds the window", async () => {
+  const h = await setupHarness();
+  try {
+    const tmuxStub = path.join(h.home, "tmux-stub.cjs");
+    writeFileSync(tmuxStub, `#!/usr/bin/env node\nconst a = process.argv.slice(2); require("node:fs").appendFileSync(require("node:path").join(__dirname, "tmux.log"), JSON.stringify(a) + "\\n"); if (a[0] === "list-windows") process.exit(1);\n`);
+    chmodSync(tmuxStub, 0o755);
+    h.env.AGENT_TELEGRAM_TMUX_BIN = tmuxStub;
+    writeConfig(h, { enabled: false });
+    const daemon = await start(h);
+    const started = await h.runCli(["dispatcher", "start"]);
+    assert.equal(started.code, 0, started.stderr);
+    assert.ok(readFileSync(path.join(h.home, "tmux.log"), "utf8").includes("new-session"));
+    const first = spawnWait(h);
+    await sleep(500);
+    const second = spawnWait(h);
+    assert.equal(await second.closed, 1);
+    assert.match(second.err(), /already has a listener/);
+    first.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("trial needs a valid dispatcher.json", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    const r = await h.runCli(["dispatcher", "trial", "x"]);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /no dispatcher\.json/);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});

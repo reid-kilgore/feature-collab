@@ -291,3 +291,5 @@ Tags: everything here was run in this worktree (first-hand) unless marked.
 - The MAESTRO session name for SendMessage (`to`). I wrote `MAESTRO`; the `to` must match what `ListAgents` shows for that session.
 - `claude --allowed-tools` with SendMessage: I did not verify the exact tool name string the flag accepts. Step 8 tests it.
 - The hostile-input surface is the dispatcher's prompt. Targets run with the text on stdin and never in argv, but a model can still choose a wrong target. The `claude-session` target is off in the example config.
+
+**Addendum, 2026-10-22 (rollout).** `"enabled": false` first blocked `tg dispatcher start` and `wait`, so step 8 could not run without routing real messages. `enabled` now governs only the daemon's routing; the session commands and the single-listener rule work whenever the file is valid, and `tg dispatcher trial "text"` queues a synthetic message for the dispatcher without Telegram. `session.claudeBin` exists because a tmux window's PATH lacks `~/.local/bin`.
