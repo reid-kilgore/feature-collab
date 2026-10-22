@@ -176,6 +176,11 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     AGENT_TELEGRAM_TAILSCALE_HARDKILL_MS: "15000",
   };
 
+  // Whoever runs the tests may be inside tmux; the CLI would then name that window as the sender of
+  // every message and route by that pane. A test gets the same environment wherever it runs.
+  delete env.TMUX;
+  delete env.TMUX_PANE;
+
   // Live enforcement of the invariant, on the exact value about to be handed to every spawned
   // child: refuses the whole harness setup rather than let a test proceed with an unsafe or
   // missing MAESTRO_INBOX_DIR.

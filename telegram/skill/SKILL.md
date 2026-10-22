@@ -34,7 +34,10 @@ tg send --level success "Migrated 40 files"
 tg send --image ./screenshot.png "Before/after diff"
 ```
 
-Levels: `info` (default), `success`, `warning`, `error`. Body is Markdown.
+Levels: `info` (default), `success`, `warning`, `error`. Body is Markdown. A message starts with its
+content, with no header. Only `warning` and `error` add one emoji (⚠️ or ❌) at the start of the first
+line. If you pass `--title` or `--channel`, your tmux window name (else the channel) is added as a small
+italic last line, so Reid can tell which session sent it.
 
 ## When to use `tg ask`
 
@@ -119,6 +122,76 @@ to execute verbatim, but it is directive, not just descriptive data.
 
 Same Bash-timeout problem as `tg ask`: use `run_in_background` and poll, or accept that
 `tg recv --wait` can block for a long time and give it a generous `--timeout`.
+
+## Writing for Telegram
+
+The person reading this is on a phone, often glancing at it between other things. A wall of
+text gets skipped. Write so the first line alone tells them what they need.
+
+- **Lead with the answer in one short line.** Then the detail underneath, one fact per line,
+  or short bullets. A blank line between groups.
+- **Bold is for a label or the one number that matters, and rarely.** `**Done**` or
+  `**3 failures**`. If everything is bold, nothing is.
+- **Ids, commands, paths, branch names and versions go in code**: `a1307`, `npm test`,
+  `src/api/index.ts`. They stay literal and are easy to copy.
+- **Several short messages beat one long one** when the topics differ. Use `--title` for a
+  headline; do not write a `#` heading.
+- **Keep code lines short.** A phone shows only a narrow strip of a code block.
+- **No tables.** Use a short list, one row per line: `Tests: 211 passed`.
+
+What tg actually renders (this is what the converter does, not what Markdown allows):
+
+| Writes | Shows |
+|---|---|
+| `**bold**`, `__bold__` | bold |
+| `*italic*`, `_italic_` | italic |
+| `` `code` `` | inline code |
+| a fenced block | a code block (no language word: it would print inside the block) |
+| `[text](https://…)` | a link |
+| `- item` or `* item` | a bullet line (nesting is flattened) |
+| `1. item` | stays as typed, which reads fine |
+| `# Heading`, a table, `> quote` | **not rendered**: the `#`, the pipes and the `>` show as text |
+
+A message over 4096 characters is split at blank lines for you, but write less rather than
+rely on that.
+
+**Use a picture when it says more than text.** A status summary, a before and after, a small
+diagram or a table of numbers is quicker to take in as an image. Render one and send it:
+
+```
+tg send --image ./status.png "Release 4.2: all checks green"
+```
+
+- Make the picture from a small HTML page rendered by headless Chrome or Chromium, for
+  example on macOS:
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --window-size=720,400 --screenshot=status.png file:///path/to/status.html`
+  Make the page about 720 pixels wide with large text, so it reads at phone size.
+- `png`, `jpg`, `jpeg`, `gif` and `webp` files up to 10 MB are sent as photos; anything else
+  goes as a file.
+- The caption is limited to 1024 characters. A longer one is sent as a separate message after
+  the picture, so keep it to a line or two.
+- In `tg ask`, a ```` ```mermaid ```` or `svg` fence inside `message` or a document is rendered
+  to a picture for you. `tg send` does not do that; render it yourself.
+
+Example. This is hard to read on a phone:
+
+```
+Deployment finished. The build took 4 minutes 12 seconds and all 211 tests passed, but
+there were 2 warnings about deprecated APIs in src/api/index.ts and src/api/users.ts that
+you may want to look at, and the preview is at https://preview.example.com/4.2 if you want to check.
+```
+
+This is the same information, readable at a glance:
+
+```
+tg send --level success --title "Deploy 4.2 finished" "**211 tests passed** in 4m 12s
+
+2 warnings, deprecated APIs:
+- \`src/api/index.ts\`
+- \`src/api/users.ts\`
+
+[Open the preview](https://preview.example.com/4.2)"
+```
 
 ## Notes
 

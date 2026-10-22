@@ -79,7 +79,7 @@ export async function runDaemon(): Promise<void> {
   const store = new Store(dbFile());
   const api = new TelegramApi(token, apiBase());
   const hostname = shortHostname();
-  const port = createTelegramPort(api, hostname);
+  const port = createTelegramPort(api);
   const startedAt = new Date();
 
   const waiters = new Map<string, Array<(result: AskResult) => void>>();
@@ -850,10 +850,11 @@ async function sendNotification(
     channel: string;
     replyToMessageId?: number;
     inquiryId?: string;
+    sender?: string;
   },
 ): Promise<number | undefined> {
   const bodyHtml = request.body ? markdownToTelegramHtml(request.body) : undefined;
-  const text = renderNotification(request.level, deps.hostname, request.title, bodyHtml);
+  const text = renderNotification(request.level, request.title, bodyHtml, request.sender);
 
   let firstMessageId: number | undefined;
   const recordSent = (messageId: number) => {

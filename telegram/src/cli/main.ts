@@ -315,6 +315,17 @@ function resolveChannel(explicit: string | undefined): string {
   return process.cwd();
 }
 
+// Who sent a message, as a short name for the italic last line: the tmux window when there is one,
+// else the explicit channel (a path by its last directory, a bare pane id not at all).
+function senderName(explicitChannel: string | undefined): string | undefined {
+  const window = bestEffortTmuxWindow();
+  if (window) return window;
+  const channel = explicitChannel ?? process.env.AGENT_TELEGRAM_CHANNEL;
+  if (!channel || /^%\d+$/.test(channel)) return undefined;
+  if (channel.startsWith("/")) return path.basename(channel) || undefined;
+  return channel;
+}
+
 function parseSendArgs(argv: string[]): {
   text?: string;
   level: Level;
@@ -386,6 +397,8 @@ async function cmdSend(argv: string[]): Promise<void> {
     caption,
     channel: resolveChannel(args.channel),
     replyToMessageId: args.replyToMessageId,
+    // Named only when the sender gave a title or a channel; a bare tg send is just the text.
+    sender: args.title || args.channel || process.env.AGENT_TELEGRAM_CHANNEL ? senderName(args.channel) : undefined,
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {

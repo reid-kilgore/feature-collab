@@ -2,7 +2,6 @@
 
 import type { Question, AskPayload } from "../../contract/payload.ts";
 import type { Level } from "../../contract/notify.ts";
-import { LEVEL_PREFIX } from "../../contract/notify.ts";
 import { markdownToTelegramHtml } from "../../core/markdown.ts";
 import type { InlineKeyboardButton, ReplyMarkup } from "./api.ts";
 
@@ -120,10 +119,9 @@ export function renderMovedView(question: Question): string {
   return `↪ <b>${escapeHtml(question.prompt)}</b>\n<i>moved to the message below</i>`;
 }
 
-export function renderHeader(payload: AskPayload, hostname: string): string | undefined {
+export function renderHeader(payload: AskPayload): string | undefined {
   if (!payload.title && !payload.message) return undefined;
   const parts: string[] = [];
-  parts.push(`🖥 ${escapeHtml(hostname)}`);
   if (payload.title) parts.push(`📋 <b>${escapeHtml(payload.title)}</b>`);
   if (payload.message) parts.push(markdownToTelegramHtml(payload.message));
   return parts.join("\n");
@@ -134,14 +132,24 @@ export function renderBatchDone(askerBasename: string, tmuxWindow?: string): str
   return `✅ Answers sent to the agent (${escapeHtml(where)})`;
 }
 
+// A notification starts with its content. There is no header line: the host is always the machine the
+// bot runs on, so naming it says nothing, and an emoji on every message is noise. Only warning and error
+// keep one emoji, at the start of the first line, because they should stand out. Who sent it is a small
+// italic last line, when the caller knows it.
 export function renderNotification(
   level: Level,
-  hostname: string,
   title: string | undefined,
   bodyHtml: string | undefined,
+  sender?: string,
 ): string {
-  const lines = [`${LEVEL_PREFIX[level]} 🖥 ${escapeHtml(hostname)}`];
+  const lines: string[] = [];
   if (title) lines.push(`<b>${escapeHtml(title)}</b>`);
   if (bodyHtml) lines.push(bodyHtml);
+  if (level === "warning" || level === "error") {
+    const emoji = level === "warning" ? "⚠️" : "❌";
+    if (lines.length === 0) lines.push(emoji);
+    else lines[0] = `${emoji} ${lines[0]}`;
+  }
+  if (sender) lines.push(`<i>${escapeHtml(sender)}</i>`);
   return lines.join("\n");
 }

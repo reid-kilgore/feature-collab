@@ -335,7 +335,7 @@ test("a failing target is reported to Reid as a warning, exits 1, and leaves the
     const r = await h.runCli(["dispatch", "plain", "--inquiry", id]);
     assert.equal(r.code, 1);
     assert.equal(JSON.parse(r.stdout.trim()).status, "failed");
-    const warn = h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Could not hand this to plain: target is down"))!;
+    const warn = h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Could not hand this to plain") && String(m.body.text ?? "").includes("target is down"))!;
     assert.ok(warn, "Reid is told");
     assert.match(String(warn.body.text), /still open/);
     const open = await h.runCli(["inquiries", "list", "--open"]);
@@ -739,4 +739,46 @@ test("the protocol says to use an exact address as given and to look up only a b
   assert.match(text, /session_/);
   assert.match(text, /bridge:/);
   assert.match(text, /[Oo]nly when .* bare name/);
+});
+
+test("the acknowledgement is easy to read: the confirmation on its own line, the note after a blank line, the header kept", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h);
+    const daemon = await start(h);
+    say(h, "file this");
+    await waitUntil(() => reactions(h).length >= 1);
+    const id = inquiryLines(h)[0]!.id as string;
+    const r = await h.runCli(["dispatch", "inbox", "--inquiry", id, "--param", "tag=x", "--note", "treated as a task"]);
+    assert.equal(r.code, 0, r.stderr);
+    const ack = String(h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Filed as ref-1"))!.body.text);
+    const lines = ack.split("\n");
+    assert.equal(lines[0], "Filed as ref-1", "no header: the message starts with the confirmation");
+    assert.equal(lines[1], "");
+    assert.equal(lines[2], "<i>treated as a task</i>");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a failed hand-off tells Reid what failed on short lines", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h);
+    writeFileSync(path.join(h.home, "target-fail"), "");
+    const daemon = await start(h);
+    say(h, "do a thing");
+    await waitUntil(() => reactions(h).length >= 1);
+    const id = inquiryLines(h)[0]!.id as string;
+    await h.runCli(["dispatch", "plain", "--inquiry", id]);
+    const warn = String(h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("target is down"))!.body.text);
+    const lines = warn.split("\n");
+    assert.equal(lines[0], "⚠️ <b>Could not hand this to plain</b>");
+    assert.equal(lines[1], "<code>target is down</code>");
+    assert.equal(lines[2], "The message is still open.");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
 });

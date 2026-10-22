@@ -65,7 +65,7 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
   }
 
   try {
-    const text = renderNotification("success", shortHostname(), "agent-telegram set up", "Hello from your laptop.");
+    const text = renderNotification("success", "agent-telegram set up", "Hello from your laptop.");
     await api.sendMessage(chatId, text, { html: true });
     console.error("Hello message sent.");
   } catch (error) {

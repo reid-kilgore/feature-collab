@@ -26,7 +26,7 @@ async function withPort<T>(
   await fake.start();
   const dir = mkdtempSync(path.join(os.tmpdir(), "agent-telegram-img-"));
   try {
-    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), "host", render as never);
+    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), render as never);
     return await fn(port, fake, dir);
   } finally {
     await fake.stop();
@@ -76,7 +76,7 @@ test("a markdown document sends its text then its images as photos, in order", a
 test("a mermaid fence in a document is rendered and sent as a photo captioned with title and diagram number", async () => {
   await withPort(async () => "unused", async (_unused, fake, dir) => {
     const r = stubRender(dir);
-    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), "host", r.fn as never);
+    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), r.fn as never);
     const md = "before\n```mermaid\ngraph TD; A-->B\n```\nmiddle\n```svg\n<svg xmlns='http://www.w3.org/2000/svg'/>\n```\nafter";
     await port.sendHeader(batch, { ...base, documents: [{ id: "d", title: "Plan", markdown: md }] });
     assert.deepEqual(r.calls.map((c) => c.kind), ["mermaid", "svg"]);
@@ -90,7 +90,7 @@ test("a mermaid fence in a document is rendered and sent as a photo captioned wi
 test("a fence in the message is rendered too", async () => {
   await withPort(async () => "unused", async (_unused, fake, dir) => {
     const r = stubRender(dir);
-    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), "host", r.fn as never);
+    const port = createTelegramPort(new TelegramApi("1:FAKE", fake.baseUrl), r.fn as never);
     await port.sendHeader(batch, { ...base, message: "see:\n```mermaid\ngraph TD; A-->B\n```" });
     assert.equal(r.calls.length, 1);
     const header = fake.sent.find((m) => m.method === "sendMessage")!;

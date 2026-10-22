@@ -38,6 +38,10 @@ tg ask --json '{"version":1,"questions":[{"id":"go","prompt":"Deploy now?","type
 tg recv --wait --timeout 4h     # block for Reid's next message; text is his instruction to you
 ```
 
+A message starts with its content: no header line. `warning` and `error` put one ⚠️ or ❌ at
+the start of the first line. If you pass `--title` or `--channel`, the sending session's short
+name (its tmux window, else the channel) is a small italic last line, so you can tell who sent it.
+
 `tg ask` documents must be `{id, title, markdown}` or `{id, title, path}`:
 
 ```

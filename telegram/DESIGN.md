@@ -121,7 +121,7 @@ tg send --file path ["caption"]                    sendDocument
 tg send -                                          body from stdin
 ```
 
-Level prefixes: ℹ️ / ✅ / ⚠️ / ❌. Title bold on its own line. Body Markdown → Telegram HTML; on a
+Level: info and success add nothing (the message starts with its content); warning and error put one ⚠️ or ❌ at the start of the first line. (Superseded 2026-10-22: there used to be a header line "<level emoji> 🖥 <host>" on every message.) Title bold on its own line. When the sender gave a title or a channel, the sending session's short name (tmux window, else channel) is a small italic last line. Body Markdown → Telegram HTML; on a
 Telegram parse error, retry as plain text (never fail a notification because of formatting).
 Messages >4096 chars are split on paragraph boundaries. Exit 0 on delivery.
 
@@ -323,7 +323,7 @@ Reid has two laptops (REDD-mason and Escape-from-Duos-Island) reachable from eac
 Telegram allows one `getUpdates` consumer per bot, so **each laptop has its own bot, token, config,
 daemon, and state**. The repo is cloned on both. Consequences:
 
-- Every notification and every batch header includes the short hostname, e.g. `🖥 REDD-mason`, so
+- (Superseded 2026-10-22: the hostname header was removed; it was always the machine the bot runs on.) Every notification and every batch header used to include the short hostname, e.g. `🖥 REDD-mason`, so
   Reid can tell which machine is talking even if the two chats are muted or merged in a folder.
 - `tg setup` must be runnable non-interactively over ssh: `tg setup --token X` polls `getUpdates` for
   up to 5 minutes waiting for Reid's first message to discover the chat id, and prints progress to stderr.

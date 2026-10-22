@@ -27,7 +27,7 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<v
   throw new Error("condition not met in time");
 }
 
-test("tg send delivers a message with the level prefix and hostname", async () => {
+test("tg send delivers a message: no header, the title in bold, the body after it", async () => {
   const h = await setupHarness({ hostname: "REDD-mason" });
   try {
     const daemon = h.spawnCli(["daemon"]);
@@ -38,10 +38,8 @@ test("tg send delivers a message with the level prefix and hostname", async () =
     const sent = h.fake.sent.find((m) => m.method === "sendMessage")!;
     assert.equal(sent.body.chat_id, h.chatId);
     const text = String(sent.body.text);
-    assert.match(text, /✅/);
-    assert.match(text, /REDD-mason/);
-    assert.match(text, /Done/);
-    assert.match(text, /All good/);
+    assert.equal(text, "<b>Done</b>\nAll good");
+    assert.doesNotMatch(text, /REDD-mason|🖥/);
     daemon.kill("SIGKILL");
   } finally {
     await h.teardown();

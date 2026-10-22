@@ -115,12 +115,12 @@ async function sendDiagrams(api: TelegramApi, chatId: string, title: string, dia
   }
 }
 
-export function createTelegramPort(api: TelegramApi, hostname: string, render: DiagramRenderer = renderDiagramToPng): OutboundPort {
+export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = renderDiagramToPng): OutboundPort {
   return {
     async sendHeader(batch, payload: AskPayload) {
       const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
       const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
-      const text = renderHeader(headerPayload, hostname);
+      const text = renderHeader(headerPayload);
       if (text) await api.sendMessage(batch.chat_id, text, { html: true });
       if (messageParts?.diagrams.length) {
         await sendDiagrams(api, batch.chat_id, payload.title ?? "Message", messageParts.diagrams, render);

@@ -26,3 +26,20 @@ test("the example config is valid", async () => {
   const parsed = parseDispatcherConfig(JSON.parse(readFileSync(path.join(root, "examples/dispatcher.example.json"), "utf8")));
   assert.equal(parsed.defaultTarget, "notes");
 });
+
+for (const file of ["skill/SKILL.md", "skill/dispatcher/SKILL.md"]) {
+  test(`${file} has a Writing for Telegram section that covers lines, bold, code, short messages, tables, and pictures`, () => {
+    const text = readFileSync(path.join(root, file), "utf8");
+    const at = text.indexOf("## Writing for Telegram");
+    assert.ok(at >= 0, "missing the section");
+    const section = text.slice(at);
+    for (const needle of [/answer/i, /one fact per line|short bullets/i, /bold/i, /code/i, /table/i, /--image/, /1024/, /phone/i]) {
+      assert.match(section, needle);
+    }
+  });
+}
+
+test("the protocol reminder carries a one-line formatting rule", () => {
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /phone/i);
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /no tables/i);
+});
