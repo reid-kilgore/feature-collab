@@ -381,7 +381,11 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
       const cwd = allowedCwd(target, cwdParam);
       if (!cwd) throw new Error(`cwd "${cwdParam}" is not one of this target's allowedCwds`);
       values.cwd = cwd;
-      result = await runCommand([tmuxBin(), "new-window", "-d", "-c", cwd, "-n", `tg-${inquiry.id.slice(-6)}`, expandHome(config.session.claudeBin), text], "");
+      // Which tmux session the window opens in. Left to tmux, a command run from outside tmux (ssh, cron)
+      // picks whichever session was used last, which is not where anyone is looking. So: the session the
+      // config names; else, inside tmux, the session of the pane that ran this (no -t); else the default.
+      const sessionArgs = config.session.tmuxSessionSet || !process.env.TMUX ? ["-t", `${config.session.tmuxSession}:`] : [];
+      result = await runCommand([tmuxBin(), "new-window", "-d", ...sessionArgs, "-c", cwd, "-n", `tg-${inquiry.id.slice(-6)}`, expandHome(config.session.claudeBin), text], "");
       if (result.ok) result.stdout = path.basename(cwd);
     }
   } catch (error) {

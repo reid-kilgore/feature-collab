@@ -41,7 +41,7 @@ export interface DispatcherConfig {
   // claudeBin: the claude executable. A tmux window does not read the user's shell profile, so a
   // `claude` installed in a directory only the profile adds to PATH (~/.local/bin) is not found there;
   // give the full path in that case.
-  session: { tmuxSession: string; window: string; cwd: string; allowedTools: string[]; claudeBin: string; name?: string };
+  session: { tmuxSession: string; tmuxSessionSet: boolean; window: string; cwd: string; allowedTools: string[]; claudeBin: string; name?: string };
   inboxCommands: boolean;
   defaultTarget: string | undefined;
   targets: Target[];
@@ -134,6 +134,10 @@ export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
     downNoticeAfterSeconds: parseDuration(r.downNoticeAfter, 120, "downNoticeAfter"),
     session: {
       tmuxSession: str(sessionRaw.tmuxSession, "session.tmuxSession", "main"),
+      // Whether the file names a tmux session. When it does not, a new Claude session opens in the session
+      // the dispatcher itself runs in (the default "main" is used only by `tg dispatcher start`, and for a
+      // new window when not inside tmux at all).
+      tmuxSessionSet: sessionRaw.tmuxSession !== undefined,
       window: str(sessionRaw.window, "session.window", "tg-dispatcher"),
       cwd: str(sessionRaw.cwd, "session.cwd", "~"),
       allowedTools: toolsRaw as string[],
