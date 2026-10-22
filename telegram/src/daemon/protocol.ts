@@ -17,6 +17,8 @@ export interface NotifyRequest {
   // Reid's answer to it carries the inquiry along (DESIGN-dispatcher.md, section 4).
   replyToMessageId?: number;
   inquiryId?: string;
+  // Short name of the sending session, shown as a small italic last line.
+  sender?: string;
 }
 
 export interface AskRequest {

@@ -354,7 +354,10 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
 
   const replyTo = inquiry.tgMessageId ?? undefined;
   if (!result.ok) {
-    await oneShot({ op: "notify", level: "warning", body: `Could not hand this to ${target.name}: ${result.error}. The message is still open.`, channel: config.channel, replyToMessageId: replyTo, inquiryId: inquiry.id }).catch(() => {});
+    // Short lines, the failure named in bold and the cause in code, so it reads at a glance on a phone.
+    const cause = (result.error ?? "unknown error").replace(/[`\n]+/g, " ").slice(0, 200);
+    const warning = `**Could not hand this to ${target.name}**\n\`${cause}\`\nThe message is still open.`;
+    await oneShot({ op: "notify", level: "warning", body: warning, channel: config.channel, replyToMessageId: replyTo, inquiryId: inquiry.id }).catch(() => {});
     console.log(JSON.stringify({ status: "failed", target: target.name, error: result.error }));
     process.exitCode = 1;
     return;
@@ -374,7 +377,9 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
     ack = `Sent to ${target.name}.`;
     console.error(`ack template problem: ${(error as Error).message}`);
   }
-  const body = args.note ? `${ack}\n${args.note}` : ack;
+  // The confirmation on its own line; an optional remark after a blank line, in italics.
+  const note = args.note?.replace(/[*_`]+/g, "").trim();
+  const body = note ? `${ack}\n\n*${note}*` : ack;
   try {
     const sent = await oneShot({ op: "notify", level: "success", body, channel: config.channel, replyToMessageId: replyTo, inquiryId: inquiry.id });
     if (isError(sent)) console.error(`acknowledgement not sent: ${sent.error}`);

@@ -43,3 +43,35 @@ test("a single paragraph longer than the limit is hard-split", () => {
   assert.equal(chunks.join(""), text);
   for (const chunk of chunks) assert.ok(chunk.length <= 4096);
 });
+
+// The skills' "Writing for Telegram" section tells agents what renders and what does not. These tests
+// pin that advice to what the converter really does, so the guide cannot drift from the code.
+
+test("documented: headings are not rendered, the # stays as text", () => {
+  assert.equal(markdownToTelegramHtml("# Title\n## Sub"), "# Title\n## Sub");
+});
+
+test("documented: tables are not rendered, the pipes stay as text", () => {
+  const table = "| a | b |\n|---|---|\n| 1 | 2 |";
+  assert.equal(markdownToTelegramHtml(table), table);
+});
+
+test("documented: a > quote marker is shown as text, not a quote", () => {
+  assert.equal(markdownToTelegramHtml("> quoted"), "&gt; quoted");
+});
+
+test("documented: nested bullets are flattened, indentation is lost", () => {
+  assert.equal(markdownToTelegramHtml("- top\n  - nested"), "• top\n• nested");
+});
+
+test("documented: numbered lists stay as typed", () => {
+  assert.equal(markdownToTelegramHtml("1. one\n2. two"), "1. one\n2. two");
+});
+
+test("documented: a language word after the opening fence is printed inside the block", () => {
+  assert.equal(markdownToTelegramHtml("```js\nx = 1\n```"), "<pre>js\nx = 1\n</pre>");
+});
+
+test("documented: bold, italic and code can sit in one line, and ids in code stay literal", () => {
+  assert.equal(markdownToTelegramHtml("**Done**: item `a1307` is *filed*"), "<b>Done</b>: item <code>a1307</code> is <i>filed</i>");
+});
