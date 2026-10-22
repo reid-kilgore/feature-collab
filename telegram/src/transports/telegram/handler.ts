@@ -36,8 +36,8 @@ import type { DispatcherConfig } from "../../dispatcher/config.ts";
 import type { ReceivedEntry } from "../../core/inquiry-log.ts";
 import { maestroAdd, maestroRecent, MaestroError } from "../../inbox/maestro.ts";
 import { renderInboxList, renderInboxDetail, decodeInboxCallback, escapeHtml, truncate } from "../../inbox/render.ts";
-import { startTailscaleCheck, parseUnreachableAlias, isValidAlias } from "../../inbox/tailscale.ts";
-import type { TailscaleCheckHandle } from "../../inbox/tailscale.ts";
+import { startTailscaleCheck, parseUnreachableAlias, isValidAlias, pendingTailscaleChecks } from "../../inbox/tailscale.ts";
+import type { TailscaleCheckHandle, PendingTailscaleCheck } from "../../inbox/tailscale.ts";
 
 // How far back /inbox looks, and which hosts it merges: this machine's own inbox ("local")
 // plus the other laptop's ("duo"), read over ssh by maestro itself — matches the exact
@@ -410,15 +410,6 @@ async function sendInboxList(ctx: HandlerContext, chatId: number): Promise<void>
     await ctx.api.sendMessage(String(chatId), `⚠️ maestro is unreachable: ${(error as Error).message}`);
   }
 }
-
-// Tracks, per host alias, a Tailscale SSH check we've already kicked off and are still
-// waiting on (either for a link to appear, or — once one has — for Reid to approve it and the
-// ssh process to close). Module-level: one daemon process serves one chat, so this is exactly
-// the "at most one pending check per alias" the feature asks for.
-interface PendingTailscaleCheck {
-  link?: string;
-}
-const pendingTailscaleChecks = new Map<string, PendingTailscaleCheck>();
 
 async function maybeStartTailscaleChecks(ctx: HandlerContext, chatId: number, warnings: string[]): Promise<void> {
   for (const warning of warnings) {
