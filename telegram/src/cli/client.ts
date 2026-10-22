@@ -45,7 +45,9 @@ export async function connectToDaemon(): Promise<net.Socket> {
   const first = await tryConnectOnce();
   if (first) return first;
 
-  spawnDaemon();
+  // A caller that supervises its own reconnecting (the dispatcher's wait) or a test can turn the
+  // automatic start off; the polling below still gives a daemon that is mid-start a few seconds.
+  if (!process.env.AGENT_TELEGRAM_NO_AUTOSTART) spawnDaemon();
 
   const deadline = Date.now() + CONNECT_TIMEOUT_MS;
   while (Date.now() < deadline) {

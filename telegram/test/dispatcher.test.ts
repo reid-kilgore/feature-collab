@@ -807,3 +807,78 @@ test("the protocol says a refused second wait is harmless", async () => {
   const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
   assert.match(DISPATCHER_PROTOCOL.join("\n"), /already has a listener/);
 });
+
+// ---- the wait survives a daemon restart (a launchd restart or a crash while nobody is watching) ----
+
+test("tg dispatcher wait reconnects when the daemon dies and a new one starts, and still delivers the next message", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h);
+    h.env.AGENT_TELEGRAM_NO_AUTOSTART = "1"; // the test starts the replacement daemon itself
+    h.env.AGENT_TELEGRAM_RECONNECT_MS = "60000";
+    h.env.AGENT_TELEGRAM_RECONNECT_BASE_MS = "100";
+    const first = await start(h);
+    const w = spawnWait(h);
+    await untilListening(h);
+
+    first.kill("SIGKILL"); // a crash: the socket and lock files are left behind
+    await sleep(800);
+    assert.equal(w.proc.exitCode, null, "the wait is still alive while the daemon is gone");
+    const second = await start(h);
+    await untilListening(h);
+
+    assert.equal((await h.runCli(["dispatcher", "trial", "after the restart"])).code, 0);
+    assert.equal(await w.closed, 0, w.err());
+    assert.equal(JSON.parse(w.out().trim()).messages[0].text, "after the restart");
+    second.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg dispatcher wait gives up after the reconnect limit with a clear message and a non-zero exit", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h);
+    h.env.AGENT_TELEGRAM_NO_AUTOSTART = "1";
+    h.env.AGENT_TELEGRAM_RECONNECT_MS = "2000";
+    h.env.AGENT_TELEGRAM_RECONNECT_BASE_MS = "100";
+    const daemon = await start(h);
+    const w = spawnWait(h);
+    await untilListening(h);
+    daemon.kill("SIGKILL");
+    const code = await w.closed;
+    assert.equal(code, 1);
+    assert.match(w.err(), /lost the daemon/);
+    assert.match(w.err(), /tg dispatcher wait/);
+    assert.equal(w.out().trim(), "", "nothing on stdout: this is a failure, not a result");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a refusal from the daemon is not retried", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h);
+    h.env.AGENT_TELEGRAM_NO_AUTOSTART = "1";
+    h.env.AGENT_TELEGRAM_RECONNECT_MS = "60000";
+    const daemon = await start(h);
+    const first = spawnWait(h);
+    await untilListening(h);
+    const started = Date.now();
+    const second = spawnWait(h);
+    assert.equal(await second.closed, 1);
+    assert.ok(Date.now() - started < 5000, "failed at once, did not sit in a retry loop");
+    assert.match(second.err(), /already has a listener/);
+    first.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the protocol tells the session to re-arm after a wait that failed because the daemon was gone", async () => {
+  const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /lost the daemon/);
+});

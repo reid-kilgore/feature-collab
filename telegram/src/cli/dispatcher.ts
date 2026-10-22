@@ -67,6 +67,23 @@ export async function cmdDispatcher(argv: string[]): Promise<void> {
   }
 }
 
+// How long `tg dispatcher wait` keeps trying to reach a daemon that is gone (a launchd restart, a crash)
+// before it gives up and exits non-zero, which wakes the session to re-arm. Env overrides are for tests.
+const RECONNECT_LIMIT_MS = Number(process.env.AGENT_TELEGRAM_RECONNECT_MS) || 5 * 60_000;
+const RECONNECT_BASE_MS = Number(process.env.AGENT_TELEGRAM_RECONNECT_BASE_MS) || 1000;
+const RECONNECT_MAX_MS = 15_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// A failure to reach the daemon, or a connection the daemon dropped mid-wait: worth another try.
+// A daemon that answers with an error (for example "already has a listener") is not.
+function isConnectionLoss(error: unknown): boolean {
+  const message = (error as Error).message ?? "";
+  return /Could not connect to the agent-telegram daemon|daemon closed the connection/.test(message);
+}
+
 async function dispatcherWait(): Promise<void> {
   const config = requireConfig();
   if (!config) return;
@@ -75,17 +92,43 @@ async function dispatcherWait(): Promise<void> {
     process.exit(2);
   };
   process.on("SIGINT", onSigint);
+  const waitUntil = Date.now() + config.waitTimeoutSeconds * 1000;
+  let lostSince: number | undefined;
+  let attempt = 0;
   try {
-    const response = await oneShot({ op: "recv", wait: true, peek: false, timeoutSeconds: config.waitTimeoutSeconds, channel: config.channel });
-    if (isError(response)) {
-      fail(response.error);
-      return;
+    for (;;) {
+      // The whole wait still ends at the configured timeout, however many times the daemon came and went.
+      const remainingSeconds = Math.max(1, Math.ceil((waitUntil - Date.now()) / 1000));
+      try {
+        const response = await oneShot({ op: "recv", wait: true, peek: false, timeoutSeconds: remainingSeconds, channel: config.channel });
+        if (isError(response)) {
+          fail(response.error);
+          return;
+        }
+        const recv = response as RecvResponse;
+        process.stdout.write(JSON.stringify({ ...recv, protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
+        process.exitCode = recv.status === "received" ? 0 : 2;
+        return;
+      } catch (error) {
+        if (!isConnectionLoss(error)) {
+          fail((error as Error).message);
+          return;
+        }
+        const now = Date.now();
+        lostSince ??= now;
+        if (now >= waitUntil) {
+          process.stdout.write(JSON.stringify({ version: 1, status: "timeout", messages: [], protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
+          process.exitCode = 2;
+          return;
+        }
+        if (now - lostSince >= RECONNECT_LIMIT_MS) {
+          fail(`lost the daemon for ${Math.round((now - lostSince) / 1000)}s and could not reconnect: ${(error as Error).message}. Run \`tg dispatcher wait\` again once it is back (\`tg doctor\` says what is wrong).`);
+          return;
+        }
+        await sleep(Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS));
+        attempt++;
+      }
     }
-    const recv = response as RecvResponse;
-    process.stdout.write(JSON.stringify({ ...recv, protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
-    process.exitCode = recv.status === "received" ? 0 : 2;
-  } catch (error) {
-    fail((error as Error).message);
   } finally {
     process.off("SIGINT", onSigint);
   }
