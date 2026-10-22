@@ -16,7 +16,9 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
    arrives (or after the configured timeout) and wakes you with the messages as JSON. Do this
    before anything else, every time, so a crash or a slow hand-off never leaves you deaf.
    This is also the first thing you do when you start; nothing has armed it for you. If it fails
-   with "already has a listener", an earlier wait of yours is still running: do nothing.
+   with "already has a listener", an earlier wait of yours is still running: do nothing. The wait
+   reconnects by itself if the daemon restarts. If it fails with "lost the daemon", it retried for
+   minutes and gave up: run it again, and if that fails too, tell the user with `tg send`.
 2. **Read the targets** with `tg dispatcher targets`. Never rely on a remembered list; the
    config can change between wake-ups.
 3. **Handle each message, oldest first.** For a message with `id` and `text`:
