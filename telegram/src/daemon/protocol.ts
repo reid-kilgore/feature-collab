@@ -69,6 +69,16 @@ export interface InquiryResponse {
   revived?: boolean;
 }
 
+export interface TrialRequest {
+  op: "trial";
+  text: string;
+}
+
+export interface TrialResponse {
+  ok: true;
+  id: string;
+}
+
 export interface QuarantineRequest {
   op: "quarantine";
   dryRun: boolean;
@@ -88,7 +98,8 @@ export type DaemonRequest =
   | WaitRequest
   | RecvRequest
   | QuarantineRequest
-  | InquiryRequest;
+  | InquiryRequest
+  | TrialRequest;
 
 export interface NotifyResponse {
   ok: true;
@@ -183,4 +194,5 @@ export type DaemonResponse =
   | RecvResponse
   | QuarantineResponse
   | InquiryResponse
+  | TrialResponse
   | ErrorResponse;

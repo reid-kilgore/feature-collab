@@ -19,7 +19,7 @@ import {
 } from "../config.ts";
 import { Store, newId, newShortId } from "../core/store.ts";
 import { appendInquiry, entryFromInboxRow, findInquiry, readInquiries } from "../core/inquiry-log.ts";
-import { activeDispatcher, readDispatcherConfig } from "../dispatcher/config.ts";
+import { activeDispatcher, readDispatcherConfig, validDispatcher } from "../dispatcher/config.ts";
 import { BOT_COMMANDS_INBOX } from "../transports/telegram/handler.ts";
 import { REACTION_HANDED_OFF } from "../transports/telegram/reactions.ts";
 import type { QuestionStatus } from "../core/store.ts";
@@ -128,7 +128,7 @@ export async function runDaemon(): Promise<void> {
     const entry = touchChannel(channel);
     entry.listening += delta;
     if (delta === -1) entry.lastListenEndAt = Date.now();
-    if (delta === 1 && channel === activeDispatcher()?.channel) dispatcherSeen();
+    if (delta === 1 && channel === validDispatcher()?.channel) dispatcherSeen();
   };
   // The dispatcher has just read its queue, so it is alive: the next outage gets its own notice.
   const dispatcherSeen = () => {
@@ -146,7 +146,7 @@ export async function runDaemon(): Promise<void> {
     const state = readDispatcherConfig();
     if (state.state === "absent") return { mode: "off" };
     if (state.state === "invalid") return { mode: "invalid", error: state.error };
-    if (!state.config.enabled) return { mode: "disabled", channel: state.config.channel };
+    if (!state.config.enabled) return { mode: "disabled", channel: state.config.channel, listening: isChannelListening(state.config.channel), queued: store.countUnreadForChannel(state.config.channel) };
     return {
       mode: "on",
       channel: state.config.channel,
@@ -558,13 +558,13 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
         }
         case "recv": {
           const channel = request.channel;
-          if (!request.peek && channel === activeDispatcher()?.channel) deps.dispatcherSeen();
+          if (!request.peek && channel === validDispatcher()?.channel) deps.dispatcherSeen();
           const takeUnread = () => deps.store.listUnreadInboxForChannel(channel);
           let unread = takeUnread();
 
           if (unread.length === 0 && request.wait) {
             // One listener on the dispatcher channel: a second would race the first for messages.
-            if (channel === activeDispatcher()?.channel && (deps.channelState.get(channel)?.listening ?? 0) > 0) {
+            if (channel === validDispatcher()?.channel && (deps.channelState.get(channel)?.listening ?? 0) > 0) {
               write({ error: `the dispatcher channel "${channel}" already has a listener; only one session may run as the dispatcher` });
               return;
             }
@@ -657,9 +657,9 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             return;
           }
           // revive: put the logged text back in the dispatcher's inbox as a new unread row.
-          const dispatcher = activeDispatcher();
+          const dispatcher = validDispatcher();
           if (!dispatcher) {
-            write({ error: "no dispatcher is configured and enabled; there is nowhere to revive to" });
+            write({ error: "no valid dispatcher.json; there is nowhere to revive to" });
             return;
           }
           const reviveId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -675,6 +675,24 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
           appendInquiry({ op: "revived", id: known.id, at, row: reviveId });
           deps.notifyInbox();
           write({ ok: true, revived: true });
+          return;
+        }
+        case "trial": {
+          const dispatcher = validDispatcher();
+          if (!dispatcher) {
+            write({ error: "no valid dispatcher.json" });
+            return;
+          }
+          const text = request.text.trim();
+          if (!text) {
+            write({ error: "trial needs text" });
+            return;
+          }
+          const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          deps.store.addInboxMessage({ id, update_id: null, text, photo_path: null, file_path: null, channel: dispatcher.channel });
+          appendInquiry({ op: "received", id, at: new Date().toISOString(), state: "received", text, photoPath: null, filePath: null, routedTo: dispatcher.channel, tgMessageId: null });
+          deps.notifyInbox();
+          write({ ok: true, id });
           return;
         }
         case "quarantine": {

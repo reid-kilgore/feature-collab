@@ -13,7 +13,7 @@ import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
 import { DISPATCHER_PROTOCOL } from "../dispatcher/protocol.ts";
 import { findInquiry, isOpen, readInquiries } from "../core/inquiry-log.ts";
 import type { Inquiry } from "../core/inquiry-log.ts";
-import type { DaemonResponse, ErrorResponse, RecvResponse, StatusResponse, NotifyResponse, InquiryResponse } from "../daemon/protocol.ts";
+import type { DaemonResponse, ErrorResponse, RecvResponse, StatusResponse, NotifyResponse, InquiryResponse, TrialResponse } from "../daemon/protocol.ts";
 
 function fail(message: string): void {
   console.error(redact(message));
@@ -26,7 +26,7 @@ function parseDuration(text: string): number {
   return Number(match[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[(match[2] ?? "s") as "s" | "m" | "h" | "d"];
 }
 
-// A usable, enabled config, or a printed reason.
+// A valid config (enabled or not), or a printed reason.
 function requireConfig(): DispatcherConfig | undefined {
   const state = readDispatcherConfig();
   if (state.state === "absent") {
@@ -37,10 +37,7 @@ function requireConfig(): DispatcherConfig | undefined {
     fail(`dispatcher.json is invalid: ${state.error}`);
     return undefined;
   }
-  if (!state.config.enabled) {
-    fail('dispatcher.json has "enabled": false');
-    return undefined;
-  }
+  // "enabled": false only stops the daemon routing real messages here; the session commands still run.
   return state.config;
 }
 
@@ -61,10 +58,12 @@ export async function cmdDispatcher(argv: string[]): Promise<void> {
       return dispatcherStart();
     case "stop":
       return dispatcherStop();
+    case "trial":
+      return dispatcherTrial(argv.slice(1));
     case "status":
       return dispatcherStatus();
     default:
-      fail("usage: tg dispatcher wait | targets | start | stop | status");
+      fail("usage: tg dispatcher wait | targets | start | stop | status | trial \"text\"");
   }
 }
 
@@ -190,6 +189,21 @@ async function dispatcherStop(): Promise<void> {
   }
 }
 
+// Puts a synthetic message in the dispatcher's queue without Telegram, so a new install can be tried end
+// to end (wake, route, hand off) while "enabled" is still false. The message is logged like any other.
+async function dispatcherTrial(rest: string[]): Promise<void> {
+  const text = rest.join(" ").trim();
+  if (!text) return fail('usage: tg dispatcher trial "text"');
+  if (!requireConfig()) return;
+  try {
+    const r = await oneShot({ op: "trial", text });
+    if (isError(r)) return fail(r.error);
+    console.log(JSON.stringify({ status: "queued", id: (r as TrialResponse).id }));
+  } catch (error) {
+    fail((error as Error).message);
+  }
+}
+
 async function dispatcherStatus(): Promise<void> {
   try {
     const response = await oneShot({ op: "status" });
@@ -197,7 +211,7 @@ async function dispatcherStatus(): Promise<void> {
     const d = (response as StatusResponse).dispatcher;
     if (d.mode === "off") console.log("dispatcher: off (no dispatcher.json)");
     else if (d.mode === "invalid") console.log(`dispatcher: OFF, dispatcher.json is invalid: ${d.error}`);
-    else if (d.mode === "disabled") console.log("dispatcher: disabled");
+    else if (d.mode === "disabled") console.log(`dispatcher: disabled (not routing real messages); a session ${d.listening ? "is" : "is not"} listening on ${d.channel}`);
     else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
   } catch (error) {
     fail((error as Error).message);

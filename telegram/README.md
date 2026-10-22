@@ -74,7 +74,10 @@ targets you list.
    your profile adds to PATH (for example `~/.local/bin`), set `session.claudeBin` to its full path.
 3. `tg doctor` checks the file. `tg dispatcher start` opens a tmux window running a Claude
    session as the dispatcher; `tg dispatcher stop` closes it.
-4. Send the bot a message. A 👀 reaction means the dispatcher has it, ✍ means it is queued
+   While `"enabled"` is false the session commands still run but real messages keep their old
+   routing, so you can try the whole loop first: `tg dispatcher trial "hello"` puts a synthetic
+   message in the dispatcher's queue.
+4. Set `"enabled": true` and send the bot a message. A 👀 reaction means the dispatcher has it, ✍ means it is queued
    because the dispatcher is not listening (you also get one notice per outage), and 🫡 means
    it was handed off. The acknowledgement is a reply under your message.
 

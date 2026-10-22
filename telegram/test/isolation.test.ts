@@ -118,7 +118,7 @@ test("guard 4 control: startTailscaleCheck runs the stub once AGENT_TELEGRAM_SSH
       { mode: 0o755 },
     );
     chmodSync(stubPath, 0o755);
-    const env = { ...process.env, AGENT_TELEGRAM_HOME: home, AGENT_TELEGRAM_SSH_BIN: stubPath, AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "500" };
+    const env = { ...process.env, AGENT_TELEGRAM_HOME: home, AGENT_TELEGRAM_SSH_BIN: stubPath, AGENT_TELEGRAM_TAILSCALE_WATCH_MS: "6000" };
     const { stdout } = await runCheck("ssh-check", env);
     const outcome = JSON.parse(stdout.slice("OK ".length));
     assert.deepEqual(outcome, { kind: "link", url: "https://login.tailscale.com/a/zzz999" });

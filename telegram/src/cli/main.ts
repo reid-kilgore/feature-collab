@@ -432,7 +432,7 @@ async function cmdStatus(): Promise<void> {
     if (d) {
       if (d.mode === "off") console.log("dispatcher: off");
       else if (d.mode === "invalid") console.log(`dispatcher: OFF (dispatcher.json invalid: ${d.error})`);
-      else if (d.mode === "disabled") console.log("dispatcher: disabled");
+      else if (d.mode === "disabled") console.log(`dispatcher: disabled (not routing real messages); a session ${d.listening ? "is" : "is not"} listening on ${d.channel}`);
       else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
     }
     if (status.channels.length) {
