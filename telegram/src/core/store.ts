@@ -432,6 +432,14 @@ export class Store {
     return this.db.prepare("SELECT * FROM inbox WHERE consumed_at IS NULL AND channel IS NULL ORDER BY at").all() as unknown as InboxRow[];
   }
 
+  // Unread rows bound to a channel (not NULL) that arrived before `beforeIso`, skipping `exclude`.
+  listUnreadOnChannelsBefore(beforeIso: string, exclude: string[]): InboxRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM inbox WHERE consumed_at IS NULL AND channel IS NOT NULL AND at < ? ORDER BY at")
+      .all(beforeIso) as unknown as InboxRow[];
+    return rows.filter((r) => !exclude.includes(r.channel!));
+  }
+
   countUnreadInbox(): number {
     const row = this.db.prepare("SELECT COUNT(*) as c FROM inbox WHERE consumed_at IS NULL").get() as { c: number };
     return row.c;

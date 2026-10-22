@@ -699,7 +699,24 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
           // Move unrouted unread messages out of the shared inbox into the inquiry log as
           // "legacy". Each line is written before its row is consumed, so a crash in between
           // duplicates a line on re-run at worst, and never loses a message.
-          const rows = deps.store.listUnroutedUnread();
+          let byChannel: Array<{ channel: string; count: number; oldest: string }> | undefined;
+          let rows;
+          if (request.staleChannels) {
+            // Skip the dispatcher channel (its queue is live work) and any channel with a listener.
+            const exclude = [validDispatcher()?.channel, ...[...deps.channelState].filter(([, e]) => e.listening > 0).map(([c]) => c)].filter((c): c is string => Boolean(c));
+            const cutoff = new Date(Date.now() - (request.olderSeconds ?? 86400) * 1000).toISOString();
+            rows = deps.store.listUnreadOnChannelsBefore(cutoff, exclude);
+            const grouped = new Map<string, { count: number; oldest: string }>();
+            for (const row of rows) {
+              const g = grouped.get(row.channel!) ?? { count: 0, oldest: row.at };
+              g.count++;
+              if (row.at < g.oldest) g.oldest = row.at;
+              grouped.set(row.channel!, g);
+            }
+            byChannel = [...grouped].map(([channel, g]) => ({ channel, ...g }));
+          } else {
+            rows = deps.store.listUnroutedUnread();
+          }
           if (!request.dryRun) {
             const logged = new Set(readInquiries().map((i) => i.id));
             for (const row of rows) {
@@ -710,7 +727,7 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
               deps.store.consumeInbox([row.id]);
             }
           }
-          write({ quarantined: rows.length, dryRun: request.dryRun });
+          write({ quarantined: rows.length, dryRun: request.dryRun, ...(byChannel ? { byChannel } : {}) });
           return;
         }
         case "pending": {

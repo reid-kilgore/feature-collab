@@ -98,7 +98,7 @@ Commands:
   dispatcher wait | targets | start | stop | status
   dispatch <target> --inquiry ID [--param k=v] [--note TEXT] | dispatch ask ID "question"
   inquiries list [--open] [--since 7d] | show ID | mark ID --state dropped|handed_off | revive ID|--all-open
-  quarantine [--dry-run]
+  quarantine [--dry-run] [--stale-channels [--older DURATION]]
   presence [show] | away [--note TEXT] [--for DURATION|--no-expiry] [--by WHO] | present [--note TEXT] [--by WHO]
   daemon
   setup [--token T] [--chat-id ID]
@@ -622,22 +622,37 @@ async function cmdRecv(argv: string[]): Promise<void> {
 // This moves them into the inquiry log (state "legacy") and marks them consumed. Messages bound to
 // a channel are left alone.
 async function cmdQuarantine(argv: string[]): Promise<void> {
-  const dryRun = argv.includes("--dry-run");
-  const unknown = argv.filter((a) => a !== "--dry-run");
-  if (unknown.length) {
-    console.error(`Unknown argument: ${unknown[0]}`);
+  let dryRun = false;
+  let stale = false;
+  let olderSeconds: number | undefined;
+  try {
+    for (let i = 0; i < argv.length; i++) {
+      const a = argv[i];
+      if (a === "--dry-run") dryRun = true;
+      else if (a === "--stale-channels") stale = true;
+      else if (a === "--older") olderSeconds = parseDuration(argv[++i] ?? "");
+      else throw new Error(`Unknown argument: ${a}`);
+    }
+    if (olderSeconds !== undefined && !stale) throw new Error("--older only applies with --stale-channels");
+  } catch (error) {
+    console.error((error as Error).message);
     process.exitCode = 1;
     return;
   }
   try {
-    const response = await oneShot({ op: "quarantine", dryRun });
+    const response = await oneShot({ op: "quarantine", dryRun, ...(stale ? { staleChannels: true, olderSeconds: olderSeconds ?? 86400 } : {}) });
     if ("error" in response) {
       console.error(redact((response as ErrorResponse).error));
       process.exitCode = 1;
       return;
     }
-    const { quarantined } = response as QuarantineResponse;
-    console.log(dryRun ? `dry run: ${quarantined} unrouted unread message(s) would be quarantined` : `quarantined ${quarantined} unrouted unread message(s)`);
+    const { quarantined, byChannel } = response as QuarantineResponse;
+    if (stale) {
+      console.log(dryRun ? `dry run: ${quarantined} unread message(s) on stale channels would be quarantined` : `quarantined ${quarantined} unread message(s) on stale channels`);
+      for (const c of byChannel ?? []) console.log(`  ${c.channel.padEnd(40)} ${String(c.count).padStart(3)}  oldest ${c.oldest}`);
+    } else {
+      console.log(dryRun ? `dry run: ${quarantined} unrouted unread message(s) would be quarantined` : `quarantined ${quarantined} unrouted unread message(s)`);
+    }
   } catch (error) {
     console.error(redact((error as Error).message));
     process.exitCode = 1;
