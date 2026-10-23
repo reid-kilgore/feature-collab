@@ -6,7 +6,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { oneShot } from "./client.ts";
+import { oneShot, RECONNECT_LIMIT_MS, RECONNECT_BASE_MS, RECONNECT_MAX_MS } from "./client.ts";
 import { stateDir, redact, tmuxBin } from "../config.ts";
 import { readDispatcherConfig, expandHome, validAddress } from "../dispatcher/config.ts";
 import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
@@ -66,12 +66,6 @@ export async function cmdDispatcher(argv: string[]): Promise<void> {
       fail("usage: tg dispatcher wait | targets | start | stop | status | trial \"text\"");
   }
 }
-
-// How long `tg dispatcher wait` keeps trying to reach a daemon that is gone (a launchd restart, a crash)
-// before it gives up and exits non-zero, which wakes the session to re-arm. Env overrides are for tests.
-const RECONNECT_LIMIT_MS = Number(process.env.AGENT_TELEGRAM_RECONNECT_MS) || 5 * 60_000;
-const RECONNECT_BASE_MS = Number(process.env.AGENT_TELEGRAM_RECONNECT_BASE_MS) || 1000;
-const RECONNECT_MAX_MS = 15_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
