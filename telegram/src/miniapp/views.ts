@@ -1,6 +1,8 @@
 // What the Mini App is allowed to see: open batches only, and only the fields a card shows.
 // Nothing here carries the bot token, a chat id, a message id, or any batch that is finished.
 
+import { markdownToNodes } from "../core/markdown.ts";
+import type { MdNode } from "../core/markdown.ts";
 import path from "node:path";
 import type { Store, BatchRow, QuestionRow } from "../core/store.ts";
 import type { AskPayload, Question } from "../contract/payload.ts";
@@ -27,12 +29,15 @@ export interface OptionView {
   value: string;
   label: string;
   description?: string;
+  // The description as nodes (bold, links, code) for the page to build; see MdNode in core/markdown.ts.
+  descriptionNodes?: MdNode[];
   recommended: boolean;
 }
 
 export interface QuestionView {
   id: string;
   prompt: string;
+  promptNodes: MdNode[];
   type: Question["type"];
   options: OptionView[];
   allowOther: boolean;
@@ -47,6 +52,7 @@ export interface QuestionView {
 
 export interface DetailView extends ListItem {
   message?: string;
+  messageNodes?: MdNode[];
   readAt: string;
   questions: QuestionView[];
 }
@@ -56,7 +62,7 @@ const RECOMMENDED = /^\(recommended\)\s*/i;
 function optionView(o: { value: string; label: string; description?: string }): OptionView {
   const recommended = RECOMMENDED.test(o.label);
   const label = recommended ? o.label.replace(RECOMMENDED, "") : o.label;
-  return { value: o.value, label, ...(o.description ? { description: o.description } : {}), recommended };
+  return { value: o.value, label, ...(o.description ? { description: o.description, descriptionNodes: markdownToNodes(o.description) } : {}), recommended };
 }
 
 function askerLabel(batch: BatchRow): string {
@@ -118,6 +124,7 @@ export function detailView(store: Store, batchId: string, now: Date = new Date()
     return {
       id: q.id,
       prompt: q.prompt,
+      promptNodes: markdownToNodes(q.prompt),
       type: q.type,
       options: (q.options ?? []).map(optionView),
       allowOther: q.type !== "text" && q.allowOther !== false,
@@ -128,5 +135,5 @@ export function detailView(store: Store, batchId: string, now: Date = new Date()
       ...(answerText !== undefined ? { answerText } : {}),
     };
   });
-  return { ...listItem(batch, payload, rows), ...(payload.message ? { message: payload.message } : {}), readAt: now.toISOString(), questions };
+  return { ...listItem(batch, payload, rows), ...(payload.message ? { message: payload.message, messageNodes: markdownToNodes(payload.message) } : {}), readAt: now.toISOString(), questions };
 }

@@ -2,7 +2,7 @@
 
 import type { Question, AskPayload } from "../../contract/payload.ts";
 import type { Level } from "../../contract/notify.ts";
-import { markdownToTelegramHtml } from "../../core/markdown.ts";
+import { markdownToTelegramHtml, markdownInline } from "../../core/markdown.ts";
 import type { InlineKeyboardButton, ReplyMarkup } from "./api.ts";
 
 function escapeHtml(text: string): string {
@@ -48,11 +48,12 @@ export interface QuestionRenderState {
 
 export function renderQuestionView(state: QuestionRenderState): { text: string; replyMarkup: ReplyMarkup } {
   const { question, shortId, index, total, selected } = state;
-  const header = `<b>Q${index + 1}/${total} — ${escapeHtml(question.prompt)}</b>`;
+  // The prompt is Markdown too (links, code), but it sits inside a bold header, so its own bold is dropped.
+  const header = `<b>Q${index + 1}/${total} — ${markdownInline(question.prompt, { bold: false })}</b>`;
   const lines = [header];
   if (question.options) {
     for (const option of question.options) {
-      const desc = option.description ? ` — ${escapeHtml(option.description)}` : "";
+      const desc = option.description ? ` — ${markdownInline(option.description)}` : "";
       const star = question.default !== undefined && isDefault(question, option.value) ? " ★" : "";
       lines.push(`• <b>${escapeHtml(option.label)}</b>${desc}${star}`);
     }

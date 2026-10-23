@@ -62,6 +62,34 @@
     return el;
   }
 
+  // Builds DOM from the server's Markdown nodes with createElement and textContent only, never from HTML.
+  // A link opens through Telegram's openLink when the page runs inside Telegram, else as a normal link.
+  var SAFE_HREF = /^https?:\/\/[^\s"'<>`]+$/;
+  function mdNodes(nodes, fallback) {
+    var frag = [];
+    if (!nodes || !nodes.length) return fallback ? [document.createTextNode(fallback)] : frag;
+    nodes.forEach(function (n) {
+      if (!n) return;
+      if (n.t === 'text') { frag.push(document.createTextNode(String(n.v))); return; }
+      var kids = mdNodes(n.c, '');
+      var el = null;
+      if (n.t === 'b') el = h('strong');
+      else if (n.t === 'i') el = h('em');
+      else if (n.t === 'code') el = h('code');
+      else if (n.t === 'pre') el = h('pre');
+      else if (n.t === 'a' && typeof n.href === 'string' && SAFE_HREF.test(n.href)) {
+        var url = n.href;
+        el = h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', onclick: function (e) {
+          if (tg && typeof tg.openLink === 'function') { e.preventDefault(); try { tg.openLink(url); } catch (x) { /* falls back to the link */ } }
+        } });
+      }
+      if (!el) { kids.forEach(function (k) { frag.push(k); }); return; }
+      kids.forEach(function (k) { el.appendChild(k); });
+      frag.push(el);
+    });
+    return frag;
+  }
+
   function api(path, options) {
     options = options || {};
     var headers = { 'x-telegram-init-data': initData };
@@ -404,7 +432,7 @@
       h('span', { class: 'label' },
         opt.label,
         opt.recommended ? h('span', { class: 'tag', text: 'RECOMMENDED' }) : null,
-        opt.description ? h('span', { class: 'desc', text: opt.description }) : null));
+        opt.description ? h.apply(null, ['span', { class: 'desc' }].concat(mdNodes(opt.descriptionNodes, opt.description))) : null));
   }
 
   function resultNote(q) {
@@ -420,7 +448,7 @@
       head.appendChild(h('button', { class: 'link inchat', 'aria-label': 'Open this question in chat', text: 'In chat', onclick: function () { openInChat(state.detail.id, q.id); } }));
     }
     card.appendChild(head);
-    card.appendChild(h('p', { class: 'prompt', text: q.prompt }));
+    card.appendChild(h.apply(null, ['p', { class: 'prompt' }].concat(mdNodes(q.promptNodes, q.prompt))));
 
     if (q.state !== 'open') {
       var text = q.state === 'answered' ? 'Answered: ' + (q.answerText || '') : q.state === 'skipped' ? 'Skipped' : 'Closed';
@@ -545,7 +573,7 @@
     if (state.menu) nodes.push(setMenu(d));
     nodes.push(h('h1', { text: d.title }));
     nodes.push(h('div', { class: 'hint', text: 'Asked by ' + d.asker + ' · ' + ago(d.createdAt) + ' · read at ' + time(d.readAt) }));
-    if (d.message) nodes.push(h('p', { class: 'message', text: d.message }));
+    if (d.message) nodes.push(h.apply(null, ['p', { class: 'message' }].concat(mdNodes(d.messageNodes, d.message))));
     d.questions.forEach(function (q, i) { nodes.push(questionNode(q, i, d.questions.length)); });
     var bar = h('div', { class: 'bottom' }, h('button', { id: 'send', class: 'send', onclick: send }));
     nodes.push(bar);
