@@ -206,7 +206,7 @@ does not know why.
 ```
 { "version": 1, "local": "laptop1", "hosts": ["laptop2"],
   "reverse": [{ "via": "laptop2", "target": "laptop1" }],
-  "interval": "10m", "reminder": "1h" }
+  "interval": "2m", "reminder": "1h" }
 ```
 
 `hosts` are probed from this computer. `reverse` asks the other computer to probe back, which works while

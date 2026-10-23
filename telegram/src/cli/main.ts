@@ -476,6 +476,13 @@ async function cmdStatus(): Promise<void> {
       else if (d.mode === "disabled") console.log(`dispatcher: disabled (not routing real messages); a session ${d.listening ? "is" : "is not"} listening on ${d.channel}`);
       else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
     }
+    const ts = status.tailscale;
+    if (!ts || ts.mode === "off") console.log("tailscale: off (no tailscale.json)");
+    else for (const row of ts.rows ?? []) {
+      const probed = row.ageSeconds === null ? "not probed yet" : `probed ${row.ageSeconds}s ago`;
+      const word = row.state === "needs_check" ? "NEEDS APPROVAL" : row.state;
+      console.log(`tailscale: ${row.pair} ${word}, ${probed}${row.lastResult && row.lastResult !== "ok" && row.ageSeconds !== null ? ` (${row.lastResult})` : ""}`);
+    }
     if (status.channels.length) {
       console.log("channels:");
       for (const c of status.channels) {

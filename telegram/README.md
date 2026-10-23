@@ -107,11 +107,13 @@ link with an Approve button, once, then tells you when it works again:
 
 ```
 { "version": 1, "local": "laptop1", "hosts": ["laptop2"],
-  "reverse": [{ "via": "laptop2", "target": "laptop1" }], "interval": "10m", "reminder": "1h" }
+  "reverse": [{ "via": "laptop2", "target": "laptop1" }], "interval": "2m", "reminder": "1h" }
 ```
 
 `hosts` are ssh aliases probed from this machine. `reverse` probes the way back by asking the other machine to
 run the probe, which works while the first direction does. Delete the file to switch it off; no restart needed.
+
+The probe runs every 2 minutes by default (`interval`). Every probe and every state change is written to `daemon.log` with its time, and `tg status` shows the last probe time and result for each direction, so a silent watch can be told from a watch that never ran. A probe that prints nothing and does not finish is killed, and after two in a row you get one message.
 
 ## Skill
 

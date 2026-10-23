@@ -45,7 +45,7 @@ export function parseTailscaleWatchConfig(raw: unknown): WatchConfig {
     }
     return { via: o.via, target: o.target };
   });
-  const intervalSeconds = parseDuration(r.interval, 600, "interval");
+  const intervalSeconds = parseDuration(r.interval, 120, "interval");
   const reminderSeconds = parseDuration(r.reminder, 3600, "reminder");
   if (intervalSeconds < 1) throw new Error("interval: must be at least 1s");
   if (reminderSeconds < 1) throw new Error("reminder: must be at least 1s");
@@ -79,8 +79,52 @@ export function readTailscaleWatchConfig(log: (line: string) => void, file: stri
 }
 
 interface WatchState {
-  state: "ok" | "needs_check" | "unreachable";
+  state: "ok" | "needs_check" | "unreachable" | "hung";
   noticeAt?: number;
+  // The last probe of this direction: when (ISO) and what it found. Kept so `tg status` and the log can
+  // say what the watch last saw, and so a silent watch can be told from a watch that never ran.
+  lastProbeAt?: string;
+  lastResult?: string;
+  // Consecutive probes that neither printed a link nor exited, and whether the user was told.
+  hungCount?: number;
+  hungNotified?: boolean;
+}
+
+export interface WatchRow {
+  pair: string;
+  state: string;
+  lastResult: string;
+  ageSeconds: number | null;
+}
+
+// What `tg status` shows: one row per direction, from the stored state.
+export function describeWatchState(
+  getMeta: (key: string) => string | undefined,
+  hosts: string[],
+  reverse: Array<{ via: string; target: string }>,
+  local: string,
+  nowMs: number,
+): WatchRow[] {
+  const rows: WatchRow[] = [];
+  const add = (key: string, pair: string) => {
+    let st: WatchState | undefined;
+    try {
+      const raw = getMeta(`tsw:${key}`);
+      if (raw) st = JSON.parse(raw) as WatchState;
+    } catch {
+      // unreadable: shown as not probed
+    }
+    const at = st?.lastProbeAt ? Date.parse(st.lastProbeAt) : NaN;
+    rows.push({
+      pair,
+      state: st?.state ?? "ok",
+      lastResult: st?.lastProbeAt ? (st.lastResult ?? "unknown") : "not probed yet",
+      ageSeconds: Number.isFinite(at) ? Math.max(0, Math.round((nowMs - at) / 1000)) : null,
+    });
+  };
+  for (const h of hosts) add(h, `${local} to ${h}`);
+  for (const r of reverse) add(`${r.via}>${r.target}`, `${r.via} to ${r.target}`);
+  return rows;
 }
 
 export interface WatcherDeps {
@@ -164,8 +208,12 @@ export class TailscaleWatcher {
     return via ? `${via}>${alias}` : alias;
   }
 
+  private plainLabel(alias: string, via?: string): string {
+    return `${via ?? this.deps.config()?.local ?? this.deps.localName} to ${alias}`;
+  }
+
   private label(alias: string, via?: string): string {
-    return `${escapeHtml(via ?? this.deps.config()?.local ?? this.deps.localName)} to ${escapeHtml(alias)}`;
+    return escapeHtml(this.plainLabel(alias, via));
   }
 
   private load(key: string): WatchState {
@@ -178,8 +226,19 @@ export class TailscaleWatcher {
     return { state: "ok" };
   }
 
-  private save(key: string, state: WatchState): void {
-    this.deps.setMeta(`tsw:${key}`, JSON.stringify(state));
+  // Merges a change into a direction's stored state, and logs a state change on its own line.
+  private patch(alias: string, via: string | undefined, change: Partial<WatchState>): void {
+    const key = this.key(alias, via);
+    const before = this.load(key);
+    const after: WatchState = { ...before, ...change };
+    this.deps.setMeta(`tsw:${key}`, JSON.stringify(after));
+    if (after.state !== before.state) this.deps.log(`tailscale state ${this.plainLabel(alias, via)}: ${before.state} -> ${after.state}`);
+  }
+
+  // Records what a probe found: the time and result are kept, and every probe is logged, healthy or not.
+  private record(alias: string, via: string | undefined, result: string, change: Partial<WatchState> = {}): void {
+    this.deps.log(`tailscale probe ${this.plainLabel(alias, via)}: ${result}`);
+    this.patch(alias, via, { ...change, lastProbeAt: new Date(this.deps.now()).toISOString(), lastResult: result });
   }
 
   private async probe(alias: string, via: string | undefined, config: WatchConfig): Promise<"ok" | "link" | "pending" | "bad"> {
@@ -192,7 +251,10 @@ export class TailscaleWatcher {
     if (handle.child) {
       handle.child.once("close", (code: number | null) => {
         this.pending.delete(key);
-        if (code === 0) void this.cleared(alias, via, config).catch((e) => this.deps.log(`tailscale watch: ${(e as Error).message}`));
+        // Only a probe that waited for an approval (it found a link) reports "approved" when it exits 0. A
+        // probe that simply worked is handled where its result is read; running it again here would
+        // announce twice and probe the reverse direction a second time.
+        if (code === 0 && entry.link) void this.cleared(alias, via, config).catch((e) => this.deps.log(`tailscale watch: ${(e as Error).message}`));
       });
     }
     const result = await handle.result;
@@ -206,20 +268,35 @@ export class TailscaleWatcher {
         const lead = st.state === "needs_check" ? "Still waiting: Tailscale SSH needs approval" : "Tailscale SSH needs approval";
         const tail = st.state === "needs_check" ? "Here is a fresh link." : "Tap to approve. I will say when it works.";
         await this.deps.send(`<b>${lead}</b>\n${this.label(alias, via)}\n${tail}`, result.url);
-        this.save(key, { state: "needs_check", noticeAt: this.deps.now() });
+        this.deps.log(`tailscale link sent for ${this.plainLabel(alias, via)}`);
+        this.record(alias, via, "needs approval (link sent)", { state: "needs_check", noticeAt: this.deps.now(), hungCount: 0 });
       } else {
         // The last notice is recent and this link was never shown to anyone: do not leave its ssh waiting.
         handle.child?.kill("SIGKILL");
+        this.record(alias, via, "needs approval (link already sent)");
       }
       return "link";
     }
     if (result.exitCode === 0) {
       await this.markOk(alias, via);
+      this.record(alias, via, "ok");
       return "ok";
     }
-    if (result.exitCode === undefined) return "pending"; // still connecting; its close event settles it
+    if (result.exitCode === undefined) {
+      // No link and no exit within the watch window. Left alone, this ssh would hold the pair for the whole
+      // kill timer and no later tick would look at it. Kill it, count it, and say so after two in a row.
+      handle.child?.kill("SIGKILL");
+      const st = this.load(key);
+      const hungCount = (st.hungCount ?? 0) + 1;
+      this.record(alias, via, `hung (no link, no exit; ${hungCount} in a row)`, { state: st.state === "needs_check" ? "needs_check" : "hung", hungCount });
+      if (hungCount >= 2 && !st.hungNotified) {
+        await this.deps.send(`<b>Tailscale probe does not answer</b>\n${this.label(alias, via)}\nssh printed nothing and did not finish, twice in a row. It may be waiting for an approval I cannot see. Try it by hand.`);
+        this.patch(alias, via, { hungNotified: true });
+      }
+      return "bad";
+    }
     const st = this.load(key);
-    if (st.state !== "needs_check") this.save(key, { state: "unreachable" });
+    this.record(alias, via, `unreachable (exit ${result.exitCode}: ${result.detail.slice(0, 80)})`, { state: st.state === "needs_check" ? "needs_check" : "unreachable", hungCount: 0 });
     return "bad";
   }
 
@@ -237,6 +314,7 @@ export class TailscaleWatcher {
     const key = this.key(alias, via);
     const st = this.load(key);
     if (st.state === "needs_check") await this.deps.send(`<b>Tailscale SSH works again</b>\n${this.label(alias, via)}`);
-    this.save(key, { state: "ok" });
+    else if (st.hungNotified) await this.deps.send(`<b>Tailscale probe answers again</b>\n${this.label(alias, via)}`);
+    this.patch(alias, via, { state: "ok", hungCount: 0, hungNotified: false, noticeAt: undefined });
   }
 }

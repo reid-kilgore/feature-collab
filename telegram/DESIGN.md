@@ -419,7 +419,7 @@ Tailscale SSH between the laptops asks for a fresh browser approval now and then
 watches for that on a timer so the link reaches Reid on Telegram before something else fails on it.
 
 - Off unless `~/.config/agent-telegram/tailscale.json` exists. It is reread on every tick, so changes need no
-  restart. `{"version":1,"local":"mbp","hosts":["duo"],"reverse":[{"via":"duo","target":"mbp"}],"interval":"10m","reminder":"1h"}`.
+  restart. `{"version":1,"local":"mbp","hosts":["duo"],"reverse":[{"via":"duo","target":"mbp"}],"interval":"2m","reminder":"1h"}`.
   A bad file turns the watch off and the reason is written to the daemon log.
 - Each tick runs `ssh -o BatchMode=yes -o ConnectTimeout=8 <host> true` for each host, through
   `startTailscaleCheck`. Probes are asynchronous and each has its own kill timer, because `ConnectTimeout`
@@ -439,3 +439,5 @@ watches for that on a timer so the link reaches Reid on Telegram before somethin
 - Not done: a job on the other laptop. Its `ssh back` is the very link that is down, so it cannot notify.
 - State (`ok`, `needs_check`, `unreachable`, last notice time) is kept in the `meta` table, so a restart does not
   repeat a notice.
+
+**Addendum, 2026-10-23 (faster and observable).** The default interval is 2 minutes (it was 10; a block that begins and is approved within two minutes could fall between two ticks). Every probe is logged to `daemon.log` ("tailscale probe mbp to duo: ok"), every state change on its own line, and the last probe time and result per direction are kept in `meta` and shown by `tg status`. A probe that printed no link and did not exit within the watch window used to hold its pair until the kill timer (default 1 hour), so no later tick looked at it; it is now killed at once, counted, and reported after two in a row ("probe does not answer"). A probe that simply worked used to be handled twice (once from its result, once from its exit), which probed the reverse direction twice a tick; it is now handled once.
