@@ -88,8 +88,10 @@ telegram/
 ### `tg ask`
 
 ```
-tg ask --file q.json | --json '...' | (stdin)   [--timeout 4h] [--on-timeout cancel|default]
+tg ask --file q.json | --json '...' | (stdin)   [--timeout 4h] [--on-timeout cancel|default] [--key KEY] --from ADDRESS
 ```
+
+A sender address (`--from`, `AGENT_TELEGRAM_FROM`, or the tmux window) is required: without one `tg ask` exits 2 and asks nothing. `--key` (or payload `key`) stores a decision key on the batch (column `batches.ask_key`, schema version 4); `tg cancel --key KEY` cancels every pending batch with it and prints `{"cancelled":[ids]}`. The dispatcher sweep (`tg dispatcher sweep`, run from the dispatcher protocol) lists batches pending over an hour that were not pinged in three hours; `ping` and `cancel` are recorded as `sweep_ping` and `sweep_cancel` audit rows, and `tg dispatcher wait` now wakes at least every 30 minutes with a `sweep` list.
 
 Payload: exactly the `ask-questions` v1 schema (`version`, `title?`, `message?`, `questions[]`,
 `documents?`), extended with optional top-level `timeoutSeconds` and `onTimeout` ("cancel" | "default")
@@ -128,7 +130,7 @@ Messages >4096 chars are split on paragraph boundaries. Exit 0 on delivery.
 ### `tg status`, `tg pending`, `tg cancel <id>`, `tg daemon`, `tg setup`, `tg doctor`
 
 - `status`: daemon alive, bot username, allowed user, pending count, last update age.
-- `pending`: list pending questions (id, title, age, askerPath).
+- `pending`: list pending questions (id, title, age, askerPath, sender, key); `--json` prints one entry per batch.
 - `cancel <id|all>`: cancel from the laptop side.
 - `daemon`: run the daemon in the foreground (what launchd runs). `--no-launchd` docs.
 - `setup`: interactive: token → Keychain (`security add-generic-password -U -s agent-telegram -a bot-token`),

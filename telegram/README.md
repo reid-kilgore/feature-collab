@@ -44,7 +44,9 @@ the start of the first line. A small italic last line says who sent it: the send
 channel's name, and only when you pass `--title` or `--channel`. A caller that reaches this machine
 over ssh has no tmux here, so it passes its own address: `ssh host "tg send --from ship:geo 'text'"`
 (or the environment variable `AGENT_TELEGRAM_FROM`); get it with `tmux display-message -p '#S:#W'`.
-`tg ask` shows the same address as the last line of its header and in the "Answers sent to the agent" footer; it takes `--from` and `AGENT_TELEGRAM_FROM` the same way.
+`tg ask` shows the same address as the last line of its header and in the "Answers sent to the agent" footer; it takes `--from` and `AGENT_TELEGRAM_FROM` the same way. `tg ask` needs a sender address: with none of `--from`, `AGENT_TELEGRAM_FROM` or a tmux window it prints one line and exits 2, without asking anything.
+
+`tg ask --key KEY` (or a top-level `"key"` in the payload) tags a question with a decision key. When the answer is recorded some other way, `tg cancel --key KEY` cancels every pending question with that key and prints `{"cancelled":[ids]}` (exit 0, also when none match). `tg pending` shows each question's sender and key; `tg pending --json` prints one entry per pending question set with `id`, `title`, `key`, `sender` and `created_at`.
 
 `tg ask` documents must be `{id, title, markdown}` or `{id, title, path}`:
 
@@ -63,7 +65,7 @@ fails, the fence source is sent as a code block and the daemon logs a warning.
 for the full agent-facing contract, including timeouts, defaults, and conversation mode
 (`tg send` / `tg recv --wait` loop).
 
-Other commands: `tg status`, `tg pending`, `tg cancel <id|all>`, `tg wait <id>`,
+Other commands: `tg status`, `tg pending [--json]`, `tg cancel <id|all>`, `tg cancel --key KEY`, `tg wait <id>`,
 `tg doctor`, `tg daemon` (foreground, what launchd runs).
 
 ## Dispatcher: one session that listens for your bare messages

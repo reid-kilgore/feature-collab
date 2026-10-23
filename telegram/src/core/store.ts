@@ -26,6 +26,8 @@ export interface BatchRow {
   asker_tmux_window: string | null;
   // session:window (or an address the asker passed): shown in the header and the footer.
   asker_address: string | null;
+  // A decision key a caller attaches so the question can be cancelled when the answer is recorded elsewhere.
+  ask_key: string | null;
   payload_json: string;
   timeout_at: string | null;
   on_timeout: OnTimeout | null;
@@ -59,6 +61,7 @@ CREATE TABLE IF NOT EXISTS batches (
   asker_path TEXT NOT NULL,
   asker_tmux_window TEXT,
   asker_address TEXT,
+  ask_key TEXT,
   payload_json TEXT NOT NULL,
   timeout_at TEXT,
   on_timeout TEXT,
@@ -130,7 +133,7 @@ CREATE TABLE IF NOT EXISTS message_channel (
 // explicitly checking for and adding columns/tables introduced after a table's original
 // release, so restarting the daemon on an existing state.sqlite never fails with
 // "no such column" again.
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
@@ -179,6 +182,10 @@ function migrate(db: DatabaseSync): void {
     // v3: who is asking, as an address (tmux session:window, or one the caller passed). Additive.
     if (tableExists(db, "batches") && !columnExists(db, "batches", "asker_address")) {
       db.exec("ALTER TABLE batches ADD COLUMN asker_address TEXT");
+    }
+    // v4: a decision key on a batch, so `tg cancel --key` can cancel across channels. Additive, nullable.
+    if (tableExists(db, "batches") && !columnExists(db, "batches", "ask_key")) {
+      db.exec("ALTER TABLE batches ADD COLUMN ask_key TEXT");
     }
     if (!tableExists(db, "message_inquiry")) {
       db.exec("CREATE TABLE message_inquiry (message_id INTEGER PRIMARY KEY, inquiry_id TEXT NOT NULL, at TEXT NOT NULL)");
@@ -233,13 +240,13 @@ export class Store {
 
   // ---- batches ----
 
-  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json" | "asker_address"> & { asker_address?: string | null }): void {
+  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json" | "asker_address" | "ask_key"> & { asker_address?: string | null; ask_key?: string | null }): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
         `INSERT INTO batches (id, created_at, updated_at, resolved_at, status, asker_path, asker_tmux_window,
-          payload_json, timeout_at, on_timeout, chat_id, user_id, result_json, asker_address)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+          payload_json, timeout_at, on_timeout, chat_id, user_id, result_json, asker_address, ask_key)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
       )
       .run(
         row.id,
@@ -254,6 +261,7 @@ export class Store {
         row.chat_id,
         row.user_id,
         row.asker_address ?? null,
+        row.ask_key ?? null,
       );
   }
 
@@ -263,6 +271,24 @@ export class Store {
 
   listPendingBatches(): BatchRow[] {
     return this.db.prepare("SELECT * FROM batches WHERE status = 'pending' ORDER BY created_at").all() as unknown as BatchRow[];
+  }
+
+  listPendingBatchesByKey(key: string): BatchRow[] {
+    return this.db.prepare("SELECT * FROM batches WHERE status = 'pending' AND ask_key = ? ORDER BY created_at").all(key) as unknown as BatchRow[];
+  }
+
+  // Sweep (the dispatcher's 30-minute check): pending batches older than `olderThanMs` that were not
+  // pinged in the last `quietMs`. A ping is a 'sweep_ping' audit row.
+  listSweepDue(olderThanMs: number, quietMs: number, nowMs = Date.now()): BatchRow[] {
+    const cutoff = new Date(nowMs - olderThanMs).toISOString();
+    const quiet = new Date(nowMs - quietMs).toISOString();
+    return this.db
+      .prepare(
+        `SELECT * FROM batches b WHERE b.status = 'pending' AND b.created_at <= ?
+           AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.batch_id = b.id AND a.kind = 'sweep_ping' AND a.at > ?)
+         ORDER BY b.created_at`,
+      )
+      .all(cutoff, quiet) as unknown as BatchRow[];
   }
 
   updateBatchStatus(id: string, status: BatchStatus, resultJson?: string): void {

@@ -44,6 +44,16 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
    `tg inquiries list --open`. Anything open for more than a couple of minutes was missed:
    handle it the same way.
 
+## The question sweep
+
+A wake-up, even an empty one, can carry a `sweep` list: questions that have been open on the user's phone for
+over an hour. For each, if it has a `sender`, send that session a SendMessage (address it as in step 4) naming
+the question's title and id and asking it to run `tg cancel <id>` (or `ssh <daemon-host> tg cancel <id>`) if the
+answer came another way or the question is not needed. Then run `tg dispatcher sweep ping <id>`; that question is
+left alone for three hours. If there is no `sender`, or no live session can be reached, run
+`tg dispatcher sweep cancel <id>`: it cancels the question and tells the user once. `tg dispatcher sweep` with no
+argument lists what is due. Each ping and cancel is recorded in the audit table.
+
 ## Messages and what they mean
 
 Each message has `id`, `at`, `text`, and sometimes `photoPath`, `filePath`, `tgMessageId`,
@@ -110,6 +120,6 @@ Where should this go?
 
 ## Commands you may use
 
-`tg dispatcher wait | targets`, `tg dispatch <target> --inquiry <id>`,
+`tg dispatcher wait | targets | sweep [ping <id> | cancel <id>]`, `tg dispatch <target> --inquiry <id>`,
 `tg dispatch ask <id> "..."`, `tg inquiries list | show | mark | revive`, `tg status`.
 Nothing else.

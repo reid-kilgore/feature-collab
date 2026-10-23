@@ -13,7 +13,7 @@ import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
 import { DISPATCHER_PROTOCOL } from "../dispatcher/protocol.ts";
 import { findInquiry, isOpen, readInquiries } from "../core/inquiry-log.ts";
 import type { Inquiry } from "../core/inquiry-log.ts";
-import type { DaemonResponse, ErrorResponse, RecvResponse, StatusResponse, NotifyResponse, InquiryResponse, TrialResponse } from "../daemon/protocol.ts";
+import type { DaemonResponse, ErrorResponse, RecvResponse, StatusResponse, NotifyResponse, InquiryResponse, TrialResponse, SweepResponse } from "../daemon/protocol.ts";
 
 function fail(message: string): void {
   console.error(redact(message));
@@ -62,8 +62,52 @@ export async function cmdDispatcher(argv: string[]): Promise<void> {
       return dispatcherTrial(argv.slice(1));
     case "status":
       return dispatcherStatus();
+    case "sweep":
+      return dispatcherSweep(argv.slice(1));
     default:
-      fail("usage: tg dispatcher wait | targets | start | stop | status | trial \"text\"");
+      fail("usage: tg dispatcher wait | targets | start | stop | status | sweep | trial \"text\"");
+  }
+}
+
+const SWEEP_INTERVAL_SECONDS = 30 * 60;
+
+// Stale questions due a ping, as a `sweep` field for the wake-up; nothing (never an error) when none
+// are due or the daemon cannot say.
+async function sweepField(): Promise<{ sweep?: unknown[] }> {
+  try {
+    const r = await oneShot({ op: "sweep", action: "due" });
+    const due = isError(r) ? [] : (r as SweepResponse).due ?? [];
+    return due.length ? { sweep: due } : {};
+  } catch {
+    return {};
+  }
+}
+
+// tg dispatcher sweep [ping ID | cancel ID]: no argument lists the questions due a ping; `ping` records
+// that the asker was asked (it is left alone for three hours); `cancel` cancels the question and tells
+// Reid once.
+async function dispatcherSweep(argv: string[]): Promise<void> {
+  const action = argv[0];
+  if (action === undefined) {
+    const r = await oneShot({ op: "sweep", action: "due" }).catch((e: Error) => ({ error: e.message }));
+    if (isError(r as DaemonResponse)) return fail((r as ErrorResponse).error);
+    console.log(JSON.stringify({ due: (r as SweepResponse).due ?? [] }));
+    return;
+  }
+  const id = argv[1];
+  if ((action !== "ping" && action !== "cancel") || !id) return fail("usage: tg dispatcher sweep [ping <id> | cancel <id>]");
+  try {
+    const r = await oneShot({ op: "sweep", action, id });
+    if (isError(r)) return fail(r.error);
+    if (action === "cancel") {
+      const state = readDispatcherConfig();
+      const channel = state.state === "ok" ? state.config.channel : "dispatcher";
+      const sent = await oneShot({ op: "notify", level: "warning", body: `Cancelled the open question \`${id}\`: the session that asked it could not be reached.`, channel });
+      if (isError(sent)) return fail(sent.error);
+    }
+    console.log(JSON.stringify({ status: action === "ping" ? "pinged" : "cancelled", id }));
+  } catch (error) {
+    fail((error as Error).message);
   }
 }
 
@@ -86,7 +130,8 @@ async function dispatcherWait(): Promise<void> {
     process.exit(2);
   };
   process.on("SIGINT", onSigint);
-  const waitUntil = Date.now() + config.waitTimeoutSeconds * 1000;
+  // The wait ends at least every SWEEP_INTERVAL_SECONDS, so the dispatcher wakes for the question sweep.
+  const waitUntil = Date.now() + Math.min(config.waitTimeoutSeconds, SWEEP_INTERVAL_SECONDS) * 1000;
   let lostSince: number | undefined;
   let attempt = 0;
   try {
@@ -100,7 +145,7 @@ async function dispatcherWait(): Promise<void> {
           return;
         }
         const recv = response as RecvResponse;
-        process.stdout.write(JSON.stringify({ ...recv, protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
+        process.stdout.write(JSON.stringify({ ...recv, ...(await sweepField()), protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
         process.exitCode = recv.status === "received" ? 0 : 2;
         return;
       } catch (error) {
@@ -111,7 +156,7 @@ async function dispatcherWait(): Promise<void> {
         const now = Date.now();
         lostSince ??= now;
         if (now >= waitUntil) {
-          process.stdout.write(JSON.stringify({ version: 1, status: "timeout", messages: [], protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
+          process.stdout.write(JSON.stringify({ version: 1, status: "timeout", messages: [], ...(await sweepField()), protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
           process.exitCode = 2;
           return;
         }

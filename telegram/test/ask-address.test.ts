@@ -83,13 +83,21 @@ test("tg ask uses AGENT_TELEGRAM_FROM, and --from wins over it", async () => {
   }
 });
 
-test("tg ask with no address anywhere is unchanged", async () => {
+test("tg ask with no address anywhere is refused with exit 2, naming --from and AGENT_TELEGRAM_FROM, and asks nothing", async () => {
   const h = await setupHarness();
   try {
+    h.askFromDefault = false;
+    delete h.env.AGENT_TELEGRAM_FROM;
     const daemon = h.spawnCli(["daemon"]);
     await waitForSocketAt(daemonSocketPath(h.home));
-    const { texts } = await runAsk(h);
-    assert.ok(texts.some((t) => t === "📋 <b>Pick</b>\nChoose one"));
+    const payload = { version: 1, questions: [{ id: "c", prompt: "Colour?", type: "single", options: [{ value: "red", label: "Red" }] }] };
+    const r = await h.runCli(["ask", "--json", JSON.stringify(payload)]);
+    assert.equal(r.code, 2);
+    assert.equal(r.stderr.trim().split("\n").length, 1, "one line");
+    assert.match(r.stderr, /--from/);
+    assert.match(r.stderr, /AGENT_TELEGRAM_FROM/);
+    assert.equal(h.fake.sent.filter((m) => m.method === "sendMessage").length, 0);
+    assert.match((await h.runCli(["pending"])).stdout, /No pending questions/);
     daemon.kill("SIGKILL");
   } finally {
     await h.teardown();
