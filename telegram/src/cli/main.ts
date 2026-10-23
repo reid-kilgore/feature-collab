@@ -4,7 +4,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { oneShot, connectToDaemon, sendRequest, readResponses } from "./client.ts";
+import { oneShot, connectToDaemon, sendRequest, readResponses, waitForResult, LostDaemonError } from "./client.ts";
 import { runSetup } from "./setup.ts";
 import { cmdDispatcher, cmdDispatch, cmdInquiries, dispatcherDoctor } from "./dispatcher.ts";
 import { runDaemon } from "../daemon/server.ts";
@@ -256,6 +256,23 @@ async function cmdAsk(argv: string[]): Promise<void> {
     sendRequest(socket, request);
   });
   process.off("SIGINT", onSigint);
+  if (!settled) {
+    // The connection ended with no result: the daemon went away (a restart). The question is stored, so
+    // re-attach and wait for it. Never end as if nothing happened: that reads as a success with no answer.
+    if (!batchId) {
+      console.error("the daemon went away before it accepted the question; nothing was asked. Run the command again once it is back.");
+      process.exitCode = 3;
+      return;
+    }
+    try {
+      const result = await waitForResult(batchId);
+      process.stdout.write(JSON.stringify(result) + "\n");
+      process.exitCode = result.status === "submitted" ? 0 : 2;
+    } catch (error) {
+      console.error(redact((error as Error).message));
+      process.exitCode = error instanceof LostDaemonError ? 3 : 1;
+    }
+  }
 }
 
 // Resolves a path the agent gave (relative to `from`) to a real file inside baseDir.
@@ -586,29 +603,12 @@ async function cmdWait(argv: string[]): Promise<void> {
     return;
   }
   try {
-    const socket = await connectToDaemon();
-    await new Promise<void>((resolve) => {
-      readResponses(
-        socket,
-        (response) => {
-          if ("result" in response) {
-            const result = (response as AskResolvedResponse).result;
-            process.stdout.write(JSON.stringify(result) + "\n");
-            process.exitCode = result.status === "submitted" ? 0 : 2;
-          } else if ("error" in response) {
-            console.error(redact((response as ErrorResponse).error));
-            process.exitCode = 1;
-          }
-          socket.end();
-          resolve();
-        },
-        () => resolve(),
-      );
-      sendRequest(socket, { op: "wait", id });
-    });
+    const result = await waitForResult(id);
+    process.stdout.write(JSON.stringify(result) + "\n");
+    process.exitCode = result.status === "submitted" ? 0 : 2;
   } catch (error) {
     console.error(redact((error as Error).message));
-    process.exitCode = 1;
+    process.exitCode = error instanceof LostDaemonError ? 3 : 1;
   }
 }
 
