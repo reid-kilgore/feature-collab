@@ -15,6 +15,8 @@ export function dispatcherConfigFile(): string {
 }
 
 export interface TargetNudge {
+  // An address to try first (a "[ref]" or bridge id). The address `tg dispatch address` records later wins.
+  address?: string;
   // The name of the session to message directly, and the text template for the message.
   to: string;
   template: string;
@@ -64,6 +66,13 @@ export function expandHome(p: string): string {
 }
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+// Words `tg dispatch` uses as subcommands: a target may not take one of them as its name.
+export const RESERVED_TARGET_NAMES = ["ask", "address", "unreachable"];
+
+// A session address as the messaging tool shows it: a name, a "[ref]", or a bridge id. Printable, short.
+export function validAddress(text: string): boolean {
+  return text.length > 0 && text.length <= 200 && !/[\u0000-\u001f\u007f]/.test(text);
+}
 const SAFE_WORD = /^[A-Za-z0-9_.:@%/+~-]+$/;
 
 export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
@@ -89,6 +98,7 @@ export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
     const o = (t ?? {}) as Record<string, unknown>;
     const where = `targets[${i}]`;
     const name = str(o.name, `${where}.name`, "", NAME);
+    if (RESERVED_TARGET_NAMES.includes(name)) throw new Error(`${where}.name: "${name}" is reserved for a tg dispatch subcommand`);
     if (typeof o.description !== "string" || !o.description.trim()) throw new Error(`${where}.description: required`);
     const hasArgv = Array.isArray(o.argv);
     const hasBuiltin = o.builtin !== undefined;
@@ -105,7 +115,8 @@ export function parseDispatcherConfig(raw: unknown): DispatcherConfig {
     if (o.nudge !== undefined) {
       const n = o.nudge as Record<string, unknown>;
       if (typeof n.to !== "string" || !n.to || typeof n.template !== "string" || !n.template) throw new Error(`${where}.nudge: needs "to" and "template"`);
-      nudge = { to: n.to, template: n.template };
+      if (n.address !== undefined && (typeof n.address !== "string" || !validAddress(n.address))) throw new Error(`${where}.nudge.address: not a usable address`);
+      nudge = { to: n.to, template: n.template, ...(n.address ? { address: n.address as string } : {}) };
     }
     return {
       name,

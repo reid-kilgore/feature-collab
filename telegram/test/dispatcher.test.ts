@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
 import path from "node:path";
+import { parseDispatcherConfig } from "../src/dispatcher/config.ts";
 import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./support/harness.ts";
 import type { Harness } from "./support/harness.ts";
 
@@ -291,7 +292,7 @@ test("tg dispatch runs the target with the text on stdin, replies under the mess
     assert.equal(out.status, "handed_off");
     assert.equal(out.ref, "ref-1");
     assert.equal(out.ack, "Filed as ref-1");
-    assert.deepEqual(out.nudge, { to: "boss", message: "New item ref-1: fix the payroll bug; $(touch /tmp/pwned) `id`\nsecond line" });
+    assert.deepEqual(out.nudge, { to: "boss", target: "inbox", message: "New item ref-1: fix the payroll bug; $(touch /tmp/pwned) `id`\nsecond line" });
 
     // no shell: metacharacters arrive intact on stdin, argv holds only the substituted parameter
     const calls = targetCalls(h);
@@ -731,14 +732,14 @@ test("session.name is passed to claude with --name, ahead of the variadic --allo
   }
 });
 
-test("the protocol says to use an exact address as given and to look up only a bare name", async () => {
+test("the protocol sends to the cached address and looks up a live row only when the address is stale or the name is bare", async () => {
   const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
   const text = DISPATCHER_PROTOCOL.join("\n");
-  assert.match(text, /exact address/);
-  assert.match(text, /\[ref\]/);
-  assert.match(text, /session_/);
-  assert.match(text, /bridge:/);
-  assert.match(text, /[Oo]nly when .* bare name/);
+  assert.match(text, /nudge\.address/);
+  assert.match(text, /stale/);
+  assert.match(text, /\[ref\]|<ref>/);
+  assert.match(text, /ListAgents/);
+  assert.match(text, /bare name/);
 });
 
 test("the acknowledgement is easy to read: the confirmation on its own line, the note after a blank line, the header kept", async () => {
@@ -941,5 +942,125 @@ test("without a tmuxSession and outside tmux, the window opens in the default se
     assert.equal(argv[t + 1], "main:");
   } finally {
     await h.teardown();
+  }
+});
+
+// ---- the nudge address: a name, a cached address, and a live-row fallback ----
+
+async function dispatchedInquiry(h: Harness, nudge: Record<string, unknown>): Promise<{ id: string; out: any }> {
+  const target = writeTarget(h);
+  writeFileSync(
+    path.join(h.home, "config", "dispatcher.json"),
+    JSON.stringify({
+      version: 1,
+      defaultTarget: "inbox",
+      targets: [{ name: "inbox", description: "d", argv: [process.execPath, target], ack: "Filed as {{stdout1}}", nudge }],
+    }),
+  );
+  say(h, "please look at this");
+  await waitUntil(() => reactions(h).length >= 1);
+  const id = inquiryLines(h)[0]!.id as string;
+  const r = await h.runCli(["dispatch", "inbox", "--inquiry", id]);
+  assert.equal(r.code, 0, r.stderr);
+  return { id, out: JSON.parse(r.stdout.trim()) };
+}
+
+test("a nudge with a bare name carries no address until one is recorded", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    const { out } = await dispatchedInquiry(h, { to: "SessionA", template: "item {{ref}}" });
+    assert.equal(out.nudge.to, "SessionA");
+    assert.equal(out.nudge.address, undefined);
+    assert.equal(out.nudge.target, "inbox");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a configured address is the first cached address", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    const { out } = await dispatchedInquiry(h, { to: "SessionA", address: "bridge:session_OLD", template: "x" });
+    assert.equal(out.nudge.address, "bridge:session_OLD");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg dispatch address records the live address, and the next nudge carries it instead of the configured one", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    await dispatchedInquiry(h, { to: "SessionA", address: "bridge:session_OLD", template: "x" });
+    const rec = await h.runCli(["dispatch", "address", "inbox", "SessionA [abc123]"]);
+    assert.equal(rec.code, 0, rec.stderr);
+    say(h, "second message");
+    await waitUntil(() => inquiryLines(h).filter((l) => l.op === "received").length >= 2);
+    const id2 = inquiryLines(h).filter((l) => l.op === "received")[1]!.id as string;
+    const r = await h.runCli(["dispatch", "inbox", "--inquiry", id2]);
+    assert.equal(JSON.parse(r.stdout.trim()).nudge.address, "SessionA [abc123]");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg dispatch address refuses control characters, a very long value and an unknown target", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    await dispatchedInquiry(h, { to: "SessionA", template: "x" });
+    assert.equal((await h.runCli(["dispatch", "address", "inbox", "bad\u0007value"])).code, 1);
+    assert.equal((await h.runCli(["dispatch", "address", "inbox", "x".repeat(300)])).code, 1);
+    assert.equal((await h.runCli(["dispatch", "address", "nope", "SessionA [abc]"])).code, 1);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("unreachable tells the user once per outage, under their message, and not again until an address is recorded", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = await start(h);
+    const { id, out } = await dispatchedInquiry(h, { to: "SessionA", template: "x" });
+    const tgId = inquiryLines(h)[0]!.tgMessageId as number;
+    const first = await h.runCli(["dispatch", "unreachable", "inbox", "--inquiry", id]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.equal(JSON.parse(first.stdout.trim()).status, "notified");
+    const msg = h.fake.sent.find((m) => m.method === "sendMessage" && /could not reach/i.test(String(m.body.text ?? "")))!;
+    assert.match(String(msg.body.text), /could not reach SessionA directly; the item is filed as <code>ref-1<\/code>/i);
+    assert.equal((msg.body.reply_parameters as { message_id: number }).message_id, tgId);
+    assert.ok(out.nudge);
+
+    const second = await h.runCli(["dispatch", "unreachable", "inbox", "--inquiry", id]);
+    assert.equal(JSON.parse(second.stdout.trim()).status, "already_notified");
+    assert.equal(h.fake.sent.filter((m) => /could not reach/i.test(String(m.body.text ?? ""))).length, 1);
+
+    await h.runCli(["dispatch", "address", "inbox", "SessionA [live1]"]); // it came back
+    const third = await h.runCli(["dispatch", "unreachable", "inbox", "--inquiry", id]);
+    assert.equal(JSON.parse(third.stdout.trim()).status, "notified", "a new outage is announced again");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the protocol: send to the cached address, on a stale-address error look up the live row, record it, or report unreachable", async () => {
+  const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
+  const text = DISPATCHER_PROTOCOL.join("\n");
+  assert.match(text, /nudge\.address|`address`/);
+  assert.match(text, /tg dispatch address/);
+  assert.match(text, /tg dispatch unreachable/);
+  assert.match(text, /not offline|live, non-offline|live row/);
+});
+
+test("target names that clash with dispatch subcommands are refused", () => {
+  for (const name of ["ask", "address", "unreachable"]) {
+    assert.throws(() => parseDispatcherConfig({ version: 1, defaultTarget: name, targets: [{ name, description: "d", argv: ["true"] }] }), /reserved|name/);
   }
 });

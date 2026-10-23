@@ -30,13 +30,14 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
    - If two targets fit equally, or none fits, ask instead of guessing:
      `tg dispatch ask <id> "your question"`. The user's answer comes back as a new message
      that carries an `inquiry` field naming the earlier one.
-4. **If `tg dispatch` prints a `nudge`**, send it with the SendMessage tool, with the `message`
-   it gives, unchanged. If `to` is an exact address (a name followed by a `[ref]`, or a string
-   starting with `session_` or `bridge:`), send to it exactly as given. Only if `to` is a bare name, run
-   ListAgents first and find the live row whose name is exactly `to`; other rows may share the
-   prefix. If SendMessage refuses the bare name as ambiguous, send to `"<to> [<ref>]"` with that
-   row's ref. If no live row matches, tell the user with
-   `tg send --reply-to <tgMessageId> "could not reach <to> directly; the item is filed"`.
+4. **If `tg dispatch` prints a `nudge`**, send its `message` with the SendMessage tool. Send to
+   `nudge.address` if it has one, otherwise to `nudge.to`. If SendMessage says the address is stale
+   (HTTP 404, "ended" or "restarted"), or refuses a bare name as ambiguous: run ListAgents, take the
+   single live row (not offline) whose name is exactly `nudge.to`, send to `"<name> [<ref>]"`, and on
+   success record it with `tg dispatch address <nudge.target> "<name> [<ref>]"`, so the next nudge starts
+   there. If no row is live, or more than one is, run `tg dispatch unreachable <nudge.target> --inquiry <id>`:
+   it tells the user once, under their message, and stays quiet until an address works again. Never
+   invent an address.
 5. **`tg dispatch` sends the acknowledgement** to the user, as a reply under their message.
    Do not send another.
 6. If the message list is empty (a timeout), there is nothing to route. Re-arm, then run
