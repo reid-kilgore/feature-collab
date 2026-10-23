@@ -137,6 +137,12 @@ export interface StatusResponse {
   listening: boolean;
   channels: ChannelStatus[];
   dispatcher: DispatcherStatus;
+  tailscale: TailscaleStatus;
+}
+
+export interface TailscaleStatus {
+  mode: "off" | "on";
+  rows?: Array<{ pair: string; state: string; lastResult: string; ageSeconds: number | null }>;
 }
 
 export interface DispatcherStatus {

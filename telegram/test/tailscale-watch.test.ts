@@ -150,7 +150,7 @@ test("config: defaults, validation, and unsafe aliases are refused", () => {
   const c = parseTailscaleWatchConfig({ version: 1, hosts: ["duo"] });
   assert.deepEqual(c.hosts, ["duo"]);
   assert.deepEqual(c.reverse, []);
-  assert.equal(c.intervalSeconds, 600);
+  assert.equal(c.intervalSeconds, 120);
   assert.equal(c.reminderSeconds, 3600);
   assert.equal(parseTailscaleWatchConfig({ version: 1, hosts: ["duo"], reverse: [{ via: "duo", target: "mbp" }], interval: "15m", reminder: "2h" }).intervalSeconds, 900);
   assert.throws(() => parseTailscaleWatchConfig({ version: 1, hosts: ["duo; rm -rf"] }), /host/);

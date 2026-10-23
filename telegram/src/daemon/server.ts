@@ -33,12 +33,12 @@ import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, AskResult } from "../contract/payload.ts";
 import { markdownToTelegramHtml, splitMessage } from "../core/markdown.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
-import { TailscaleWatcher, readTailscaleWatchConfig } from "../inbox/tailscale-watch.ts";
+import { TailscaleWatcher, readTailscaleWatchConfig, describeWatchState } from "../inbox/tailscale-watch.ts";
 import { pendingTailscaleChecks } from "../inbox/tailscale.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
 import { listView } from "../miniapp/views.ts";
-import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus } from "./protocol.ts";
+import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus, TailscaleStatus } from "./protocol.ts";
 
 interface ChannelEntry {
   lastSendAt: number;
@@ -298,6 +298,11 @@ export async function runDaemon(): Promise<void> {
     pending: pendingTailscaleChecks,
   });
   tailscaleWatcher.start();
+  const tailscaleStatus = (): TailscaleStatus => {
+    const c = readTailscaleWatchConfig(() => {});
+    if (!c) return { mode: "off" };
+    return { mode: "on", rows: describeWatchState((k) => store.getMeta(k), c.hosts, c.reverse, c.local ?? hostname, Date.now()) };
+  };
 
   const sweepTimer = setInterval(() => {
     sweepExpired(store, port, onResolved).catch((error) => log(`sweep error: ${(error as Error).message}`));
@@ -338,6 +343,7 @@ export async function runDaemon(): Promise<void> {
       channelState,
       isShuttingDown,
       dispatcherStatus,
+      tailscaleStatus,
       menuChanged: () => menuChanged(),
     }).catch((error) => {
       log(`connection error: ${(error as Error).message}`);
@@ -478,6 +484,7 @@ interface ConnectionDeps {
   channelState: Map<string, ChannelEntry>;
   isShuttingDown: () => boolean;
   dispatcherStatus: () => DispatcherStatus;
+  tailscaleStatus: () => TailscaleStatus;
   // A set was created (resolved sets are reported through onResolved): the menu count may differ.
   menuChanged: () => void;
 }
@@ -575,6 +582,7 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             listening: deps.isListening(),
             channels,
             dispatcher: deps.dispatcherStatus(),
+            tailscale: deps.tailscaleStatus(),
           });
           return;
         }
