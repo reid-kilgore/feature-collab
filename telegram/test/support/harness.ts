@@ -117,6 +117,9 @@ export interface Harness {
   chatId: string;
   userId: string;
   env: NodeJS.ProcessEnv;
+  // tg ask refuses without a sender address, so the harness adds `--from test:harness` to an ask that
+  // has none. A test of the refusal sets this to false.
+  askFromDefault: boolean;
   runCli(args: string[], opts?: { input?: string }): Promise<{ stdout: string; stderr: string; code: number | null }>;
   spawnCli(args: string[]): ChildProcess;
   stopDaemon(): Promise<void>;
@@ -191,10 +194,13 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
   assertMaestroInboxDirEnv(env.MAESTRO_INBOX_DIR);
 
   let daemonProc: ChildProcess | undefined;
+  const state = { askFromDefault: true };
+  const withAskFrom = (args: string[]): string[] =>
+    state.askFromDefault && args[0] === "ask" && !args.includes("--from") && !env.AGENT_TELEGRAM_FROM ? ["ask", "--from", "test:harness", ...args.slice(1)] : args;
 
   const runCli = (args: string[], runOpts: { input?: string } = {}): Promise<{ stdout: string; stderr: string; code: number | null }> => {
     return new Promise((resolve) => {
-      const child = spawn(process.execPath, [tgBin, ...args], { env });
+      const child = spawn(process.execPath, [tgBin, ...withAskFrom(args)], { env });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (c) => (stdout += c.toString()));
@@ -212,7 +218,7 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
   // stdio open, and the test file then hangs until the outer timeout.
   const spawned = new Set<ChildProcess>();
   const spawnCli = (args: string[]): ChildProcess => {
-    const child = spawn(process.execPath, [tgBin, ...args], { env });
+    const child = spawn(process.execPath, [tgBin, ...withAskFrom(args)], { env });
     spawned.add(child);
     child.once("close", () => spawned.delete(child));
     return child;
@@ -234,6 +240,12 @@ export async function setupHarness(opts: { hostname?: string } = {}): Promise<Ha
     chatId,
     userId,
     env,
+    get askFromDefault() {
+      return state.askFromDefault;
+    },
+    set askFromDefault(v: boolean) {
+      state.askFromDefault = v;
+    },
     runCli,
     spawnCli,
     async stopDaemon() {

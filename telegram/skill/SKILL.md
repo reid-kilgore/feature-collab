@@ -44,7 +44,12 @@ content, with no header. Only `warning` and `error` add one emoji (⚠️ or ❌
 line. Your tmux address (`session:window`) is added as a small italic last line whenever you run inside tmux, so the user
 can tell which session sent it. If you reach `tg` over ssh, your tmux is not visible there: pass
 `--from "$(tmux display-message -p '#S:#W')"` (or set `AGENT_TELEGRAM_FROM`). Outside tmux the channel's name is
-shown only when you pass `--title` or `--channel`. `tg ask` shows the same address, and takes `--from` the same way.
+shown only when you pass `--title` or `--channel`. `tg ask` shows the same address, and takes `--from` the same way. `tg ask` refuses (exit 2, nothing asked) when it
+cannot find your address, so always pass `--from` or set `AGENT_TELEGRAM_FROM` when you reach `tg` over ssh.
+
+Give a question a decision key with `tg ask --key KEY` (or `"key"` in the payload) when the same decision can be
+answered somewhere else. Once it is answered elsewhere, run `tg cancel --key KEY` so the phone question does not go
+stale: it prints `{"cancelled":[ids]}`. If you are asked whether a question is still needed, run `tg cancel <id>` when it is not.
 
 ## When to use `tg ask`
 

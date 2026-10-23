@@ -28,6 +28,7 @@ export interface AskRequest {
   askerTmuxWindow?: string;
   // Who is asking, as an address: shown in the header and the footer. Not part of the result.
   askerAddress?: string;
+  key?: string;
   timeoutSeconds?: number;
   onTimeout?: "cancel" | "default";
 }
@@ -42,7 +43,21 @@ export interface PendingRequest {
 
 export interface CancelRequest {
   op: "cancel";
-  id: string; // batch id, or "all"
+  id?: string; // batch id, or "all"
+  key?: string; // or: every pending batch with this decision key
+}
+
+// The dispatcher's sweep of stale questions: list the batches due a ping, record a ping, or cancel one.
+export interface SweepRequest {
+  op: "sweep";
+  action: "due" | "ping" | "cancel";
+  id?: string; // for ping and cancel
+}
+
+export interface SweepResponse {
+  due?: Array<PendingBatch & { ageMinutes: number }>;
+  ok?: true;
+  cancelled?: boolean;
 }
 
 export interface WaitRequest {
@@ -104,6 +119,7 @@ export type DaemonRequest =
   | StatusRequest
   | PendingRequest
   | CancelRequest
+  | SweepRequest
   | WaitRequest
   | RecvRequest
   | QuarantineRequest
@@ -185,14 +201,27 @@ export interface PendingItem {
   prompt: string;
   createdAt: string;
   askerPath: string;
+  sender?: string;
+  key?: string;
+}
+
+// One entry per pending batch: what `tg pending --json` prints and the sweep reads.
+export interface PendingBatch {
+  id: string;
+  title: string | null;
+  key: string | null;
+  sender: string | null;
+  created_at: string;
 }
 
 export interface PendingResponse {
   items: PendingItem[];
+  batches: PendingBatch[];
 }
 
 export interface CancelResponse {
   cancelled: number;
+  ids?: string[]; // set for a cancel by key
 }
 
 export interface ErrorResponse {
@@ -206,6 +235,7 @@ export type DaemonResponse =
   | StatusResponse
   | PendingResponse
   | CancelResponse
+  | SweepResponse
   | RecvResponse
   | QuarantineResponse
   | InquiryResponse

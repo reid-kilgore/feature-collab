@@ -43,7 +43,7 @@ async function main(): Promise<void> {
       await cmdStatus();
       return;
     case "pending":
-      await cmdPending();
+      await cmdPending(rest);
       return;
     case "cancel":
       await cmdCancel(rest);
@@ -88,11 +88,12 @@ function printUsage(): void {
   console.error(`tg <command> [options]
 
 Commands:
-  ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default] [--from ADDRESS]
+  ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default] [--key KEY] --from ADDRESS
+      (--from, AGENT_TELEGRAM_FROM or a tmux session:window is required; exit 2 without one)
   send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID] [--from ADDRESS]
   status
-  pending
-  cancel <id|all>
+  pending [--json]
+  cancel <id|all> | cancel --key KEY
   wait <id>
   recv [--wait] [--timeout DURATION] [--peek] [--channel KEY]
   dispatcher wait | targets | start | stop | status
@@ -107,13 +108,14 @@ Commands:
 
 // ---- ask ----
 
-function parseAskArgs(argv: string[]): { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string } {
-  const result: { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string } = {};
+function parseAskArgs(argv: string[]): { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string; key?: string } {
+  const result: { file?: string; json?: string; timeoutSeconds?: number; onTimeout?: "cancel" | "default"; from?: string; key?: string } = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--file") result.file = argv[++i];
     else if (arg === "--json") result.json = argv[++i];
     else if (arg === "--from") result.from = argv[++i];
+    else if (arg === "--key") result.key = argv[++i];
     else if (arg === "--timeout") result.timeoutSeconds = parseDuration(argv[++i] ?? "");
     else if (arg === "--on-timeout") {
       const v = argv[++i];
@@ -147,6 +149,20 @@ async function cmdAsk(argv: string[]): Promise<void> {
     args = parseAskArgs(argv);
   } catch (error) {
     console.error((error as Error).message);
+    process.exitCode = 1;
+    return;
+  }
+
+  // A question nobody can be asked about later is refused: the dispatcher's sweep and a cancel
+  // both need to know who asked.
+  const askerAddress = cleanSender(args.from ?? process.env.AGENT_TELEGRAM_FROM) ?? tmuxAddress();
+  if (!askerAddress) {
+    console.error("tg ask needs a sender address: pass --from SESSION:WINDOW or set AGENT_TELEGRAM_FROM (a tmux session:window is used automatically inside tmux).");
+    process.exitCode = 2;
+    return;
+  }
+  if (args.key !== undefined && !args.key.trim()) {
+    console.error("--key needs a non-empty value");
     process.exitCode = 1;
     return;
   }
@@ -189,6 +205,8 @@ async function cmdAsk(argv: string[]): Promise<void> {
     }
   }
 
+  if (args.key !== undefined) payload = { ...payload, key: args.key.trim() };
+
   const askerPath = process.cwd();
   const askerTmuxWindow = bestEffortTmuxWindow();
 
@@ -197,7 +215,7 @@ async function cmdAsk(argv: string[]): Promise<void> {
     payload,
     askerPath,
     askerTmuxWindow,
-    askerAddress: cleanSender(args.from ?? process.env.AGENT_TELEGRAM_FROM) ?? tmuxAddress(),
+    askerAddress,
     timeoutSeconds: args.timeoutSeconds,
     onTimeout: args.onTimeout,
   };
@@ -552,7 +570,13 @@ function cmdPresence(argv: string[]): void {
   }
 }
 
-async function cmdPending(): Promise<void> {
+async function cmdPending(argv: string[]): Promise<void> {
+  const json = argv.includes("--json");
+  if (argv.some((a) => a !== "--json")) {
+    console.error("Usage: tg pending [--json]");
+    process.exitCode = 1;
+    return;
+  }
   try {
     const response = await oneShot({ op: "pending" });
     if ("error" in response) {
@@ -560,13 +584,17 @@ async function cmdPending(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const { items } = response as PendingResponse;
+    const { items, batches } = response as PendingResponse;
+    if (json) {
+      console.log(JSON.stringify(batches));
+      return;
+    }
     if (!items.length) {
       console.log("No pending questions.");
       return;
     }
     for (const item of items) {
-      console.log(`${item.batchId}  ${item.title ?? "(no title)"}  ${item.prompt}  asked from ${item.askerPath}  at ${item.createdAt}`);
+      console.log(`${item.batchId}  ${item.title ?? "(no title)"}  ${item.prompt}  asked from ${item.askerPath}  at ${item.createdAt}  sender ${item.sender ?? "(none)"}  key ${item.key ?? "(none)"}`);
     }
   } catch (error) {
     console.error(redact((error as Error).message));
@@ -575,20 +603,22 @@ async function cmdPending(): Promise<void> {
 }
 
 async function cmdCancel(argv: string[]): Promise<void> {
+  const byKey = argv[0] === "--key";
   const id = argv[0];
-  if (!id) {
-    console.error("Usage: tg cancel <id|all>");
+  if (!id || (byKey && (!argv[1] || argv.length > 2))) {
+    console.error("Usage: tg cancel <id|all> | tg cancel --key KEY");
     process.exitCode = 1;
     return;
   }
   try {
-    const response = await oneShot({ op: "cancel", id });
+    const response = await oneShot(byKey ? { op: "cancel", key: argv[1]! } : { op: "cancel", id });
     if ("error" in response) {
       console.error(redact((response as ErrorResponse).error));
       process.exitCode = 1;
       return;
     }
-    console.log(`Cancelled ${(response as CancelResponse).cancelled} batch(es).`);
+    if (byKey) console.log(JSON.stringify({ cancelled: (response as CancelResponse).ids ?? [] }));
+    else console.log(`Cancelled ${(response as CancelResponse).cancelled} batch(es).`);
   } catch (error) {
     console.error(redact((error as Error).message));
     process.exitCode = 1;

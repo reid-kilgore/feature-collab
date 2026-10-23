@@ -41,6 +41,8 @@ export interface AskPayload {
   documents?: DocumentInput[];
   timeoutSeconds?: number;
   onTimeout?: OnTimeout;
+  // Decision key: `tg cancel --key KEY` cancels every pending batch that carries it.
+  key?: string;
 }
 
 export type AskStatus = "submitted" | "cancelled" | "expired";
@@ -100,6 +102,8 @@ export function validatePayload(payload: unknown): AskPayload {
   if (payload.version !== 1) issue(issues, "version", "must be 1");
   if (payload.title !== undefined) checkString(payload.title, "title", issues);
   if (payload.message !== undefined) checkString(payload.message, "message", issues);
+
+  if (payload.key !== undefined) checkString(payload.key, "key", issues);
 
   if (payload.timeoutSeconds !== undefined) {
     if (typeof payload.timeoutSeconds !== "number" || !Number.isFinite(payload.timeoutSeconds) || payload.timeoutSeconds <= 0) {

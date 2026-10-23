@@ -540,7 +540,7 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
         }
         case "ask": {
           const payload = validatePayload(request.payload);
-          const batchId = createAskBatch(deps, payload, request.askerPath, request.askerTmuxWindow, request.timeoutSeconds, request.onTimeout, request.askerAddress);
+          const batchId = createAskBatch(deps, payload, request.askerPath, request.askerTmuxWindow, request.timeoutSeconds, request.onTimeout, request.askerAddress, request.key);
           write({ id: batchId });
           const resultPromise = new Promise<AskResult>((resolve) => {
             const list = deps.waiters.get(batchId) ?? [];
@@ -773,26 +773,74 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
               prompt: question.prompt,
               createdAt: row.created_at,
               askerPath: batch.asker_path,
+              ...(batch.asker_address ? { sender: batch.asker_address } : {}),
+              ...(batch.ask_key ? { key: batch.ask_key } : {}),
             };
           });
-          write({ items });
+          const batches = deps.store.listPendingBatches().map((b) => ({
+            id: b.id,
+            title: (JSON.parse(b.payload_json) as AskPayload).title ?? null,
+            key: b.ask_key,
+            sender: b.asker_address,
+            created_at: b.created_at,
+          }));
+          write({ items, batches });
           return;
         }
         case "cancel": {
           let count = 0;
+          if (request.key !== undefined) {
+            const ids: string[] = [];
+            for (const batch of deps.store.listPendingBatchesByKey(request.key)) {
+              await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
+              deps.store.appendAudit("batch_cancelled_by_key", batch.id, null, { key: request.key });
+              ids.push(batch.id);
+            }
+            write({ cancelled: ids.length, ids });
+            return;
+          }
           if (request.id === "all") {
             for (const batch of deps.store.listPendingBatches()) {
               await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
               count++;
             }
           } else {
-            const batch = deps.store.getBatch(request.id);
+            const batch = request.id ? deps.store.getBatch(request.id) : undefined;
             if (batch && batch.status === "pending") {
-              await cancelBatch(deps.store, deps.port, deps.onResolved, request.id);
+              await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
               count = 1;
             }
           }
           write({ cancelled: count });
+          return;
+        }
+        case "sweep": {
+          if (request.action === "due") {
+            const now = Date.now();
+            const due = deps.store.listSweepDue(SWEEP_STALE_MS, SWEEP_QUIET_MS, now).map((b) => ({
+              id: b.id,
+              title: (JSON.parse(b.payload_json) as AskPayload).title ?? null,
+              key: b.ask_key,
+              sender: b.asker_address,
+              created_at: b.created_at,
+              ageMinutes: Math.round((now - Date.parse(b.created_at)) / 60000),
+            }));
+            write({ due });
+            return;
+          }
+          const batch = request.id ? deps.store.getBatch(request.id) : undefined;
+          if (!batch || batch.status !== "pending") {
+            write({ error: `no pending question ${request.id ?? "(no id given)"}` });
+            return;
+          }
+          if (request.action === "ping") {
+            deps.store.appendAudit("sweep_ping", batch.id, null, { sender: batch.asker_address });
+            write({ ok: true });
+            return;
+          }
+          await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
+          deps.store.appendAudit("sweep_cancel", batch.id, null, { sender: batch.asker_address });
+          write({ ok: true, cancelled: true });
           return;
         }
         case "wait": {
@@ -828,6 +876,11 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
   };
 }
 
+// The dispatcher's sweep: a question open longer than an hour is asked about; one asked about is left
+// alone for three hours.
+const SWEEP_STALE_MS = 60 * 60 * 1000;
+const SWEEP_QUIET_MS = 3 * 60 * 60 * 1000;
+
 function createAskBatch(
   deps: ConnectionDeps,
   payload: AskPayload,
@@ -836,6 +889,7 @@ function createAskBatch(
   timeoutSeconds: number | undefined,
   onTimeout: "cancel" | "default" | undefined,
   askerAddress?: string,
+  key?: string,
 ): string {
   const id = newId();
   const effectiveTimeoutSeconds = timeoutSeconds ?? payload.timeoutSeconds;
@@ -846,6 +900,7 @@ function createAskBatch(
     asker_path: askerPath,
     asker_tmux_window: askerTmuxWindow ?? null,
     asker_address: askerAddress ?? null,
+    ask_key: key ?? payload.key ?? null,
     payload_json: JSON.stringify(payload),
     timeout_at: timeoutAt,
     on_timeout: onTimeout ?? payload.onTimeout ?? "cancel",

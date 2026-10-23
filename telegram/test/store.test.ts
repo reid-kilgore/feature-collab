@@ -126,7 +126,7 @@ test("opening a pre-channel-routing database adds the missing column and table i
       store.recordMessageChannel(123, "chanA");
       assert.equal(store.getChannelForMessage(123), "chanA");
 
-      assert.equal(store.getMeta("schema_version"), "3");
+      assert.equal(store.getMeta("schema_version"), "4");
     } finally {
       store.close();
     }
@@ -151,3 +151,33 @@ test(
     assert.equal(rows[1]!.batch_id, "batch1");
   }),
 );
+
+test("opening a version 3 database adds batches.ask_key, keeps its rows, and lists by key", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "agent-telegram-store-"));
+  const dbFile = path.join(dir, "state.sqlite");
+  try {
+    const raw = new DatabaseSync(dbFile);
+    raw.exec(`
+      CREATE TABLE batches (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, resolved_at TEXT, status TEXT NOT NULL,
+        asker_path TEXT NOT NULL, asker_tmux_window TEXT, asker_address TEXT, payload_json TEXT NOT NULL, timeout_at TEXT, on_timeout TEXT,
+        chat_id TEXT NOT NULL, user_id TEXT NOT NULL, result_json TEXT);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta VALUES ('schema_version', '3');
+      INSERT INTO batches VALUES ('old', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', NULL, 'pending', '/x', NULL, 'a:b', '{}', NULL, NULL, '1', '1', NULL);
+    `);
+    raw.close();
+    const store = new Store(dbFile);
+    try {
+      assert.equal(store.getMeta("schema_version"), "4");
+      assert.equal(store.getBatch("old")!.ask_key, null);
+      assert.equal(store.getBatch("old")!.asker_address, "a:b");
+      assert.deepEqual(store.listPendingBatchesByKey("k"), []);
+      store.createBatch({ id: "new", status: "pending", asker_path: "/y", asker_tmux_window: null, payload_json: "{}", timeout_at: null, on_timeout: null, chat_id: "1", user_id: "1", ask_key: "k" });
+      assert.deepEqual(store.listPendingBatchesByKey("k").map((b) => b.id), ["new"]);
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
