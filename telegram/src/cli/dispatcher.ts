@@ -4,11 +4,11 @@
 // messages, hand one to a target the config names, ask Reid a question, read the inquiry log.
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { oneShot } from "./client.ts";
 import { stateDir, redact, tmuxBin } from "../config.ts";
-import { readDispatcherConfig, expandHome } from "../dispatcher/config.ts";
+import { readDispatcherConfig, expandHome, validAddress } from "../dispatcher/config.ts";
 import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
 import { DISPATCHER_PROTOCOL } from "../dispatcher/protocol.ts";
 import { findInquiry, isOpen, readInquiries } from "../core/inquiry-log.ts";
@@ -359,6 +359,8 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
   if (!config) return;
 
   if (args.positional[0] === "ask") return dispatchAsk(config, args);
+  if (args.positional[0] === "address") return dispatchAddress(config, args);
+  if (args.positional[0] === "unreachable") return dispatchUnreachable(config, args);
 
   const targetName = args.positional[0];
   if (!targetName || !args.inquiry) return fail("usage: tg dispatch <target> --inquiry <id> [--param k=v] [--note TEXT] | tg dispatch ask <id> \"question\"");
@@ -409,10 +411,13 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
   values.text = (inquiry.text ?? "").slice(0, 1500);
   values.ref = ref;
   let ack: string;
-  let nudge: { to: string; message: string } | undefined;
+  let nudge: { to: string; address?: string; message: string; target: string } | undefined;
   try {
     ack = substitute(target.ack, values);
-    if (target.nudge) nudge = { to: target.nudge.to, message: substitute(target.nudge.template, values) };
+    if (target.nudge) {
+      const address = readNudgeState()[target.name]?.address ?? target.nudge.address;
+      nudge = { to: target.nudge.to, ...(address ? { address } : {}), message: substitute(target.nudge.template, values), target: target.name };
+    }
   } catch (error) {
     ack = `Sent to ${target.name}.`;
     console.error(`ack template problem: ${(error as Error).message}`);
@@ -535,4 +540,83 @@ export function dispatcherDoctor(): string[] {
   if (!onPath(c.session.claudeBin)) lines.push(`  warning: \`${c.session.claudeBin}\` was not found, so \`tg dispatcher start\` cannot start a session (a tmux window does not read your shell profile; set session.claudeBin to the full path)`);
   if (!onPath("tmux")) lines.push("  warning: `tmux` is not on PATH, so `tg dispatcher start` cannot start a window");
   return lines;
+}
+
+// ---- the nudge address ----
+//
+// A nudge goes to a session by name. The name can match several sessions and a session's address can
+// change when its connection re-registers, so the last address that worked is cached here (not in
+// dispatcher.json, which a person edits by hand). The dispatcher tries the cached address, and on a
+// stale-address error looks up the live row, sends there, and records it with `tg dispatch address`.
+// If no row is live it runs `tg dispatch unreachable`, which tells the user once per outage.
+
+interface NudgeEntry {
+  address?: string;
+  notifiedAt?: string;
+}
+
+function nudgeStateFile(): string {
+  return path.join(stateDir(), "nudge-state.json");
+}
+
+function readNudgeState(): Record<string, NudgeEntry> {
+  try {
+    const parsed = JSON.parse(readFileSync(nudgeStateFile(), "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, NudgeEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeNudgeState(state: Record<string, NudgeEntry>): void {
+  mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
+  const tmp = `${nudgeStateFile()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+  renameSync(tmp, nudgeStateFile());
+}
+
+function nudgeTarget(config: DispatcherConfig, name: string | undefined): Target | undefined {
+  const target = config.targets.find((t) => t.name === name);
+  if (!target?.nudge) {
+    fail(`unknown target, or it has no nudge: ${name ?? "(none given)"}`);
+    return undefined;
+  }
+  return target;
+}
+
+function dispatchAddress(config: DispatcherConfig, args: DispatchArgs): void {
+  const [, targetName, address] = args.positional;
+  const target = nudgeTarget(config, targetName);
+  if (!target) return;
+  if (!address || !validAddress(address)) return fail("usage: tg dispatch address <target> <address> (printable, up to 200 characters)");
+  const state = readNudgeState();
+  // A working address ends the outage, so the next one is announced again.
+  state[target.name] = { address };
+  writeNudgeState(state);
+  console.log(JSON.stringify({ status: "recorded", target: target.name, address }));
+}
+
+async function dispatchUnreachable(config: DispatcherConfig, args: DispatchArgs): Promise<void> {
+  const [, targetName] = args.positional;
+  const target = nudgeTarget(config, targetName);
+  if (!target) return;
+  if (!args.inquiry) return fail("usage: tg dispatch unreachable <target> --inquiry <id>");
+  const inquiry = findInquiry(readInquiries(), args.inquiry);
+  if (!inquiry) return fail(`unknown inquiry ${args.inquiry}`);
+  const state = readNudgeState();
+  const entry = state[target.name] ?? {};
+  if (entry.notifiedAt) {
+    console.log(JSON.stringify({ status: "already_notified", target: target.name, since: entry.notifiedAt }));
+    return;
+  }
+  const ref = inquiry.ref ?? "(no reference)";
+  try {
+    const sent = await oneShot({ op: "notify", level: "warning", body: `Could not reach ${target.nudge!.to} directly; the item is filed as \`${ref}\`.`, channel: config.channel, replyToMessageId: inquiry.tgMessageId ?? undefined, inquiryId: inquiry.id });
+    if (isError(sent)) return fail(sent.error);
+  } catch (error) {
+    return fail((error as Error).message);
+  }
+  state[target.name] = { ...entry, notifiedAt: new Date().toISOString() };
+  writeNudgeState(state);
+  console.log(JSON.stringify({ status: "notified", target: target.name }));
 }
