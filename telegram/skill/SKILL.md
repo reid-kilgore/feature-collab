@@ -175,10 +175,16 @@ What tg actually renders (this is what the converter does, not what Markdown all
 | `*italic*`, `_italic_` | italic |
 | `` `code` `` | inline code |
 | a fenced block | a code block (no language word: it would print inside the block) |
-| `[text](https://…)` | a link |
+| `[text](https://…)` | a link that shows only `text`. Only `http` and `https` links; anything else is plain text |
+| a bare `https://…` address | a link that shows the address. Prefer `[text](url)` so a long address does not fill the screen |
+| `# Heading`, `## Heading` | a bold line (there is no real heading) |
 | `- item` or `* item` | a bullet line (nesting is flattened) |
 | `1. item` | stays as typed, which reads fine |
-| `# Heading`, a table, `> quote` | **not rendered**: the `#`, the pipes and the `>` show as text |
+| a table, `> quote` | **not rendered**: the pipes and the `>` show as text |
+
+The same Markdown renders in a `tg ask` batch `message`, in each question `prompt` and in each option
+`description`, both in the chat and in the phone mini app. Write links as `[text](https://…)` so only the
+text shows. An option `label` is plain text.
 
 A message over 4096 characters is split at blank lines for you, but write less rather than
 rely on that.

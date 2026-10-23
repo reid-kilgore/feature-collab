@@ -151,6 +151,7 @@ export interface FakeTelegramWebApp {
   expand(): void;
   close(): void;
   isVersionAtLeast(v: string): boolean;
+  openLink(url: string): void;
   onEvent(name: string, fn: () => void): void;
   BackButton: { show(): void; hide(): void; onClick(fn: () => void): void };
   HapticFeedback: { notificationOccurred(kind: string): void; impactOccurred(kind: string): void };
@@ -185,6 +186,7 @@ export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Rou
     ready: () => calls.push("ready"),
     expand: () => calls.push("expand"),
     close: () => calls.push("close"),
+    openLink: (url) => calls.push(`openLink:${url}`),
     isVersionAtLeast: () => opts.nativeBack,
     onEvent: (name, fn) => void (tgEvents[name] ??= []).push(fn),
     BackButton: {

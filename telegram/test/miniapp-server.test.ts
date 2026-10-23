@@ -375,3 +375,26 @@ test("POST cancel needs confirm:true, then cancels through cancelBatch and tells
     await t.close();
   }
 });
+
+test("the detail API carries the message, prompts and descriptions as Markdown nodes, and keeps the plain text", async () => {
+  const t = await rig();
+  try {
+    const { createBatch } = await import("./support/miniapp.ts");
+    createBatch(t.store, {
+      version: 1,
+      title: "Review",
+      message: "**Start here:** https://a.com/x",
+      questions: [{ id: "q", prompt: "Read [it](https://a.com/p)", type: "single", options: [{ value: "a", label: "A", description: "see `x`" }] }],
+    } as never);
+    const list = (await (await fetch(t.url("/api/batches"), { headers: t.auth() })).json()) as { batches: Array<{ id: string }> };
+    const d = (await (await fetch(t.url(`/api/batches/${list.batches[0]!.id}`), { headers: t.auth() })).json()) as any;
+    assert.equal(d.message, "**Start here:** https://a.com/x");
+    assert.equal(d.messageNodes[0].t, "b");
+    assert.ok(d.messageNodes.some((n: any) => n.t === "a" && n.href === "https://a.com/x"));
+    assert.equal(d.questions[0].prompt, "Read [it](https://a.com/p)");
+    assert.ok(d.questions[0].promptNodes.some((n: any) => n.t === "a" && n.href === "https://a.com/p"));
+    assert.ok(d.questions[0].options[0].descriptionNodes.some((n: any) => n.t === "code"));
+  } finally {
+    await t.close();
+  }
+});

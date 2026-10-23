@@ -209,3 +209,85 @@ test("the list has no Refresh button and reloads by itself when the app comes ba
   await t.flush();
   assert.equal(lists(), atSet);
 });
+
+// ---- Markdown in the message, the prompts and the option descriptions ----
+
+function mdDetail() {
+  const base = detail();
+  return {
+    ...base,
+    message: "**Start here:** https://a.com/x",
+    messageNodes: [
+      { t: "b", c: [{ t: "text", v: "Start here:" }] },
+      { t: "text", v: " " },
+      { t: "a", href: "https://a.com/x", c: [{ t: "text", v: "https://a.com/x" }] },
+      { t: "text", v: " and " },
+      { t: "a", href: "javascript:alert(1)", c: [{ t: "text", v: "bad link" }] },
+    ],
+    questions: [
+      {
+        ...base.questions[0],
+        prompt: "Read [the page](https://a.com/p)",
+        promptNodes: [{ t: "text", v: "Read " }, { t: "a", href: "https://a.com/p", c: [{ t: "text", v: "the page" }] }],
+        options: [{ value: "pg", label: "Postgres", recommended: false, description: "uses `outbox`", descriptionNodes: [{ t: "text", v: "uses " }, { t: "code", c: [{ t: "text", v: "outbox" }] }] }],
+      },
+      base.questions[1],
+    ],
+  };
+}
+
+async function openMd(): Promise<PageRig> {
+  const t = loadPage({ nativeBack: false, routes: { "GET batches": { body: LIST }, "GET batches/b1": { body: mdDetail() } } });
+  await openSet(t);
+  return t;
+}
+
+test("the message renders bold and a link, and the link shows its text only", async () => {
+  const t = await openMd();
+  const message = t.doc.root.find((n) => n.className === "message")[0]!;
+  const strong = message.find((n) => n.tagName === "STRONG");
+  assert.equal(strong[0]!.textContent, "Start here:");
+  const links = message.find((n) => n.tagName === "A");
+  assert.equal(links[0]!.getAttribute("href"), "https://a.com/x");
+  assert.equal(links[0]!.getAttribute("target"), "_blank");
+  assert.equal(links[0]!.getAttribute("rel"), "noopener noreferrer");
+  assert.ok(!message.textContent.includes("**"));
+});
+
+test("a link that is not http or https is shown as plain text, never as a link", async () => {
+  const t = await openMd();
+  const message = t.doc.root.find((n) => n.className === "message")[0]!;
+  assert.equal(message.find((n) => n.tagName === "A").length, 1, "only the https link");
+  assert.match(message.textContent, /bad link/);
+});
+
+test("tapping a link opens it through Telegram, and the browser's own navigation is cancelled", async () => {
+  const t = await openMd();
+  const link = t.doc.root.find((n) => n.tagName === "A")[0]!;
+  const event = t.doc.fire(link, "click");
+  assert.ok(t.calls.includes("openLink:https://a.com/x"));
+  assert.equal(event.defaultPrevented, true);
+});
+
+test("the prompt and an option description are built from nodes too", async () => {
+  const t = await openMd();
+  const prompt = t.doc.root.find((n) => n.className === "prompt")[0]!;
+  assert.equal(prompt.find((n) => n.tagName === "A")[0]!.getAttribute("href"), "https://a.com/p");
+  const desc = t.doc.root.find((n) => n.className === "desc")[0]!;
+  assert.equal(desc.find((n) => n.tagName === "CODE")[0]!.textContent, "outbox");
+});
+
+test("an older server's plain message and prompt still show as text", async () => {
+  const old = { ...detail(), message: "plain *message*" };
+  const t = loadPage({ nativeBack: false, routes: { "GET batches": { body: LIST }, "GET batches/b1": { body: old } } });
+  await openSet(t);
+  assert.equal(t.doc.root.find((n) => n.className === "message")[0]!.textContent, "plain *message*");
+  assert.match(t.texts(), /Which database\?/);
+});
+
+test("the page never builds markup from text: no innerHTML, outerHTML, insertAdjacentHTML or document.write", async () => {
+  const { PAGE_JS } = await import("../src/miniapp/page.ts");
+  for (const forbidden of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /document\.write/, /\beval\(/, /new Function/]) {
+    assert.doesNotMatch(PAGE_JS, forbidden);
+  }
+});

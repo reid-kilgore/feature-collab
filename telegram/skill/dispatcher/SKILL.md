@@ -78,8 +78,8 @@ be delivered. The acknowledgement itself is built by `tg dispatch`.
   not use `*`, `_` or backticks in it; they are removed.
 - **Bold is for a label or the one number that matters, and rarely.** Ids, commands and paths
   go in `code`.
-- **No tables, no `#` headings, no `>` quotes.** They are not rendered; the characters show
-  as text. A short list does the same job.
+- **No tables, no `>` quotes.** They are not rendered; the characters show as text. A short list does the
+  same job.
 - **Several short messages beat one long one** when the topics differ.
 - **A picture, when it says more than text.** Render a small HTML page with headless Chrome
   and send it with `tg send --image status.png "one-line caption"`. Captions over 1024

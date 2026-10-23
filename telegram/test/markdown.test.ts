@@ -47,8 +47,8 @@ test("a single paragraph longer than the limit is hard-split", () => {
 // The skills' "Writing for Telegram" section tells agents what renders and what does not. These tests
 // pin that advice to what the converter really does, so the guide cannot drift from the code.
 
-test("documented: headings are not rendered, the # stays as text", () => {
-  assert.equal(markdownToTelegramHtml("# Title\n## Sub"), "# Title\n## Sub");
+test("documented: headings render as bold lines (Telegram has no heading)", () => {
+  assert.equal(markdownToTelegramHtml("# Title\n## Sub"), "<b>Title</b>\n<b>Sub</b>");
 });
 
 test("documented: tables are not rendered, the pipes stay as text", () => {
