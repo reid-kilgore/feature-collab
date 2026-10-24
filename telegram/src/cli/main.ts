@@ -165,6 +165,11 @@ async function cmdAsk(argv: string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
+  if (!askerAddress.includes(":")) {
+    console.error(`tg ask: the sender address "${askerAddress}" has no colon. Use SESSION:WINDOW (for example the output of tmux display-message -p '#S:#W'); a bare name cannot be looked up reliably when the dispatcher needs to reach the asker.`);
+    process.exitCode = 2;
+    return;
+  }
   if (args.key !== undefined && !args.key.trim()) {
     console.error("--key needs a non-empty value");
     process.exitCode = 1;

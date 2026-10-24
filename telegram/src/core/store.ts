@@ -277,6 +277,23 @@ export class Store {
     return this.db.prepare("SELECT * FROM batches WHERE status = 'pending' AND ask_key = ? ORDER BY created_at").all(key) as unknown as BatchRow[];
   }
 
+  // True when someone has started answering the batch: a question is answered or skipped, or one is
+  // open for a typed answer right now (a force-reply). The store keeps no state for a mini-app page
+  // that is open but not yet submitted, so a half-filled page is not seen here. Such a batch is never
+  // swept: Reid is working on it.
+  hasAnswerProgress(batchId: string): boolean {
+    const row = this.db
+      .prepare("SELECT 1 AS x FROM questions WHERE batch_id = ? AND status IN ('answered', 'skipped', 'awaiting_text') LIMIT 1")
+      .get(batchId);
+    return row !== undefined;
+  }
+
+  // Time of the latest audit row of `kind` for the batch, or undefined.
+  lastAuditAt(batchId: string, kind: string): string | undefined {
+    const row = this.db.prepare("SELECT MAX(at) AS at FROM audit WHERE batch_id = ? AND kind = ?").get(batchId, kind) as { at: string | null };
+    return row.at ?? undefined;
+  }
+
   // Sweep (the dispatcher's 30-minute check): pending batches older than `olderThanMs` that were not
   // pinged in the last `quietMs`. A ping is a 'sweep_ping' audit row.
   listSweepDue(olderThanMs: number, quietMs: number, nowMs = Date.now()): BatchRow[] {
@@ -285,18 +302,23 @@ export class Store {
     return this.db
       .prepare(
         `SELECT * FROM batches b WHERE b.status = 'pending' AND b.created_at <= ?
+           AND NOT EXISTS (SELECT 1 FROM questions q WHERE q.batch_id = b.id AND q.status IN ('answered', 'skipped', 'awaiting_text'))
            AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.batch_id = b.id AND a.kind = 'sweep_ping' AND a.at > ?)
          ORDER BY b.created_at`,
       )
       .all(cutoff, quiet) as unknown as BatchRow[];
   }
 
-  // Pending batches older than `olderThanMs` that name no asker: nobody can be asked about them, so the
-  // daemon cancels them itself (daemon sweepSenderless).
+  // Pending batches older than `olderThanMs` that name no asker and have no answer progress: nobody can
+  // be asked about them, so the daemon cancels them itself (daemon sweepSenderless).
   listSenderlessStale(olderThanMs: number, nowMs = Date.now()): BatchRow[] {
     const cutoff = new Date(nowMs - olderThanMs).toISOString();
     return this.db
-      .prepare("SELECT * FROM batches WHERE status = 'pending' AND created_at <= ? AND (asker_address IS NULL OR TRIM(asker_address) = '') ORDER BY created_at")
+      .prepare(
+        `SELECT * FROM batches b WHERE b.status = 'pending' AND b.created_at <= ? AND (b.asker_address IS NULL OR TRIM(b.asker_address) = '')
+           AND NOT EXISTS (SELECT 1 FROM questions q WHERE q.batch_id = b.id AND q.status IN ('answered', 'skipped', 'awaiting_text'))
+         ORDER BY b.created_at`,
+      )
       .all(cutoff) as unknown as BatchRow[];
   }
 

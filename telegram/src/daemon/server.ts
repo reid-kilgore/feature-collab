@@ -848,6 +848,26 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             write({ ok: true });
             return;
           }
+          if (deps.store.hasAnswerProgress(batch.id)) {
+            write({ error: `refusing to cancel ${batch.id}: the user has already answered or skipped part of it, or is answering it now. Only \`tg cancel ${batch.id}\` by the asker or the user can cancel it.` });
+            return;
+          }
+          // A failed lookup of the sender is weak evidence that it is gone. The first unreachable report is
+          // recorded and nothing is cancelled; a second one, at least one sweep interval later with no ping
+          // between, cancels.
+          const now = Date.now();
+          const lastPing = deps.store.lastAuditAt(batch.id, "sweep_ping");
+          const firstAt = deps.store.lastAuditAt(batch.id, "sweep_unreachable");
+          const firstCounts = firstAt !== undefined && (lastPing === undefined || firstAt > lastPing);
+          if (!firstCounts) {
+            deps.store.appendAudit("sweep_unreachable", batch.id, null, { sender: batch.asker_address });
+            write({ ok: true, cancelled: false, deferred: "first-unreachable" });
+            return;
+          }
+          if (now - Date.parse(firstAt) < SWEEP_RECHECK_MS) {
+            write({ ok: true, cancelled: false, deferred: "too-soon" });
+            return;
+          }
           await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
           deps.store.appendAudit("sweep_cancel", batch.id, null, { sender: batch.asker_address });
           write({ ok: true, cancelled: true });
@@ -890,6 +910,8 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
 // alone for three hours.
 const SWEEP_STALE_MS = 60 * 60 * 1000;
 const SWEEP_QUIET_MS = 3 * 60 * 60 * 1000;
+// Two unreachable reports at least this far apart (one dispatcher sweep interval) are needed to cancel.
+const SWEEP_RECHECK_MS = 30 * 60 * 1000;
 
 function createAskBatch(
   deps: ConnectionDeps,
