@@ -159,6 +159,15 @@ test("sweep cancel cancels the question, tells the user once, and writes audit r
     const id = (await pendingJson(h))[0]!.id;
     const sentBefore = h.fake.sent.filter((m) => m.method === "sendMessage").length;
     assert.equal((await h.runCli(["dispatcher", "sweep", "ping", id])).code, 0);
+    // the first unreachable report only records; a second one under 30 minutes later still does not cancel
+    const first = await h.runCli(["dispatcher", "sweep", "cancel", id]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.equal(JSON.parse(first.stdout).status, "deferred");
+    assert.equal(JSON.parse((await h.runCli(["dispatcher", "sweep", "cancel", id])).stdout).status, "deferred");
+    assert.equal((await pendingJson(h)).length, 1, "still open");
+    assert.equal(h.fake.sent.filter((m) => m.method === "sendMessage" && /Cancelled the open question/.test(String(m.body.text ?? ""))).length, 0, "no notice yet");
+    db(h).prepare("UPDATE audit SET at = ? WHERE kind = 'sweep_ping'").run(new Date(Date.now() - 40 * 60_000).toISOString());
+    db(h).prepare("UPDATE audit SET at = ? WHERE kind = 'sweep_unreachable'").run(new Date(Date.now() - 31 * 60_000).toISOString());
     const r = await h.runCli(["dispatcher", "sweep", "cancel", id]);
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual(JSON.parse(r.stdout), { status: "cancelled", id });
@@ -244,6 +253,112 @@ test("the daemon cancels a question with no sender after an hour by itself: one 
     assert.match(String(audit[0]!.detail_json), /daemon/);
     keeper.proc.kill("SIGKILL");
     fresh.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+// The incident shape: a 2-question set, question 1 answered, the sender cannot be found.
+const Q2 = [
+  { id: "a", prompt: "First?", type: "single", options: [{ value: "x", label: "X" }] },
+  { id: "b", prompt: "Second?", type: "single", options: [{ value: "y", label: "Y" }] },
+];
+
+function setQuestionStatus(h: Harness, batchId: string, idx: number, status: string): void {
+  db(h).prepare("UPDATE questions SET status = ? WHERE batch_id = ? AND idx = ?").run(status, batchId, idx);
+}
+
+test("a partly answered set is never listed by the sweep and sweep cancel refuses it, whatever the unreachable count", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const a = await openAsk(h, ["--from", "maestro:maestro"], { questions: Q2 });
+    const id = (await pendingJson(h))[0]!.id;
+    db(h).prepare("UPDATE batches SET created_at = ? WHERE id = ?").run(new Date(Date.now() - 2 * 3600_000).toISOString(), id);
+    const due = async () => JSON.parse((await h.runCli(["dispatcher", "sweep"])).stdout).due as Array<Record<string, any>>;
+    assert.deepEqual((await due()).map((x) => x.id), [id], "untouched: due");
+
+    for (const status of ["answered", "skipped", "awaiting_text"]) {
+      setQuestionStatus(h, id, 0, status);
+      assert.deepEqual(await due(), [], `${status}: not presented`);
+      const c = await h.runCli(["dispatcher", "sweep", "cancel", id]);
+      assert.equal(c.code, 1, status);
+      assert.match(c.stderr, /already answered or skipped/);
+      db(h).prepare("UPDATE audit SET at = ? WHERE kind = 'sweep_unreachable'").run(new Date(Date.now() - 5 * 3600_000).toISOString());
+      assert.equal((await h.runCli(["dispatcher", "sweep", "cancel", id])).code, 1, `${status}: refused even after two reports`);
+    }
+    assert.equal((await pendingJson(h)).length, 1, "still open");
+    assert.equal(db(h).prepare("SELECT 1 FROM audit WHERE kind = 'sweep_cancel'").all().length, 0);
+    a.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the daemon's senderless auto-cancel leaves a partly answered set alone", async () => {
+  const h = await setupHarness();
+  try {
+    h.env.AGENT_TELEGRAM_SWEEP_MS = "150";
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const a = await openAsk(h, ["--from", "x:y"], { questions: Q2 });
+    const id = (await pendingJson(h))[0]!.id;
+    setQuestionStatus(h, id, 0, "answered");
+    db(h).prepare("UPDATE batches SET asker_address = NULL, created_at = ? WHERE id = ?").run(new Date(Date.now() - 2 * 3600_000).toISOString(), id);
+    await sleep(700);
+    assert.equal((await pendingJson(h)).length, 1);
+    assert.equal(db(h).prepare("SELECT 1 FROM audit WHERE kind = 'sweep_cancel'").all().length, 0);
+    a.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("an untouched set needs two unreachable reports 30 minutes apart; a ping between them starts the count again", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const a = await openAsk(h, ["--from", "gone:win"], { questions: Q2 });
+    const id = (await pendingJson(h))[0]!.id;
+    const cancel = async () => JSON.parse((await h.runCli(["dispatcher", "sweep", "cancel", id])).stdout).status as string;
+    const ageUnreachable = (ms: number) => {
+      db(h).prepare("UPDATE audit SET at = ? WHERE kind = 'sweep_unreachable'").run(new Date(Date.now() - ms).toISOString());
+      db(h).prepare("UPDATE audit SET at = ? WHERE kind = 'sweep_ping'").run(new Date(Date.now() - ms - 60_000).toISOString());
+    };
+    assert.equal(await cancel(), "deferred");
+    ageUnreachable(31 * 60_000);
+    // the sender answers a later nudge: the earlier report no longer counts
+    await sleep(5);
+    assert.equal((await h.runCli(["dispatcher", "sweep", "ping", id])).code, 0);
+    assert.equal(await cancel(), "deferred", "first report after a ping");
+    assert.equal((await pendingJson(h)).length, 1);
+    ageUnreachable(31 * 60_000);
+    assert.equal(await cancel(), "cancelled");
+    await a.closed;
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg ask refuses a sender address with no colon, from --from and from the environment, and asks nothing", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const payload = JSON.stringify({ version: 1, title: "T", questions: Q });
+    const r = await h.runCli(["ask", "--from", "maestro", "--json", payload]);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /SESSION:WINDOW/);
+    h.env.AGENT_TELEGRAM_FROM = "maestro";
+    const e = await h.runCli(["ask", "--json", payload]);
+    assert.equal(e.code, 2);
+    assert.deepEqual(await pendingJson(h), []);
     daemon.kill("SIGKILL");
   } finally {
     await h.teardown();

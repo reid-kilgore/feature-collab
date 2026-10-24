@@ -306,3 +306,4 @@ What it does now.
 - A skipped entry is not lost: it stays due and returns on the next wake-up, at most every 30 minutes.
 
 Not done. The ping half still depends on the dispatcher acting, because only a session can reach a session. A mechanical backstop (for example a notice to the user when a due question has been presented for many hours without a ping) is a possible follow-up; it was not built.
+- Safety (added 2026-10-24 after a live incident). `tg dispatcher sweep cancel <id>` is two-strike: the first unreachable report is recorded (`sweep_unreachable`) and cancels nothing; a second, at least 30 minutes later with no ping between, cancels. A batch with an answered, skipped or being-answered question is never presented and cannot be cancelled by the sweep. See DESIGN.md, "Question sweep".

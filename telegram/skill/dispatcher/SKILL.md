@@ -51,8 +51,10 @@ phone for over an hour. Each entry is a nudge exactly like the one `tg dispatch`
 for every entry before you finish: SendMessage its `message` to `to` (address it as in step 4). It is not one of
 the user's messages and needs no routing, but it is not optional. If the send works, run the entry's `onSent`
 command (`tg dispatcher sweep ping <id>`): that question is left alone for three hours. If no live session
-answers to `to`, run its `onUnreachable` command (`tg dispatcher sweep cancel <id>`): it cancels the question and
-tells the user once. An entry you skip comes back on the next wake-up. `tg dispatcher sweep` with no argument
+answers to `to`, run its `onUnreachable` command (`tg dispatcher sweep cancel <id>`): the first time it only
+records the miss and prints `deferred`; the question stays open and comes back on a later wake-up. Only a second
+miss at least 30 minutes later, with no successful ping between, cancels it and tells the user once. A question
+the user has already answered or skipped part of is never listed, and the command refuses to cancel it. An entry you skip comes back on the next wake-up. `tg dispatcher sweep` with no argument
 prints the same list. Each ping and cancel is recorded in the audit table.
 
 A question that names no session at all is not yours to handle: the daemon cancels it itself after an hour,

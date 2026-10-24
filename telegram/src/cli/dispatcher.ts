@@ -126,6 +126,11 @@ async function dispatcherSweep(argv: string[]): Promise<void> {
   try {
     const r = await oneShot({ op: "sweep", action, id });
     if (isError(r)) return fail(r.error);
+    const result = r as SweepResponse;
+    if (action === "cancel" && result.deferred) {
+      console.log(JSON.stringify({ status: "deferred", id, reason: result.deferred === "first-unreachable" ? "first unreachable report recorded; the question stays open and comes back at a later sweep" : "an unreachable report was recorded less than 30 minutes ago; the question stays open" }));
+      return;
+    }
     if (action === "cancel") {
       const state = readDispatcherConfig();
       const channel = state.state === "ok" ? state.config.channel : "dispatcher";
