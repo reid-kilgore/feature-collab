@@ -3,10 +3,13 @@
 // The dispatcher session has one tool, `tg`. Everything it can do to a message is here: wait for
 // messages, hand one to a target the config names, ask Reid a question, read the inquiry log.
 
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { oneShot, RECONNECT_LIMIT_MS, RECONNECT_BASE_MS, RECONNECT_MAX_MS } from "./client.ts";
+import { oneShot, RECONNECT_BASE_MS, RECONNECT_MAX_MS } from "./client.ts";
+import { dispatcherHealthLine } from "../dispatcher/health.ts";
+import { messageForTarget, runCommand, substitute } from "../dispatcher/handoff.ts";
+import type { RunResult } from "../dispatcher/handoff.ts";
 import { stateDir, redact, tmuxBin } from "../config.ts";
 import { readDispatcherConfig, expandHome, validAddress } from "../dispatcher/config.ts";
 import type { DispatcherConfig, Target } from "../dispatcher/config.ts";
@@ -154,48 +157,53 @@ function isConnectionLoss(error: unknown): boolean {
   return /Could not connect to the agent-telegram daemon|daemon closed the connection/.test(message);
 }
 
+const REARM = "tg dispatcher wait";
+
+// Every way the wait ends prints one JSON line on stdout that carries `rearm`: the session reads it and runs the
+// command again. Nothing here ends the wait silently or with stderr text alone, because a session that is told
+// nothing does not know it has stopped listening (the stall of 2026-10-24 began that way).
+function printEnd(body: Record<string, unknown>): void {
+  process.stdout.write(JSON.stringify({ version: 1, ...body, protocol: DISPATCHER_PROTOCOL, rearm: REARM }) + "\n");
+}
+
 async function dispatcherWait(): Promise<void> {
   const config = requireConfig();
   if (!config) return;
   const onSigint = () => {
-    process.stdout.write(JSON.stringify({ version: 1, status: "timeout", messages: [], protocol: DISPATCHER_PROTOCOL }) + "\n");
+    printEnd({ status: "timeout", messages: [] });
     process.exit(2);
   };
   process.on("SIGINT", onSigint);
   // The wait ends at least every SWEEP_INTERVAL_SECONDS, so the dispatcher wakes for the question sweep.
   const waitUntil = Date.now() + Math.min(config.waitTimeoutSeconds, SWEEP_INTERVAL_SECONDS) * 1000;
-  let lostSince: number | undefined;
   let attempt = 0;
   try {
     for (;;) {
-      // The whole wait still ends at the configured timeout, however many times the daemon came and went.
+      // The whole wait still ends at the configured timeout once the daemon answers.
       const remainingSeconds = Math.max(1, Math.ceil((waitUntil - Date.now()) / 1000));
       try {
         const response = await oneShot({ op: "recv", wait: true, peek: false, timeoutSeconds: remainingSeconds, channel: config.channel });
         if (isError(response)) {
+          // A refusal is not retried. "already has a listener" means an earlier wait is still running.
           fail(response.error);
+          const already = /already has a listener/.test(response.error);
+          process.stdout.write(
+            JSON.stringify({ version: 1, status: "error", error: response.error, protocol: DISPATCHER_PROTOCOL, rearm: already ? "not needed: an earlier wait is still running" : REARM }) + "\n",
+          );
           return;
         }
         const recv = response as RecvResponse;
-        process.stdout.write(JSON.stringify({ ...recv, ...(await sweepField()), protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
+        printEnd({ ...recv, ...(await sweepField()) });
         process.exitCode = recv.status === "received" ? 0 : 2;
         return;
       } catch (error) {
         if (!isConnectionLoss(error)) {
           fail((error as Error).message);
+          printEnd({ status: "error", error: (error as Error).message });
           return;
         }
-        const now = Date.now();
-        lostSince ??= now;
-        if (now >= waitUntil) {
-          process.stdout.write(JSON.stringify({ version: 1, status: "timeout", messages: [], ...(await sweepField()), protocol: DISPATCHER_PROTOCOL, rearm: "tg dispatcher wait" }) + "\n");
-          process.exitCode = 2;
-          return;
-        }
-        if (now - lostSince >= RECONNECT_LIMIT_MS) {
-          fail(`lost the daemon for ${Math.round((now - lostSince) / 1000)}s and could not reconnect: ${(error as Error).message}. Run \`tg dispatcher wait\` again once it is back (\`tg doctor\` says what is wrong).`);
-          return;
-        }
+        // The daemon is away (a restart, a crash, an update). Keep trying for as long as it takes: the wait is
+        // the dispatcher's only ear, and a wait that gave up left Reid's messages unheard.
         await sleep(Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS));
         attempt++;
       }
@@ -322,61 +330,14 @@ async function dispatcherStatus(): Promise<void> {
     else if (d.mode === "invalid") console.log(`dispatcher: OFF, dispatcher.json is invalid: ${d.error}`);
     else if (d.mode === "disabled") console.log(`dispatcher: disabled (not routing real messages); a session ${d.listening ? "is" : "is not"} listening on ${d.channel}`);
     else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
+    const health = dispatcherHealthLine(d);
+    if (health) console.log(health);
   } catch (error) {
     fail((error as Error).message);
   }
 }
 
 // ---- tg dispatch ----
-
-interface RunResult {
-  ok: boolean;
-  stdout: string;
-  error?: string;
-}
-
-function substitute(template: string, values: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
-    if (!(key in values)) throw new Error(`missing value for {{${key}}}`);
-    return values[key]!;
-  });
-}
-
-function messageForTarget(inquiry: Inquiry): string {
-  const parts = [inquiry.text ?? ""];
-  if (inquiry.replyToQuote) parts.push(`(replying to: "${inquiry.replyToQuote}")${inquiry.replyToChannel ? ` · reply to a notice from channel ${inquiry.replyToChannel}` : ""}`);
-  if (inquiry.photoPath) parts.push(`Attachment (photo): ${inquiry.photoPath}`);
-  if (inquiry.filePath) parts.push(`Attachment (file): ${inquiry.filePath}`);
-  return parts.filter(Boolean).join("\n\n");
-}
-
-function runCommand(argv: string[], stdin: string, timeoutMs = 60_000): Promise<RunResult> {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "pipe"] });
-    } catch (error) {
-      resolve({ ok: false, stdout: "", error: (error as Error).message });
-      return;
-    }
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
-    child.stdout.on("data", (c) => (stdout += c.toString()));
-    child.stderr.on("data", (c) => (stderr += c.toString()));
-    child.stdin.on("error", () => {});
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ ok: false, stdout, error: error.message });
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (code === 0) resolve({ ok: true, stdout });
-      else resolve({ ok: false, stdout, error: stderr.trim().split("\n")[0] || `exited with ${signal ?? code}` });
-    });
-    child.stdin.end(stdin);
-  });
-}
 
 function allowedCwd(target: Target, cwd: string): string | undefined {
   let real: string;

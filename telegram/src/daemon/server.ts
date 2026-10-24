@@ -19,6 +19,7 @@ import {
 } from "../config.ts";
 import { Store, newId, newShortId } from "../core/store.ts";
 import { appendInquiry, entryFromInboxRow, findInquiry, readInquiries } from "../core/inquiry-log.ts";
+import { checkStalledMessages } from "./stall.ts";
 import { activeDispatcher, readDispatcherConfig, validDispatcher } from "../dispatcher/config.ts";
 import { BOT_COMMANDS_INBOX } from "../transports/telegram/handler.ts";
 import { REACTION_HANDED_OFF } from "../transports/telegram/reactions.ts";
@@ -51,6 +52,11 @@ interface ChannelEntry {
 
 // Test hook: AGENT_TELEGRAM_SWEEP_MS shortens the interval so a test need not wait 30 s.
 const SWEEP_INTERVAL_MS = Number(process.env.AGENT_TELEGRAM_SWEEP_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_SWEEP_MS) : 30000;
+
+// The dispatcher channel's unconsumed-message alarm: a message unread this long is handed to the default
+// target by the daemon itself. Test hooks shorten both.
+const STALL_AFTER_MS = Number(process.env.AGENT_TELEGRAM_STALL_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_STALL_MS) : 5 * 60_000;
+const STALL_CHECK_MS = Number(process.env.AGENT_TELEGRAM_STALL_CHECK_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_STALL_CHECK_MS) : 30_000;
 
 function log(line: string): void {
   const stamped = `${new Date().toISOString()} ${redact(line)}\n`;
@@ -147,16 +153,27 @@ export async function runDaemon(): Promise<void> {
     if (!entry) return false;
     return entry.listening > 0 || (entry.lastListenEndAt > 0 && Date.now() - entry.lastListenEndAt < ttlSeconds * 1000);
   };
+  // How long the channel has had no listener (0 while one listens). With no listener since this daemon started,
+  // the gap runs from the start: a daemon cannot know about a gap before it.
+  const noListenerSeconds = (channel: string): number => {
+    const entry = channelState.get(channel);
+    if (entry && entry.listening > 0) return 0;
+    const since = entry && entry.lastListenEndAt > 0 ? entry.lastListenEndAt : startedAt.getTime();
+    return Math.max(0, Math.floor((Date.now() - since) / 1000));
+  };
   const dispatcherStatus = (): DispatcherStatus => {
     const state = readDispatcherConfig();
     if (state.state === "absent") return { mode: "off" };
     if (state.state === "invalid") return { mode: "invalid", error: state.error };
-    if (!state.config.enabled) return { mode: "disabled", channel: state.config.channel, listening: isChannelListening(state.config.channel), queued: store.countUnreadForChannel(state.config.channel) };
+    const channel = state.config.channel;
+    const oldest = store.oldestUnreadAt(channel);
     return {
-      mode: "on",
-      channel: state.config.channel,
-      listening: isChannelListening(state.config.channel),
-      queued: store.countUnreadForChannel(state.config.channel),
+      mode: state.config.enabled ? "on" : "disabled",
+      channel,
+      listening: isChannelListening(channel),
+      queued: store.countUnreadForChannel(channel),
+      noListenerSeconds: noListenerSeconds(channel),
+      oldestUnconsumedSeconds: oldest ? Math.max(0, Math.floor((Date.now() - Date.parse(oldest)) / 1000)) : null,
     };
   };
   const dispatcherQueued = () => {
@@ -314,6 +331,11 @@ export async function runDaemon(): Promise<void> {
     sweepSenderless(store, port, onResolved, notifyUser).catch((error) => log(`senderless sweep error: ${(error as Error).message}`));
   }, SWEEP_INTERVAL_MS);
 
+  // The unconsumed-message alarm (DESIGN-dispatcher.md, "The stall alarm"): runs with no Claude session involved.
+  const stallTimer = setInterval(() => {
+    checkStalledMessages({ store, api, chatId: config.chatId, log, thresholdMs: STALL_AFTER_MS }).catch((error) => log(`stall alarm error: ${(error as Error).message}`));
+  }, STALL_CHECK_MS);
+
   const registerInboxWaiter = (resolve: () => void) => {
     inboxWaiters.push(resolve);
   };
@@ -381,6 +403,7 @@ export async function runDaemon(): Promise<void> {
     forceExitTimer.unref();
     try {
       clearInterval(sweepTimer);
+      clearInterval(stallTimer);
       tailscaleWatcher.stop();
       menuUpdater?.stop();
       for (const socket of openSockets) socket.destroy();

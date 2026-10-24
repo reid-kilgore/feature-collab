@@ -173,6 +173,11 @@ export interface DispatcherStatus {
   channel?: string;
   listening?: boolean;
   queued?: number;
+  // Seconds the channel has had no listener: 0 while one is listening; otherwise since the last listener left,
+  // or since the daemon started when none has listened since.
+  noListenerSeconds?: number;
+  // Age in seconds of the oldest unconsumed message on the channel; null when none is waiting.
+  oldestUnconsumedSeconds?: number | null;
 }
 
 export interface ChannelStatus {

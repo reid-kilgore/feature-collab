@@ -516,6 +516,30 @@ export class Store {
       .all() as unknown as Array<{ channel: string; count: number }>;
   }
 
+  // Unread messages on a channel received before `beforeIso` that the stall alarm has not yet handled. The alarm
+  // writes a 'dispatcher_stall_alarm' audit row naming the inbox id the moment it takes a message, so a message
+  // is never alarmed twice, even across a daemon restart.
+  listStalledInbox(channel: string, beforeIso: string): InboxRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM inbox WHERE consumed_at IS NULL AND channel = ? AND at < ?
+           AND NOT EXISTS (SELECT 1 FROM audit WHERE kind = 'dispatcher_stall_alarm' AND json_extract(detail_json, '$.inbox') = inbox.id)
+         ORDER BY at`,
+      )
+      .all(channel, beforeIso) as unknown as InboxRow[];
+  }
+
+  // The receive time of the oldest unread message on a channel, or undefined.
+  oldestUnreadAt(channel: string): string | undefined {
+    const row = this.db.prepare("SELECT MIN(at) AS at FROM inbox WHERE consumed_at IS NULL AND channel = ?").get(channel) as { at: string | null };
+    return row.at ?? undefined;
+  }
+
+  // Puts a message back in the queue (a hand-off that failed after the alarm took it).
+  unconsumeInbox(id: string): void {
+    this.db.prepare("UPDATE inbox SET consumed_at = NULL WHERE id = ?").run(id);
+  }
+
   consumeInbox(ids: string[]): void {
     const now = new Date().toISOString();
     const stmt = this.db.prepare("UPDATE inbox SET consumed_at = ? WHERE id = ?");

@@ -102,7 +102,11 @@ targets you list.
    message in the dispatcher's queue.
 4. Set `"enabled": true` and send the bot a message. A 👀 reaction means the dispatcher has it, ✍ means it is queued
    because the dispatcher is not listening (you also get one notice per outage), and 🫡 means
-   it was handed off. The acknowledgement is a reply under your message.
+   it was handed off. The acknowledgement is a reply under your message. A message still unread after
+   5 minutes is not left stuck: the daemon hands it to the default target itself (once per message, no
+   session needed) and sends you one notice saying so, or saying the hand-off failed and the message is
+   still queued. `tg status` and `tg doctor` print how long the dispatcher has had no listener and the
+   age of the oldest unread message.
 
 Unread messages left on channels nobody is listening on (for example an old tmux pane id) can
 reach a new session that gets the same id. `tg quarantine --stale-channels --older 1d --dry-run`

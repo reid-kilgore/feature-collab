@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { oneShot, connectToDaemon, sendRequest, readResponses, waitForResult, LostDaemonError } from "./client.ts";
 import { runSetup } from "./setup.ts";
+import { dispatcherHealthLine } from "../dispatcher/health.ts";
 import { cmdDispatcher, cmdDispatch, cmdInquiries, dispatcherDoctor } from "./dispatcher.ts";
 import { runDaemon } from "../daemon/server.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
@@ -529,6 +530,8 @@ async function cmdStatus(): Promise<void> {
       else if (d.mode === "invalid") console.log(`dispatcher: OFF (dispatcher.json invalid: ${d.error})`);
       else if (d.mode === "disabled") console.log(`dispatcher: disabled (not routing real messages); a session ${d.listening ? "is" : "is not"} listening on ${d.channel}`);
       else console.log(`dispatcher: on, channel ${d.channel}, ${d.listening ? "listening" : "NOT listening"}, ${d.queued ?? 0} queued`);
+      const health = dispatcherHealthLine(d);
+      if (health) console.log(health);
     }
     const ts = status.tailscale;
     if (!ts || ts.mode === "off") console.log("tailscale: off (no tailscale.json)");
@@ -785,6 +788,8 @@ async function cmdDoctor(): Promise<void> {
     } else {
       const status = response as StatusResponse;
       console.log(`daemon: alive, bot=@${status.botUsername}, pending=${status.pendingCount}`);
+      const health = status.dispatcher ? dispatcherHealthLine(status.dispatcher) : undefined;
+      if (health) console.log(health);
       if (config && config.botUsername !== status.botUsername) {
         console.log(`WARNING: config bot (@${config.botUsername}) does not match daemon bot (@${status.botUsername})`);
       }

@@ -17,8 +17,11 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
    before anything else, every time, so a crash or a slow hand-off never leaves you deaf.
    This is also the first thing you do when you start; nothing has armed it for you. If it fails
    with "already has a listener", an earlier wait of yours is still running: do nothing. The wait
-   reconnects by itself if the daemon restarts. If it fails with "lost the daemon", it retried for
-   minutes and gave up: run it again, and if that fails too, tell the user with `tg send`.
+   reconnects by itself, for as long as it takes, if the daemon restarts; a restart never ends it.
+   Every other end (a message, a timeout, an error) prints one JSON line with a `rearm` field:
+   run that command again at once, whatever the status. If a re-arm itself fails, tell the user
+   with `tg send`. While no wait runs you hear nothing. After 5 minutes the daemon hands a waiting
+   message to the default target without you and tells the user, but that is only the safety net.
 2. **Read the targets** with `tg dispatcher targets`. Never rely on a remembered list; the
    config can change between wake-ups.
 3. **Handle each message, oldest first.** For a message with `id` and `text`:
