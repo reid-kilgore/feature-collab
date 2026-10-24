@@ -170,18 +170,18 @@ export class TelegramApi {
     await this.call("answerCallbackQuery", { callback_query_id: id, text, show_alert: showAlert });
   }
 
-  async sendPhoto(chatId: string, filePath: string, caption?: string): Promise<SendMessageResult> {
+  async sendPhoto(chatId: string, filePath: string, caption?: string, replyMarkup?: ReplyMarkup): Promise<SendMessageResult> {
     return this.callMultipart<SendMessageResult>(
       "sendPhoto",
-      { chat_id: chatId, ...(caption ? { caption, parse_mode: "HTML" } : {}) },
+      { chat_id: chatId, ...(caption ? { caption, parse_mode: "HTML" } : {}), ...(replyMarkup ? { reply_markup: JSON.stringify(replyMarkup) } : {}) },
       { field: "photo", path: filePath, filename: path.basename(filePath) },
     );
   }
 
-  async sendDocument(chatId: string, filePath: string, caption?: string): Promise<SendMessageResult> {
+  async sendDocument(chatId: string, filePath: string, caption?: string, replyMarkup?: ReplyMarkup): Promise<SendMessageResult> {
     return this.callMultipart<SendMessageResult>(
       "sendDocument",
-      { chat_id: chatId, ...(caption ? { caption, parse_mode: "HTML" } : {}) },
+      { chat_id: chatId, ...(caption ? { caption, parse_mode: "HTML" } : {}), ...(replyMarkup ? { reply_markup: JSON.stringify(replyMarkup) } : {}) },
       { field: "document", path: filePath, filename: path.basename(filePath) },
     );
   }

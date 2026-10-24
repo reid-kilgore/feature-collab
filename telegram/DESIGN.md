@@ -121,6 +121,8 @@ tg send --level success|warning|error|info --title "Done" "body"
 tg send --image path.png ["caption"]              sendPhoto (falls back to sendDocument if >10MB or not an image)
 tg send --file path ["caption"]                    sendDocument
 tg send -                                          body from stdin
+tg send --button "label=url" ...                   url button(s) under the message, one per row
+tg send --no-button                                no automatic button for a lone link
 ```
 
 Level: info and success add nothing (the message starts with its content); warning and error put one ⚠️ or ❌ at the start of the first line. (Superseded 2026-10-22: there used to be a header line "<level emoji> 🖥 <host>" on every message.) Title bold on its own line. When the sender gave a title or a channel, a small italic last line names the sender: its tmux address `session:window` whenever it is in tmux, or an address passed with `--from` / `AGENT_TELEGRAM_FROM` (for callers over ssh); otherwise the channel's name, and only when a title or channel was given. When the sender gave a title or a channel, the old rule applied (superseded 2026-10-22). Body Markdown → Telegram HTML; on a
@@ -272,6 +274,15 @@ message). Each question message: `<b>Q2/3 — prompt</b>` then option descriptio
 
 Notifications: `sendMessage` HTML; `sendPhoto` for png/jpg/gif/webp ≤10 MB, else `sendDocument`
 (≤50 MB, else error). Caption ≤1024 chars; longer bodies go as a separate message after the media.
+
+URL buttons (`src/core/buttons.ts`): `inline_keyboard` rows of `{text, url}`. Explicit `--button`s are carried
+CLI to daemon (`NotifyRequest.buttons`) to the transport. With none, a body (or caption) whose rendered HTML
+holds exactly one distinct http(s) `<a>` (code spans and blocks do not count) gets one button: the link text,
+or `Open <host>` for a bare address. `--no-button` (`noButton`) skips that. Buttons sit under the last chunk of
+a split text, or on the photo/document. A send Telegram rejects with a message naming the button
+(BUTTON_URL_INVALID: IP address, localhost) is repeated once without `reply_markup` and logged (`withButtonFallback`).
+`tg ask`: the header message (title and `message`) has no answer keyboard, since those sit on the question
+messages, so the same automatic button is added there; there is no opt-out in the ask payload.
 
 ## Storage (SQLite)
 

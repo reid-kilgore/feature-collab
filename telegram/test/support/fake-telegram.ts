@@ -27,6 +27,10 @@ export class FakeTelegram {
   server: http.Server;
   baseUrl = "";
   sent: SentMessage[] = [];
+  // Set to make sendMessage / sendPhoto / sendDocument refuse a url button, as Telegram does for an IP or localhost.
+  // Each refused attempt is kept in `refused`, not in `sent`.
+  refuseUrlButtons = false;
+  refused: Array<Record<string, unknown>> = [];
   private updates: Array<{ update_id: number } & Record<string, unknown>> = [];
   private nextUpdateId = 1;
   private nextMessageId = 1;
@@ -101,6 +105,7 @@ export class FakeTelegram {
       body = {
         chat_id: extractField(raw, "chat_id"),
         caption: extractField(raw, "caption"),
+        reply_markup: extractField(raw, "reply_markup"),
         filename: /filename="([^"]*)"/.exec(raw)?.[1],
       };
     }
@@ -130,6 +135,10 @@ export class FakeTelegram {
       case "sendMessage":
       case "sendPhoto":
       case "sendDocument": {
+        if (this.refuseUrlButtons && /"url":/.test(typeof body.reply_markup === "string" ? body.reply_markup : JSON.stringify(body.reply_markup ?? ""))) {
+          this.refused.push(body);
+          return json({ ok: false, error_code: 400, description: "Bad Request: BUTTON_URL_INVALID" }, 400);
+        }
         const id = this.nextMessageId++;
         this.sent.push({ method, body, messageId: id });
         return json({ ok: true, result: { message_id: id } });

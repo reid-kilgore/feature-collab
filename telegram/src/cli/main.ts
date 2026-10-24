@@ -12,6 +12,7 @@ import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, DocumentInput } from "../contract/payload.ts";
 import { extractMarkdownImageRefs, isImagePath } from "../core/diagrams.ts";
 import type { Level } from "../contract/notify.ts";
+import { parseButtonArg, type LinkButton } from "../core/buttons.ts";
 import { readPresence, setPresence, describePresence } from "../presence.ts";
 import { getToken, readConfig, configExists, shortHostname, redact, tmuxBin } from "../config.ts";
 import type {
@@ -91,6 +92,9 @@ Commands:
   ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default] [--key KEY] --from ADDRESS
       (--from, AGENT_TELEGRAM_FROM or a tmux session:window is required; exit 2 without one)
   send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID] [--from ADDRESS]
+       [--button "label=url"]... [--no-button]
+      (a --button is a tappable link under the message, one per row; with none, a lone http(s) link in the text becomes one
+       unless --no-button)
   status
   pending [--json]
   cancel <id|all> | cancel --key KEY
@@ -396,6 +400,8 @@ function parseSendArgs(argv: string[]): {
   channel?: string;
   replyToMessageId?: number;
   from?: string;
+  buttons: LinkButton[];
+  noButton: boolean;
 } {
   let level: Level = "info";
   let title: string | undefined;
@@ -405,11 +411,17 @@ function parseSendArgs(argv: string[]): {
   let channel: string | undefined;
   let replyToMessageId: number | undefined;
   let from: string | undefined;
+  const buttons: LinkButton[] = [];
+  let noButton = false;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--level") {
+    if (arg === "--button") {
+      buttons.push(parseButtonArg(argv[++i] ?? ""));
+    } else if (arg === "--no-button") {
+      noButton = true;
+    } else if (arg === "--level") {
       const v = argv[++i];
       if (v !== "info" && v !== "success" && v !== "warning" && v !== "error") throw new Error("--level must be info, success, warning, or error");
       level = v;
@@ -432,7 +444,7 @@ function parseSendArgs(argv: string[]): {
       positional.push(arg!);
     }
   }
-  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from };
+  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -462,6 +474,8 @@ async function cmdSend(argv: string[]): Promise<void> {
     channel: resolveChannel(args.channel),
     replyToMessageId: args.replyToMessageId,
     sender: senderName(args),
+    ...(args.buttons.length ? { buttons: args.buttons } : {}),
+    ...(args.noButton ? { noButton: true } : {}),
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {

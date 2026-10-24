@@ -37,6 +37,7 @@ tg send "Deploy finished, all checks green"
 tg send --level error --title "Build broke" "TypeScript errors in src/api after the last commit"
 tg send --level success "Migrated 40 files"
 tg send --image ./screenshot.png "Before/after diff"
+tg send --button "Review page=https://example.com/review/7" "Ready for review"
 ```
 
 Levels: `info` (default), `success`, `warning`, `error`. Body is Markdown. A message starts with its
@@ -192,6 +193,14 @@ What tg actually renders (this is what the converter does, not what Markdown all
 The same Markdown renders in a `tg ask` batch `message`, in each question `prompt` and in each option
 `description`, both in the chat and in the phone mini app. Write links as `[text](https://…)` so only the
 text shows. An option `label` is plain text.
+
+**A lone link becomes a button.** When a `tg send` message (or a `tg ask` batch `message`) holds exactly
+one http(s) link, tg also puts it under the message as a tappable button, named after the link's text
+or `Open <host>`. The link stays in the text. So write one link as `[the review page](https://…)` and
+leave it at that; with two or more different links no button is made, so pick the one that matters and
+pass it with `--button "label=url"` (repeat for more, one per row). `--no-button` turns the automatic
+button off. Only `http` and `https` links are buttons; if Telegram refuses one (an IP address or
+localhost), the message is still sent, without the button.
 
 A message over 4096 characters is split at blank lines for you, but write less rather than
 rely on that.

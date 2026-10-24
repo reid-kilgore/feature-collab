@@ -23,6 +23,7 @@ import { activeDispatcher, readDispatcherConfig, validDispatcher } from "../disp
 import { BOT_COMMANDS_INBOX } from "../transports/telegram/handler.ts";
 import { REACTION_HANDED_OFF } from "../transports/telegram/reactions.ts";
 import type { QuestionStatus } from "../core/store.ts";
+import type { ReplyMarkup } from "../transports/telegram/api.ts";
 import { TelegramApi, classifyAttachment } from "../transports/telegram/api.ts";
 import { createTelegramPort, BOT_COMMANDS, OPEN_COMMAND } from "../transports/telegram/handler.ts";
 import type { HandlerContext } from "../transports/telegram/handler.ts";
@@ -32,6 +33,7 @@ import type { OnResolved } from "../core/interaction.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, AskResult } from "../contract/payload.ts";
 import { markdownToTelegramHtml, splitMessage } from "../core/markdown.ts";
+import { singleLinkButton, buttonRows, isHttpUrl, withButtonFallback } from "../core/buttons.ts";
 import { renderNotification } from "../transports/telegram/render.ts";
 import { TailscaleWatcher, readTailscaleWatchConfig, describeWatchState } from "../inbox/tailscale-watch.ts";
 import { pendingTailscaleChecks } from "../inbox/tailscale.ts";
@@ -81,7 +83,7 @@ export async function runDaemon(): Promise<void> {
   const store = new Store(dbFile());
   const api = new TelegramApi(token, apiBase());
   const hostname = shortHostname();
-  const port = createTelegramPort(api);
+  const port = createTelegramPort(api, undefined, log);
   const startedAt = new Date();
 
   const waiters = new Map<string, Array<(result: AskResult) => void>>();
@@ -938,6 +940,8 @@ async function sendNotification(
     replyToMessageId?: number;
     inquiryId?: string;
     sender?: string;
+    buttons?: Array<{ text: string; url: string }>;
+    noButton?: boolean;
   },
 ): Promise<number | undefined> {
   const bodyHtml = request.body ? markdownToTelegramHtml(request.body) : undefined;
@@ -951,6 +955,11 @@ async function sendNotification(
     deps.markSend(request.channel);
   };
 
+  // Explicit buttons win; otherwise a lone link in the text (or the caption) becomes one, unless switched off.
+  const explicit = (request.buttons ?? []).filter((b) => b.text && isHttpUrl(b.url));
+  const auto = explicit.length || request.noButton ? undefined : singleLinkButton(request.caption ?? request.body);
+  const markup = buttonRows(explicit.length ? explicit : auto ? [auto] : []);
+
   const attachmentPath = request.imagePath ?? request.filePath;
   if (attachmentPath) {
     const { kind } = await classifyAttachment(attachmentPath);
@@ -958,36 +967,40 @@ async function sendNotification(
     const caption = captionSource ? markdownToTelegramHtml(captionSource) : undefined;
     const captionFits = caption !== undefined && caption.length <= 1024;
     const inlineCaption = captionFits ? caption : undefined;
+    // The buttons ride on the attachment, or on the follow-up text when the caption was too long for it.
+    const onAttachment = captionFits || caption === undefined ? markup : undefined;
     if (kind === "photo" && request.imagePath) {
-      const sent = await deps.api.sendPhoto(deps.config.chatId, request.imagePath, inlineCaption);
+      const sent = await withButtonFallback(onAttachment, (m) => deps.api.sendPhoto(deps.config.chatId, request.imagePath!, inlineCaption, m as ReplyMarkup | undefined), log);
       recordSent(sent.message_id);
     } else {
-      const sent = await deps.api.sendDocument(deps.config.chatId, attachmentPath, inlineCaption);
+      const sent = await withButtonFallback(onAttachment, (m) => deps.api.sendDocument(deps.config.chatId, attachmentPath, inlineCaption, m as ReplyMarkup | undefined), log);
       recordSent(sent.message_id);
     }
     if (caption !== undefined && !captionFits) {
-      await sendTextWithFallback(deps, caption, recordSent);
+      await sendTextWithFallback(deps, caption, recordSent, undefined, markup);
     }
     return firstMessageId;
   }
 
-  await sendTextWithFallback(deps, text, recordSent, request.replyToMessageId);
+  await sendTextWithFallback(deps, text, recordSent, request.replyToMessageId, markup);
   return firstMessageId;
 }
 
-async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSent: (messageId: number) => void, replyToMessageId?: number): Promise<void> {
+async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSent: (messageId: number) => void, replyToMessageId?: number, markup?: ReplyMarkup): Promise<void> {
   const chunks = splitMessage(html);
   for (const [index, chunk] of chunks.entries()) {
     const replyTo = index === 0 ? replyToMessageId : undefined;
+    // Buttons go under the last chunk, where the reader ends up.
+    const chunkMarkup = index === chunks.length - 1 ? markup : undefined;
     try {
-      const sent = await deps.api.sendMessage(deps.config.chatId, chunk, { html: true, replyToMessageId: replyTo });
+      const sent = await withButtonFallback(chunkMarkup, (m) => deps.api.sendMessage(deps.config.chatId, chunk, { html: true, replyToMessageId: replyTo, replyMarkup: m as ReplyMarkup | undefined }), log);
       recordSent(sent.message_id);
     } catch (error) {
       const message = (error as Error).message ?? "";
       if (message.toLowerCase().includes("parse")) {
         // Formatting must never sink a notification: retry as plain text with tags stripped.
         const plain = chunk.replace(/<[^>]+>/g, "");
-        const sent = await deps.api.sendMessage(deps.config.chatId, plain, { replyToMessageId: replyTo });
+        const sent = await withButtonFallback(chunkMarkup, (m) => deps.api.sendMessage(deps.config.chatId, plain, { replyToMessageId: replyTo, replyMarkup: m as ReplyMarkup | undefined }), log);
         recordSent(sent.message_id);
       } else {
         throw error;
