@@ -32,11 +32,22 @@ Each laptop needs its own bot and its own `tg setup`, because Telegram allows on
 tg send "Build finished"
 tg send --level error --title "Tests failing" "3 failures in src/api"
 tg send --image ./screenshot.png "Before/after"
+tg send --button "Review page=https://example.com/review/7" "Ready for review"
+tg send "Report: [the report](https://example.com/report)"   # a lone link becomes a button too; --no-button stops that
 
 tg ask --json '{"version":1,"questions":[{"id":"go","prompt":"Deploy now?","type":"single","required":true,"options":[{"value":"yes","label":"Yes"},{"value":"no","label":"No"}]}]}'
 
 tg recv --wait --timeout 4h     # block for the user's next message; the text is their instruction to you
 ```
+
+A link can also sit under a message as a tappable button. `--button "label=url"` adds one (repeat it for
+more; each is its own row). With no `--button`, a message whose text holds exactly one http(s) link
+(a bare address or a `[label](url)` link, counting a repeated address once) gets that link as a button,
+named after the link's label or `Open <host>`; the link stays in the text. `--no-button` turns the
+automatic button off. Only http and https links are buttons. If Telegram refuses a button (it does for
+an IP address or localhost), the message is sent again without buttons and the refusal is logged.
+A `tg ask` batch whose `message` holds one link gets the same button on its header message, which
+carries no answer keyboard.
 
 A message starts with its content: no header line. `warning` and `error` put one ⚠️ or ❌ at
 the start of the first line. A small italic last line says who sent it: the sender's tmux address

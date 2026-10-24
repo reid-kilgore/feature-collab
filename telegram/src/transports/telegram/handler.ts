@@ -36,6 +36,8 @@ import type { DispatcherConfig } from "../../dispatcher/config.ts";
 import type { ReceivedEntry } from "../../core/inquiry-log.ts";
 import { maestroAdd, maestroRecent, MaestroError } from "../../inbox/maestro.ts";
 import { renderInboxList, renderInboxDetail, decodeInboxCallback, escapeHtml, truncate } from "../../inbox/render.ts";
+import type { ReplyMarkup } from "./api.ts";
+import { singleLinkButton, buttonRows, withButtonFallback } from "../../core/buttons.ts";
 import { startTailscaleCheck, parseUnreachableAlias, isValidAlias, pendingTailscaleChecks } from "../../inbox/tailscale.ts";
 import type { TailscaleCheckHandle, PendingTailscaleCheck } from "../../inbox/tailscale.ts";
 
@@ -115,13 +117,19 @@ async function sendDiagrams(api: TelegramApi, chatId: string, title: string, dia
   }
 }
 
-export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = renderDiagramToPng): OutboundPort {
+export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = renderDiagramToPng, log?: (line: string) => void): OutboundPort {
   return {
     async sendHeader(batch, payload: AskPayload) {
       const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
       const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
       const text = renderHeader(headerPayload, batch.asker_address ?? undefined);
-      if (text) await api.sendMessage(batch.chat_id, text, { html: true });
+      if (text) {
+        // The header carries no answer keyboard (those sit on the question messages), so a lone link in the
+        // message can be a button here without clashing with anything.
+        const button = singleLinkButton(messageParts?.text ?? payload.message);
+        const markup = button ? buttonRows([button]) : undefined;
+        await withButtonFallback(markup, (m) => api.sendMessage(batch.chat_id, text, { html: true, replyMarkup: m as ReplyMarkup | undefined }), log);
+      }
       if (messageParts?.diagrams.length) {
         await sendDiagrams(api, batch.chat_id, payload.title ?? "Message", messageParts.diagrams, render);
       }

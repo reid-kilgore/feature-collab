@@ -19,6 +19,10 @@ export interface NotifyRequest {
   inquiryId?: string;
   // Short name of the sending session, shown as a small italic last line.
   sender?: string;
+  // URL buttons under the message, one per row. With none, a message holding exactly one http(s) link gets
+  // that link as a button, unless noButton is set.
+  buttons?: Array<{ text: string; url: string }>;
+  noButton?: boolean;
 }
 
 export interface AskRequest {
