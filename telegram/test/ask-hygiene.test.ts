@@ -176,7 +176,7 @@ test("sweep cancel cancels the question, tells the user once, and writes audit r
   }
 });
 
-test("tg dispatcher wait carries the sweep list on its wake-up, and the protocol tells the dispatcher what to do with it", async () => {
+test("tg dispatcher wait presents each due question as a nudge with ready text and its follow-up commands, not as a separate list", async () => {
   const h = await setupHarness();
   try {
     writeFileSync(
@@ -191,12 +191,59 @@ test("tg dispatcher wait carries the sweep list on its wake-up, and the protocol
     const w = await h.runCli(["dispatcher", "wait"]);
     const out = JSON.parse(w.stdout);
     assert.equal(out.status, "timeout");
-    assert.deepEqual(out.sweep.map((x: any) => x.id), [id]);
+    assert.equal(out.sweep, undefined, "no separate sweep list");
+    assert.equal(out.nudges.length, 1);
+    const n = out.nudges[0];
+    assert.equal(n.to, "ship:geo");
+    assert.equal(n.question, id);
+    assert.ok(n.message.includes(id) && n.message.includes(`tg cancel ${id}`) && n.message.includes('"T"'), n.message);
+    assert.equal(n.onSent, `tg dispatcher sweep ping ${id}`);
+    assert.equal(n.onUnreachable, `tg dispatcher sweep cancel ${id}`);
     const protocol = out.protocol.join(" ");
-    for (const needle of ["tg cancel <id>", "ssh <daemon-host> tg cancel <id>", "tg dispatcher sweep ping <id>", "tg dispatcher sweep cancel <id>", "three hours", "audit"]) {
+    for (const needle of ["`nudges`", "rule 4", "SendMessage", "`onSent`", "`onUnreachable`", "three hours", "audit", "not optional"]) {
       assert.ok(protocol.includes(needle), needle);
     }
+    // once recorded, the next wake-up carries no nudge for it
+    assert.equal((await h.runCli(["dispatcher", "sweep", "ping", id])).code, 0);
+    assert.equal(JSON.parse((await h.runCli(["dispatcher", "wait"])).stdout).nudges, undefined);
     a.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("the daemon cancels a question with no sender after an hour by itself: one notice, an audit row, no dispatcher action", async () => {
+  const h = await setupHarness();
+  try {
+    h.env.AGENT_TELEGRAM_SWEEP_MS = "150";
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const orphan = await openAsk(h, ["--from", "x:y"], { title: "T" });
+    const keeper = await openAsk(h, ["--from", "keep:me"], { title: "T" });
+    const fresh = await openAsk(h, ["--from", "fresh:one"], { title: "T" });
+    await until(async () => (await pendingJson(h)).length === 3);
+    const rows = await pendingJson(h);
+    const idOf = (sender: string) => rows.find((r) => r.sender === sender)!.id as string;
+    const orphanId = idOf("x:y");
+    const old = new Date(Date.now() - 61 * 60_000).toISOString();
+    // the orphan loses its sender (as an older record could); the keeper is old but has one; the fresh one is new
+    db(h).prepare("UPDATE batches SET asker_address = NULL, created_at = ? WHERE id = ?").run(old, orphanId);
+    db(h).prepare("UPDATE batches SET created_at = ? WHERE id = ?").run(old, idOf("keep:me"));
+    db(h).prepare("UPDATE batches SET asker_address = NULL WHERE id = ?").run(idOf("fresh:one"));
+
+    await orphan.closed;
+    const pending = await pendingJson(h);
+    assert.deepEqual(pending.map((r) => r.id).sort(), [idOf("keep:me"), idOf("fresh:one")].sort());
+    await sleep(500); // several more passes: nothing else is touched and the notice is not repeated
+    assert.equal((await pendingJson(h)).length, 2);
+    const notices = h.fake.sent.filter((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes(orphanId));
+    assert.equal(notices.length, 1);
+    const audit = db(h).prepare("SELECT kind, detail_json FROM audit WHERE batch_id = ? AND kind = 'sweep_cancel'").all(orphanId) as Array<Record<string, any>>;
+    assert.equal(audit.length, 1);
+    assert.match(String(audit[0]!.detail_json), /daemon/);
+    keeper.proc.kill("SIGKILL");
+    fresh.proc.kill("SIGKILL");
     daemon.kill("SIGKILL");
   } finally {
     await h.teardown();

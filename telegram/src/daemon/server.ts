@@ -49,7 +49,8 @@ interface ChannelEntry {
   lastListenEndAt: number;
 }
 
-const SWEEP_INTERVAL_MS = 30000;
+// Test hook: AGENT_TELEGRAM_SWEEP_MS shortens the interval so a test need not wait 30 s.
+const SWEEP_INTERVAL_MS = Number(process.env.AGENT_TELEGRAM_SWEEP_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_SWEEP_MS) : 30000;
 
 function log(line: string): void {
   const stamped = `${new Date().toISOString()} ${redact(line)}\n`;
@@ -306,8 +307,11 @@ export async function runDaemon(): Promise<void> {
     return { mode: "on", rows: describeWatchState((k) => store.getMeta(k), c.hosts, c.reverse, c.local ?? hostname, Date.now()) };
   };
 
+  const notifyUser = (text: string) => api.sendMessage(config.chatId, text).then(() => undefined);
+
   const sweepTimer = setInterval(() => {
     sweepExpired(store, port, onResolved).catch((error) => log(`sweep error: ${(error as Error).message}`));
+    sweepSenderless(store, port, onResolved, notifyUser).catch((error) => log(`senderless sweep error: ${(error as Error).message}`));
   }, SWEEP_INTERVAL_MS);
 
   const registerInboxWaiter = (resolve: () => void) => {
@@ -338,6 +342,7 @@ export async function runDaemon(): Promise<void> {
       registerInboxWaiter,
       notifyInbox,
       dispatcherSeen,
+      notifyUser,
       addListener,
       isListening,
       markSend,
@@ -479,6 +484,7 @@ interface ConnectionDeps {
   registerInboxWaiter: (resolve: () => void) => void;
   notifyInbox: () => void;
   dispatcherSeen: () => void;
+  notifyUser: (text: string) => Promise<void>;
   addListener: (delta: 1 | -1) => void;
   isListening: () => boolean;
   markSend: (channel: string) => void;
@@ -818,6 +824,8 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
         }
         case "sweep": {
           if (request.action === "due") {
+            // A question with no asker is cancelled here, never listed: no session can be asked about it.
+            await sweepSenderless(deps.store, deps.port, deps.onResolved, deps.notifyUser);
             const now = Date.now();
             const due = deps.store.listSweepDue(SWEEP_STALE_MS, SWEEP_QUIET_MS, now).map((b) => ({
               id: b.id,
@@ -1045,6 +1053,23 @@ async function sweepExpired(store: Store, port: ReturnType<typeof createTelegram
     if (isBatchTimedOut(batch)) {
       await expireBatch(store, port, onResolved, batch.id);
     }
+  }
+}
+
+// A question open for over an hour that names no asker cannot be asked about, so the daemon cancels it
+// itself: no dispatcher step, one notice to the user, one audit row. A sender that merely looks gone is
+// not judged here: the daemon cannot see which sessions are alive (only a session's ListAgents can), so
+// the dispatcher decides that through the sweep nudge and records it with `tg dispatcher sweep cancel`.
+export async function sweepSenderless(
+  store: Store,
+  port: ReturnType<typeof createTelegramPort>,
+  onResolved: OnResolved,
+  notifyUser: (text: string) => Promise<void>,
+): Promise<void> {
+  for (const batch of store.listSenderlessStale(SWEEP_STALE_MS)) {
+    await cancelBatch(store, port, onResolved, batch.id);
+    store.appendAudit("sweep_cancel", batch.id, null, { sender: null, by: "daemon" });
+    await notifyUser(`Cancelled the open question ${batch.id}: it had been open over an hour and named no session to ask about it.`).catch((error) => log(`senderless notice failed: ${(error as Error).message}`));
   }
 }
 

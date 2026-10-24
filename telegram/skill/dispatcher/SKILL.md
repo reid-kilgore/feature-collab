@@ -46,13 +46,17 @@ SendMessage and ListAgents when a hand-off asks for a nudge.
 
 ## The question sweep
 
-A wake-up, even an empty one, can carry a `sweep` list: questions that have been open on the user's phone for
-over an hour. For each, if it has a `sender`, send that session a SendMessage (address it as in step 4) naming
-the question's title and id and asking it to run `tg cancel <id>` (or `ssh <daemon-host> tg cancel <id>`) if the
-answer came another way or the question is not needed. Then run `tg dispatcher sweep ping <id>`; that question is
-left alone for three hours. If there is no `sender`, or no live session can be reached, run
-`tg dispatcher sweep cancel <id>`: it cancels the question and tells the user once. `tg dispatcher sweep` with no
-argument lists what is due. Each ping and cancel is recorded in the audit table.
+A wake-up, even an empty one, can carry a `nudges` list: sessions whose question has been open on the user's
+phone for over an hour. Each entry is a nudge exactly like the one `tg dispatch` prints (step 4), so do the same
+for every entry before you finish: SendMessage its `message` to `to` (address it as in step 4). It is not one of
+the user's messages and needs no routing, but it is not optional. If the send works, run the entry's `onSent`
+command (`tg dispatcher sweep ping <id>`): that question is left alone for three hours. If no live session
+answers to `to`, run its `onUnreachable` command (`tg dispatcher sweep cancel <id>`): it cancels the question and
+tells the user once. An entry you skip comes back on the next wake-up. `tg dispatcher sweep` with no argument
+prints the same list. Each ping and cancel is recorded in the audit table.
+
+A question that names no session at all is not yours to handle: the daemon cancels it itself after an hour,
+tells the user once, and records it in the audit table.
 
 ## Messages and what they mean
 
