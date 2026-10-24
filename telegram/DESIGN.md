@@ -454,3 +454,10 @@ watches for that on a timer so the link reaches Reid on Telegram before somethin
   repeat a notice.
 
 **Addendum, 2026-10-23 (faster and observable).** The default interval is 2 minutes (it was 10; a block that begins and is approved within two minutes could fall between two ticks). Every probe is logged to `daemon.log` ("tailscale probe mbp to duo: ok"), every state change on its own line, and the last probe time and result per direction are kept in `meta` and shown by `tg status`. A probe that printed no link and did not exit within the watch window used to hold its pair until the kill timer (default 1 hour), so no later tick looked at it; it is now killed at once, counted, and reported after two in a row ("probe does not answer"). A probe that simply worked used to be handled twice (once from its result, once from its exit), which probed the reverse direction twice a tick; it is now handled once.
+
+## Question sweep (added 2026-10-24)
+
+A pending batch older than one hour is swept every 30 seconds (the sweeper timer; `AGENT_TELEGRAM_SWEEP_MS` shortens it in tests). Two halves:
+
+1. Mechanical, in the daemon. A batch with no `asker_address` is cancelled by `sweepSenderless`: `cancelBatch`, one `sweep_cancel` audit row (`by: daemon`), one plain notice to the user. It also runs at the start of every `sweep due` request, so the due list never holds such a batch. The daemon does not judge whether a sender is gone: it cannot see which sessions are alive (only a session's ListAgents can, and an asker may be on another machine), so that call stays with the dispatcher.
+2. A nudge for the dispatcher. `sweep due` lists batches older than one hour with no `sweep_ping` audit row in the last three hours. `tg dispatcher wait` presents each as a nudge on the wake-up (see DESIGN-dispatcher.md, "Question sweep"). `sweep ping <id>` writes the `sweep_ping` row; `sweep cancel <id>` cancels and writes `sweep_cancel`.

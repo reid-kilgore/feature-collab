@@ -59,6 +59,8 @@ over ssh has no tmux here, so it passes its own address: `ssh host "tg send --fr
 
 `tg ask --key KEY` (or a top-level `"key"` in the payload) tags a question with a decision key. When the answer is recorded some other way, `tg cancel --key KEY` cancels every pending question with that key and prints `{"cancelled":[ids]}` (exit 0, also when none match). `tg pending` shows each question's sender and key; `tg pending --json` prints one entry per pending question set with `id`, `title`, `key`, `sender` and `created_at`.
 
+A question left open for over an hour is swept. The daemon cancels one that names no sender by itself (one notice to you, one audit row). For one with a sender, the dispatcher session is handed a nudge for the asking session ("is this still needed? cancel it if not"); once it sends it, that question is left alone for three hours. If the asking session cannot be reached, the dispatcher cancels the question and tells you once.
+
 `tg ask` documents must be `{id, title, markdown}` or `{id, title, path}`:
 
 ```

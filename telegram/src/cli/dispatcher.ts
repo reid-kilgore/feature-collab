@@ -71,13 +71,39 @@ export async function cmdDispatcher(argv: string[]): Promise<void> {
 
 const SWEEP_INTERVAL_SECONDS = 30 * 60;
 
-// Stale questions due a ping, as a `sweep` field for the wake-up; nothing (never an error) when none
+// A stale question as a nudge, the same shape `tg dispatch` prints (rule 4 of the protocol): who to
+// send to, the ready message text, and the two commands that record the outcome. `onSent` runs after
+// SendMessage succeeds; `onUnreachable` runs when no live session answers to the sender.
+export interface SweepNudge {
+  to: string;
+  message: string;
+  question: string;
+  onSent: string;
+  onUnreachable: string;
+}
+
+export function sweepNudges(due: Array<{ id: string; title: string | null; sender: string | null; ageMinutes: number }>): SweepNudge[] {
+  return due
+    .filter((q) => q.sender)
+    .map((q) => ({
+      to: q.sender!,
+      message:
+        `Your question${q.title ? ` "${q.title}"` : ""} (id ${q.id}) has been open on the user's phone for ${q.ageMinutes} minutes. ` +
+        `If it was answered another way or is no longer needed, run \`tg cancel ${q.id}\` (or \`ssh <daemon-host> tg cancel ${q.id}\` from another machine). Otherwise leave it open.`,
+      question: q.id,
+      onSent: `tg dispatcher sweep ping ${q.id}`,
+      onUnreachable: `tg dispatcher sweep cancel ${q.id}`,
+    }));
+}
+
+// Stale questions due a ping, as a `nudges` field for the wake-up; nothing (never an error) when none
 // are due or the daemon cannot say.
-async function sweepField(): Promise<{ sweep?: unknown[] }> {
+async function sweepField(): Promise<{ nudges?: SweepNudge[] }> {
   try {
     const r = await oneShot({ op: "sweep", action: "due" });
     const due = isError(r) ? [] : (r as SweepResponse).due ?? [];
-    return due.length ? { sweep: due } : {};
+    const nudges = sweepNudges(due);
+    return nudges.length ? { nudges } : {};
   } catch {
     return {};
   }
@@ -91,7 +117,8 @@ async function dispatcherSweep(argv: string[]): Promise<void> {
   if (action === undefined) {
     const r = await oneShot({ op: "sweep", action: "due" }).catch((e: Error) => ({ error: e.message }));
     if (isError(r as DaemonResponse)) return fail((r as ErrorResponse).error);
-    console.log(JSON.stringify({ due: (r as SweepResponse).due ?? [] }));
+    const due = (r as SweepResponse).due ?? [];
+    console.log(JSON.stringify({ due, nudges: sweepNudges(due) }));
     return;
   }
   const id = argv[1];

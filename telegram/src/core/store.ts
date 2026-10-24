@@ -291,6 +291,15 @@ export class Store {
       .all(cutoff, quiet) as unknown as BatchRow[];
   }
 
+  // Pending batches older than `olderThanMs` that name no asker: nobody can be asked about them, so the
+  // daemon cancels them itself (daemon sweepSenderless).
+  listSenderlessStale(olderThanMs: number, nowMs = Date.now()): BatchRow[] {
+    const cutoff = new Date(nowMs - olderThanMs).toISOString();
+    return this.db
+      .prepare("SELECT * FROM batches WHERE status = 'pending' AND created_at <= ? AND (asker_address IS NULL OR TRIM(asker_address) = '') ORDER BY created_at")
+      .all(cutoff) as unknown as BatchRow[];
+  }
+
   updateBatchStatus(id: string, status: BatchStatus, resultJson?: string): void {
     const now = new Date().toISOString();
     const resolved = status === "pending" ? null : now;
