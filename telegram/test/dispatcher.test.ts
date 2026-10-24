@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { parseDispatcherConfig } from "../src/dispatcher/config.ts";
 import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./support/harness.ts";
 import type { Harness } from "./support/harness.ts";
@@ -149,6 +150,9 @@ test("a second dispatcher listener is refused", async () => {
     const second = spawnWait(h);
     assert.equal(await second.closed, 1);
     assert.match(second.err(), /already has a listener/);
+    const refusal = JSON.parse(second.out().trim());
+    assert.equal(refusal.status, "error");
+    assert.match(refusal.rearm, /not needed/, "tells the session a re-arm is not needed");
     first.proc.kill("SIGKILL");
     daemon.kill("SIGKILL");
   } finally {
@@ -837,22 +841,26 @@ test("tg dispatcher wait reconnects when the daemon dies and a new one starts, a
   }
 });
 
-test("tg dispatcher wait gives up after the reconnect limit with a clear message and a non-zero exit", async () => {
+test("tg dispatcher wait does not give up when the daemon stays away past the old reconnect limit", async () => {
   const h = await setupHarness();
   try {
     writeConfig(h);
     h.env.AGENT_TELEGRAM_NO_AUTOSTART = "1";
-    h.env.AGENT_TELEGRAM_RECONNECT_MS = "2000";
+    h.env.AGENT_TELEGRAM_RECONNECT_MS = "1000"; // the old give-up limit; the wait ignores it now
     h.env.AGENT_TELEGRAM_RECONNECT_BASE_MS = "100";
-    const daemon = await start(h);
+    const first = await start(h);
     const w = spawnWait(h);
     await untilListening(h);
-    daemon.kill("SIGKILL");
-    const code = await w.closed;
-    assert.equal(code, 1);
-    assert.match(w.err(), /lost the daemon/);
-    assert.match(w.err(), /tg dispatcher wait/);
-    assert.equal(w.out().trim(), "", "nothing on stdout: this is a failure, not a result");
+    first.kill("SIGKILL");
+    await sleep(3000);
+    assert.equal(w.proc.exitCode, null, "still waiting three times the old limit after the daemon went away");
+    assert.equal(w.out(), "");
+    const second = await start(h);
+    await untilListening(h);
+    assert.equal((await h.runCli(["dispatcher", "trial", "late"])).code, 0);
+    assert.equal(await w.closed, 0, w.err());
+    assert.equal(JSON.parse(w.out().trim()).messages[0].text, "late");
+    second.kill("SIGKILL");
   } finally {
     await h.teardown();
   }
@@ -879,9 +887,10 @@ test("a refusal from the daemon is not retried", async () => {
   }
 });
 
-test("the protocol tells the session to re-arm after a wait that failed because the daemon was gone", async () => {
+test("the protocol tells the session to re-arm after every way a wait can end", async () => {
   const { DISPATCHER_PROTOCOL } = await import("../src/dispatcher/protocol.ts");
-  assert.match(DISPATCHER_PROTOCOL.join("\n"), /lost the daemon/);
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /`rearm` field/);
+  assert.match(DISPATCHER_PROTOCOL.join("\n"), /never ends it/);
 });
 
 // ---- which tmux session a new Claude session opens in ----
@@ -1062,5 +1071,133 @@ test("the protocol: send to the cached address, on a stale-address error look up
 test("target names that clash with dispatch subcommands are refused", () => {
   for (const name of ["ask", "address", "unreachable"]) {
     assert.throws(() => parseDispatcherConfig({ version: 1, defaultTarget: name, targets: [{ name, description: "d", argv: ["true"] }] }), /reserved|name/);
+  }
+});
+
+// ---- the unconsumed-message alarm: the daemon hands a stuck message on itself ----
+
+function stallEnv(h: Harness): void {
+  h.env.AGENT_TELEGRAM_STALL_MS = "700";
+  h.env.AGENT_TELEGRAM_STALL_CHECK_MS = "150";
+}
+
+const stallNotices = (h: Harness) => h.fake.sent.filter((m) => m.method === "sendMessage" && String(m.body.text ?? "").startsWith("The dispatcher was not listening"));
+
+function auditKinds(h: Harness, kind: string): number {
+  const out = execFileSync("sqlite3", ["-readonly", path.join(h.home, "state", "state.sqlite"), `select count(*) from audit where kind = '${kind}'`], { encoding: "utf8" });
+  return Number(out.trim());
+}
+
+test("a message unconsumed past the threshold is handed to the default target once, and Reid gets one notice", async () => {
+  const h = await setupHarness();
+  try {
+    stallEnv(h);
+    writeConfig(h, { downNoticeAfter: "1h", defaultTarget: "plain" });
+    const daemon = await start(h);
+    const id = say(h, "nobody is listening to this");
+    await waitUntil(() => stallNotices(h).length === 1);
+    assert.match(String(stallNotices(h)[0]!.body.text), /passed your message on to plain as ref-1/);
+    assert.equal((stallNotices(h)[0]!.body.reply_parameters as { message_id: number }).message_id, id);
+    const calls = targetCalls(h);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.input, "nobody is listening to this");
+    // the inquiry log records the hand-off, so `tg inquiries list --open` no longer shows it
+    const states = inquiryLines(h).filter((l) => l.op === "state");
+    assert.equal(states.length, 1);
+    assert.equal(states[0]!.state, "handed_off");
+    assert.equal(states[0]!.target, "plain");
+    // exactly one hand-off and one notice, however many checks run afterwards
+    await sleep(1200);
+    assert.equal(targetCalls(h).length, 1);
+    assert.equal(stallNotices(h).length, 1);
+    assert.equal(auditKinds(h, "dispatcher_stall_alarm"), 1);
+    // the dispatcher finding nothing queued when it returns
+    const peek = JSON.parse((await h.runCli(["recv", "--peek", "--channel", "dispatcher"])).stdout.trim());
+    assert.deepEqual(peek.messages, []);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a message the dispatcher consumed in time causes no hand-off and no notice", async () => {
+  const h = await setupHarness();
+  try {
+    stallEnv(h);
+    writeConfig(h, { downNoticeAfter: "1h", defaultTarget: "plain" });
+    const daemon = await start(h);
+    const w = spawnWait(h);
+    await untilListening(h);
+    say(h, "heard in time");
+    assert.equal(await w.closed, 0, w.err());
+    await sleep(1500); // past the threshold and several checks
+    assert.equal(targetCalls(h).length, 0);
+    assert.equal(stallNotices(h).length, 0);
+    assert.equal(auditKinds(h, "dispatcher_stall_alarm"), 0);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("when the hand-off fails the notice says so, the message stays queued, and there is no second alarm", async () => {
+  const h = await setupHarness();
+  try {
+    stallEnv(h);
+    writeConfig(h, { downNoticeAfter: "1h", defaultTarget: "plain" });
+    writeFileSync(path.join(h.home, "target-fail"), "");
+    const daemon = await start(h);
+    say(h, "this cannot be filed");
+    await waitUntil(() => stallNotices(h).length === 1);
+    assert.match(String(stallNotices(h)[0]!.body.text), /could not pass your message on \(target is down\)/);
+    assert.match(String(stallNotices(h)[0]!.body.text), /still queued/);
+    await sleep(1200);
+    assert.equal(targetCalls(h).length, 1, "tried once");
+    assert.equal(stallNotices(h).length, 1);
+    // still there for the dispatcher when it returns
+    const w = spawnWait(h);
+    assert.equal(await w.closed, 0, w.err());
+    assert.equal(JSON.parse(w.out().trim()).messages[0].text, "this cannot be filed");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("a default target that needs a parameter the daemon does not have fails honestly in the notice", async () => {
+  const h = await setupHarness();
+  try {
+    stallEnv(h);
+    writeConfig(h, { downNoticeAfter: "1h" }); // default target "inbox" needs {{tag}}
+    const daemon = await start(h);
+    say(h, "needs a tag");
+    await waitUntil(() => stallNotices(h).length === 1);
+    assert.match(String(stallNotices(h)[0]!.body.text), /could not pass your message on \(target inbox needs a parameter/);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg status shows how long the dispatcher has had no listener and the oldest unconsumed message", async () => {
+  const h = await setupHarness();
+  try {
+    writeConfig(h, { downNoticeAfter: "1h", defaultTarget: "plain" });
+    const daemon = await start(h);
+    say(h, "waiting");
+    await waitUntil(async () => /oldest unconsumed message \d+s old/.test((await h.runCli(["status"])).stdout));
+    const status = (await h.runCli(["status"])).stdout;
+    assert.match(status, /dispatcher listener: no listener for \d+s; oldest unconsumed message \d+s old/);
+    assert.match((await h.runCli(["doctor"])).stdout, /dispatcher listener: no listener for/);
+    const w = spawnWait(h);
+    assert.equal(await w.closed, 0);
+    assert.match((await h.runCli(["status"])).stdout, /dispatcher listener: no listener for \d+s; no unconsumed message/);
+    const w2 = spawnWait(h);
+    await untilListening(h);
+    assert.match((await h.runCli(["status"])).stdout, /dispatcher listener: a listener is attached; no unconsumed message/);
+    w2.proc.kill("SIGKILL");
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
   }
 });
