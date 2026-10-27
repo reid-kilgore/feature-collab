@@ -496,3 +496,26 @@ test("maestroEnv puts ~/bin and Homebrew ahead of launchd's bare PATH", async ()
   const again = maestroEnv({ PATH: "/opt/homebrew/bin:/usr/bin" }, "/Users/someone");
   assert.equal(again.PATH, "/Users/someone/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin");
 });
+
+test("maestroAdd files Reid's words with MAESTRO_WHO=reid, whatever the daemon's own environment says", async () => {
+  const { mkdtempSync, rmSync, chmodSync } = await import("node:fs");
+  const os = await import("node:os");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "maestro-who-"));
+  const saved = { bin: process.env.AGENT_TELEGRAM_MAESTRO_BIN, who: process.env.MAESTRO_WHO };
+  try {
+    const stub = path.join(dir, "maestro-stub.cjs");
+    const out = path.join(dir, "who.txt");
+    writeFileSync(stub, `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(out)}, process.env.MAESTRO_WHO ?? "(unset)");\nprocess.stdout.write("w1  stub\\n");\n`);
+    chmodSync(stub, 0o755);
+    process.env.AGENT_TELEGRAM_MAESTRO_BIN = stub;
+    process.env.MAESTRO_WHO = "somebody-else";
+    const { maestroAdd } = await import("../src/inbox/maestro.ts");
+    assert.equal(await maestroAdd("hello"), "w1");
+    assert.equal(readFileSync(out, "utf8"), "reid");
+  } finally {
+    for (const [k, v] of [["AGENT_TELEGRAM_MAESTRO_BIN", saved.bin], ["MAESTRO_WHO", saved.who]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

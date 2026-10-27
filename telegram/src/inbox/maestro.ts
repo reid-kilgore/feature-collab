@@ -40,7 +40,7 @@ export function maestroEnv(base: NodeJS.ProcessEnv = process.env, home: string =
   return { ...base, PATH: [...extra, ...rest].join(":") };
 }
 
-function run(argv: string[], opts: { input?: string } = {}): Promise<{ stdout: string; stderr: string }> {
+function run(argv: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     let bin: string;
     try {
@@ -49,7 +49,7 @@ function run(argv: string[], opts: { input?: string } = {}): Promise<{ stdout: s
       reject(error as MaestroError);
       return;
     }
-    const child = execFile(bin, argv, { maxBuffer: 10 * 1024 * 1024, env: maestroEnv() }, (error, stdout, stderr) => {
+    const child = execFile(bin, argv, { maxBuffer: 10 * 1024 * 1024, env: { ...maestroEnv(), ...opts.env } }, (error, stdout, stderr) => {
       if (error) {
         const message = stderr.trim() || (error as Error).message;
         reject(new MaestroError(message));
@@ -64,8 +64,10 @@ function run(argv: string[], opts: { input?: string } = {}): Promise<{ stdout: s
 
 // `maestro add -` reads the item's text from stdin (kind: ask) and prints "<id>  <label>"
 // to stdout on success. We only need the id, which is the first whitespace-delimited token.
+// The text is Reid's own words (/ask and unsolicited free text) and the daemon is not a tmux session,
+// so it names the author itself: without MAESTRO_WHO the maestro CLI records the caller, not Reid.
 export async function maestroAdd(text: string): Promise<string> {
-  const { stdout } = await run(["add", "-"], { input: text });
+  const { stdout } = await run(["add", "-"], { input: text, env: { MAESTRO_WHO: "reid" } });
   const id = stdout.trim().split(/\s+/, 1)[0];
   if (!id) throw new MaestroError(`could not read an id from maestro add: ${JSON.stringify(stdout)}`);
   return id;
