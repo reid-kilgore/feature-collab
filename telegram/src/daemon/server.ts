@@ -20,6 +20,7 @@ import {
 import { Store, newId, newShortId } from "../core/store.ts";
 import { appendInquiry, entryFromInboxRow, findInquiry, readInquiries } from "../core/inquiry-log.ts";
 import { checkStalledMessages } from "./stall.ts";
+import { DispatcherHealer, parseSchedule, processProbes, windowProbes } from "./heal.ts";
 import { activeDispatcher, readDispatcherConfig, validDispatcher } from "../dispatcher/config.ts";
 import { BOT_COMMANDS_INBOX } from "../transports/telegram/handler.ts";
 import { REACTION_HANDED_OFF } from "../transports/telegram/reactions.ts";
@@ -57,6 +58,9 @@ const SWEEP_INTERVAL_MS = Number(process.env.AGENT_TELEGRAM_SWEEP_MS) > 0 ? Numb
 // target by the daemon itself. Test hooks shorten both.
 const STALL_AFTER_MS = Number(process.env.AGENT_TELEGRAM_STALL_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_STALL_MS) : 5 * 60_000;
 const STALL_CHECK_MS = Number(process.env.AGENT_TELEGRAM_STALL_CHECK_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_STALL_CHECK_MS) : 30_000;
+
+// The dispatcher self-heal (heal.ts): AGENT_TELEGRAM_HEAL_MIN="5,15,60" sets the waits in minutes, "off" disables it.
+const HEAL_CHECK_MS = Number(process.env.AGENT_TELEGRAM_HEAL_CHECK_MS) > 0 ? Number(process.env.AGENT_TELEGRAM_HEAL_CHECK_MS) : 30_000;
 
 function log(line: string): void {
   const stamped = `${new Date().toISOString()} ${redact(line)}\n`;
@@ -336,6 +340,36 @@ export async function runDaemon(): Promise<void> {
     checkStalledMessages({ store, api, chatId: config.chatId, log, thresholdMs: STALL_AFTER_MS }).catch((error) => log(`stall alarm error: ${(error as Error).message}`));
   }, STALL_CHECK_MS);
 
+  // The dispatcher self-heal: a session that stays up with no listener (usage limit, login prompt) is restarted by pid.
+  const healer = new DispatcherHealer({
+    now: Date.now,
+    active: () => activeDispatcher() !== undefined,
+    listening: () => {
+      const d = activeDispatcher();
+      return d ? isChannelListening(d.channel) : false;
+    },
+    noListenerSeconds: () => {
+      const d = activeDispatcher();
+      return d ? noListenerSeconds(d.channel) : 0;
+    },
+    findPid: () => {
+      const d = activeDispatcher();
+      return d ? windowProbes(d.session.tmuxSession, d.session.window).findPid() : undefined;
+    },
+    screen: () => {
+      const d = activeDispatcher();
+      return d ? windowProbes(d.session.tmuxSession, d.session.window).screen() : "";
+    },
+    ...processProbes(),
+    notify: (text) => api.sendMessage(config.chatId, text).then(() => undefined),
+    audit: (kind, detail) => store.appendAudit(kind, null, null, detail),
+    log,
+    scheduleMs: parseSchedule(process.env.AGENT_TELEGRAM_HEAL_MIN),
+  });
+  const healTimer = setInterval(() => {
+    healer.tick().catch((error) => log(`dispatcher self-heal error: ${(error as Error).message}`));
+  }, HEAL_CHECK_MS);
+
   const registerInboxWaiter = (resolve: () => void) => {
     inboxWaiters.push(resolve);
   };
@@ -404,6 +438,7 @@ export async function runDaemon(): Promise<void> {
     try {
       clearInterval(sweepTimer);
       clearInterval(stallTimer);
+      clearInterval(healTimer);
       tailscaleWatcher.stop();
       menuUpdater?.stop();
       for (const socket of openSockets) socket.destroy();
