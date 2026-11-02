@@ -27,6 +27,8 @@ export interface MiniappServerDeps {
   // First path segment of every URL; a random string, so the public URL is not guessable.
   secret: string;
   maxAgeSeconds: number;
+  // Origin of the tailnet hub the top bar links to. Optional: the page falls back to no bar.
+  hubUrl?: string;
   log: (line: string) => void;
 }
 
@@ -149,6 +151,12 @@ async function cancelSet(deps: MiniappServerDeps, batchId: string): Promise<{ st
 
 export function createMiniappServer(deps: MiniappServerDeps): http.Server {
   const prefix = `/${deps.secret}`;
+  // Goes into an HTML attribute: only a parsed http(s) origin, with the characters that matter escaped.
+  let hubAttr = "";
+  try {
+    const u = new URL(deps.hubUrl ?? "");
+    if (u.protocol === "https:" || u.protocol === "http:") hubAttr = u.origin.replace(/[&"<>']/g, "");
+  } catch { /* no hub: the bar stays empty */ }
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // Parse by hand: new URL("//") throws, and an unauthenticated request must not reach the log.
@@ -163,7 +171,7 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
 
     if (rest === "/" || rest === "/app.js" || rest === "/app.css") {
       if (req.method !== "GET") return send(res, 405, "");
-      if (rest === "/") return send(res, 200, PAGE_HTML, { "content-type": "text/html; charset=utf-8", "content-security-policy": CSP });
+      if (rest === "/") return send(res, 200, PAGE_HTML.replace("__HUB_URL__", hubAttr), { "content-type": "text/html; charset=utf-8", "content-security-policy": CSP });
       if (rest === "/app.js") return send(res, 200, PAGE_JS, { "content-type": "text/javascript; charset=utf-8" });
       return send(res, 200, PAGE_CSS, { "content-type": "text/css; charset=utf-8" });
     }

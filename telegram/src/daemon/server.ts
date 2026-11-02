@@ -12,6 +12,7 @@ import {
   getToken,
   readConfig,
   resolveMiniapp,
+  resolveHubUrl,
   apiBase,
   redact,
   shortHostname,
@@ -230,6 +231,7 @@ export async function runDaemon(): Promise<void> {
         allowedUserId: config.userId,
         secret: miniapp.secret,
         maxAgeSeconds: miniapp.maxAgeSeconds,
+        hubUrl: resolveHubUrl(config),
         log,
       })
     : undefined;

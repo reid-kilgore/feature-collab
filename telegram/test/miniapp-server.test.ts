@@ -25,6 +25,7 @@ async function rig() {
     allowedUserId: String(USER),
     secret: SECRET,
     maxAgeSeconds: 3600,
+    hubUrl: "https://hub.example.ts.net:8443/ignored",
     log: (l) => logs.push(l),
   });
   const bound = await listenLoopback(server, 0);
@@ -43,6 +44,8 @@ test("the page shell is public and carries no data, with a strict content securi
     const body = await html.text();
     assert.match(body, /telegram-web-app\.js/);
     assert.doesNotMatch(body, /Pick a plan|Which database/);
+    assert.match(body, /id="hubbar" data-hub="https:\/\/hub\.example\.ts\.net:8443"/);
+    assert.doesNotMatch(body, /__HUB_URL__/);
     assert.doesNotMatch(body, new RegExp(TEST_BOT_TOKEN));
     assert.match(html.headers.get("content-security-policy")!, /script-src 'self' https:\/\/telegram\.org/);
     assert.equal(html.headers.get("referrer-policy"), "no-referrer");

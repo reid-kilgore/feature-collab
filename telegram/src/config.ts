@@ -22,6 +22,9 @@ export interface MiniappConfig {
   publicUrl: string;
   // How old initData may be, in seconds. Default 3600.
   maxAgeSeconds?: number;
+  // Tailnet-only hub the Mini App's top bar links to (opened in the phone's browser, never
+  // embedded). The HUB_URL environment variable overrides it. Default DEFAULT_HUB_URL.
+  hubUrl?: string;
 }
 
 export interface Config {
@@ -40,6 +43,20 @@ export interface ResolvedMiniapp {
 }
 
 export const DEFAULT_MINIAPP_MAX_AGE_SECONDS = 3600;
+export const DEFAULT_HUB_URL = "https://redd-mason.tail342c6f.ts.net:8443";
+
+// The hub origin for the Mini App's link bar: HUB_URL, else miniapp.hubUrl, else the default.
+// A value that is not an http(s) URL falls back to the default, so the bar always has a target.
+export function resolveHubUrl(config: Config, env: NodeJS.ProcessEnv = process.env): string {
+  for (const candidate of [env.HUB_URL, config.miniapp?.hubUrl]) {
+    if (!candidate) continue;
+    try {
+      const u = new URL(candidate);
+      if (u.protocol === "https:" || u.protocol === "http:") return u.origin;
+    } catch { /* try the next */ }
+  }
+  return DEFAULT_HUB_URL;
+}
 
 // Returns the Mini App settings to use, nothing when the feature is not configured, or an
 // error string when it is configured wrongly (the daemon logs it and runs without the Mini App).
