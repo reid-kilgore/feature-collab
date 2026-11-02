@@ -35,11 +35,11 @@ export function messageForTarget(inquiry: MessageParts): string {
   return parts.filter(Boolean).join("\n\n");
 }
 
-export function runCommand(argv: string[], stdin: string, timeoutMs = 60_000): Promise<RunResult> {
+export function runCommand(argv: string[], stdin: string, extraEnv: Record<string, string> = {}, timeoutMs = 60_000): Promise<RunResult> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "pipe"] });
+      child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...extraEnv } });
     } catch (error) {
       resolve({ ok: false, stdout: "", error: (error as Error).message });
       return;
