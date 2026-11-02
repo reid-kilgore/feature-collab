@@ -27,7 +27,7 @@ function writeTarget(h: Harness): string {
     `const fs = require("node:fs");
 const path = require("node:path");
 const input = fs.readFileSync(0, "utf8");
-fs.appendFileSync(path.join(__dirname, "target-in.jsonl"), JSON.stringify({ input, argv: process.argv.slice(2) }) + "\\n");
+fs.appendFileSync(path.join(__dirname, "target-in.jsonl"), JSON.stringify({ input, argv: process.argv.slice(2), tgMsg: process.env.MAESTRO_TG_MSG ?? null }) + "\\n");
 if (fs.existsSync(path.join(__dirname, "target-fail"))) { process.stderr.write("target is down\\n"); process.exit(3); }
 process.stdout.write("ref-" + fs.readFileSync(path.join(__dirname, "target-in.jsonl"), "utf8").split("\\n").filter(Boolean).length + "  extra words\\n");
 `,
@@ -35,7 +35,7 @@ process.stdout.write("ref-" + fs.readFileSync(path.join(__dirname, "target-in.js
   return file;
 }
 
-function targetCalls(h: Harness): Array<{ input: string; argv: string[] }> {
+function targetCalls(h: Harness): Array<{ input: string; argv: string[]; tgMsg: string | null }> {
   const file = path.join(h.home, "target-in.jsonl");
   if (!existsSync(file)) return [];
   return readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -303,6 +303,11 @@ test("tg dispatch runs the target with the text on stdin, replies under the mess
     assert.equal(calls.length, 1);
     assert.equal(calls[0]!.input, "fix the payroll bug; $(touch /tmp/pwned) `id`\nsecond line");
     assert.deepEqual(calls[0]!.argv, ["urgent"]);
+    // the target learns which Telegram message the item came from, and the inquiry log keeps the same pairing
+    assert.equal(calls[0]!.tgMsg, String(tgId));
+    const handedOff = inquiryLines(h).find((l) => l.op === "state" && l.state === "handed_off")!;
+    assert.equal(handedOff.ref, "ref-1");
+    assert.equal(inquiryLines(h).find((l) => l.op === "received")!.tgMessageId, tgId);
     assert.ok(!existsSync("/tmp/pwned"));
 
     // the acknowledgement is a reply under Reid's message, with the note

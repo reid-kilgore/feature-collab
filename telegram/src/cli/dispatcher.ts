@@ -408,7 +408,11 @@ export async function cmdDispatch(argv: string[]): Promise<void> {
   try {
     if (target.argv) {
       const argvOut = target.argv.map((a) => substitute(a, values));
-      result = await runCommand(argvOut, text);
+      // The Telegram message Reid wrote reaches the target as $MAESTRO_TG_MSG. `maestro add` stores it on
+      // the item, so a reply on that item can later be sent under his message (inbox-tg-relay).
+      // A target that ignores the variable is unaffected.
+      const tgEnv: Record<string, string> = inquiry.tgMessageId ? { MAESTRO_TG_MSG: String(inquiry.tgMessageId) } : {};
+      result = await runCommand(argvOut, text, tgEnv);
     } else {
       const cwdParam = args.params.cwd;
       if (!cwdParam) throw new Error("this target needs --param cwd=<directory>");
