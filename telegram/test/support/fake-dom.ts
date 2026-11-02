@@ -107,9 +107,12 @@ export class FakeDocument {
   hidden = false;
   listeners: Record<string, Listener[]> = {};
   private app = new FakeNode("div", this);
+  hubbar = new FakeNode("div", this);
 
   constructor() {
     this.app.attrs.id = "app";
+    this.hubbar.attrs.id = "hubbar";
+    this.body.appendChild(this.hubbar);
     this.body.appendChild(this.app);
   }
   createElement(tag: string): FakeNode {
@@ -120,6 +123,7 @@ export class FakeDocument {
   }
   getElementById(id: string): FakeNode | null {
     if (id === "app") return this.app;
+    if (id === "hubbar") return this.hubbar;
     return this.body.find((n) => n.attrs.id === id)[0] ?? null;
   }
   addEventListener(type: string, fn: Listener): void {
@@ -175,7 +179,7 @@ export interface Route {
 
 // Loads app.js into a fresh sandbox. `routes` maps "METHOD path" (path after /api/) to a response,
 // or a function returning one.
-export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Route | ((body?: string) => Route)> }): PageRig {
+export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Route | ((body?: string) => Route)>; hub?: string; openLink?: boolean; storage?: Map<string, string> }): PageRig {
   const doc = new FakeDocument();
   const calls: string[] = [];
   const fetches: PageRig["fetches"] = [];
@@ -203,11 +207,21 @@ export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Rou
     },
   };
   const store = new Map<string, string>();
+  if (opts.hub) doc.hubbar.attrs["data-hub"] = opts.hub;
+  if (opts.openLink) tg.openLink = (url) => void calls.push(`openLink ${url}`);
+  // openLink: false models an old Telegram client without openLink, where the plain link must be left alone.
+  if (opts.openLink === false) (tg as { openLink?: unknown }).openLink = undefined;
+  const local = opts.storage ?? new Map<string, string>();
+  const localStorage = {
+    getItem: (k: string) => local.get(k) ?? null,
+    setItem: (k: string, v: string) => void local.set(k, v),
+  };
   const sandbox = {
-    window: { Telegram: { WebApp: tg }, scrollY: 0, scrollTo() {} },
+    window: { Telegram: { WebApp: tg }, scrollY: 0, scrollTo() {}, localStorage },
     document: doc,
     location: { pathname: "/secret/" },
     navigator: {},
+    localStorage,
     sessionStorage: {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),

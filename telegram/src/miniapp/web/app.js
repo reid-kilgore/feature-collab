@@ -606,6 +606,49 @@
   // Bot API 8.0: the app was brought back to the front without being reloaded.
   try { if (tg && tg.onEvent) tg.onEvent('activated', refreshIfList); } catch (e) { /* older client */ }
 
+  // Top bar: links to the tailnet hub. They open in the phone's browser (Telegram openLink),
+  // never inside this public page. Outside Telegram they are ordinary links.
+  var HUB_HINT_KEY = 'hubBarHintDismissed';
+  var HUB_LINKS = [['Questions', '/'], ['Threads', '/threads'], ['Work', '/#work-wip']];
+
+  function hintDismissed() {
+    try { return window.localStorage.getItem(HUB_HINT_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function renderHubBar() {
+    var holder = document.getElementById('hubbar');
+    var hub = holder && holder.getAttribute('data-hub');
+    if (!holder || !hub || hub.indexOf('__') === 0) return;
+    hub = hub.replace(/\/+$/, '');
+    var nav = h('nav', { class: 'hubbar', 'aria-label': 'Hub' });
+    HUB_LINKS.forEach(function (link) {
+      var url = hub + link[1];
+      nav.appendChild(h('a', {
+        class: 'hublink', href: url, target: '_blank', rel: 'noopener noreferrer', text: link[0],
+        onclick: function (event) {
+          if (tg && typeof tg.openLink === 'function') {
+            event.preventDefault();
+            try { tg.openLink(url); } catch (e) { /* the plain link still works */ }
+          }
+        },
+      }));
+    });
+    holder.appendChild(nav);
+    if (!hintDismissed()) {
+      var hint = h('div', { class: 'hubhint hint' },
+        h('span', { text: 'Opens in your browser; needs Tailscale on' }),
+        h('button', {
+          class: 'hubhint-close', type: 'button', 'aria-label': 'Dismiss', text: '\u00d7',
+          onclick: function () {
+            try { window.localStorage.setItem(HUB_HINT_KEY, '1'); } catch (e) { /* not fatal */ }
+            holder.removeChild(hint);
+          },
+        }));
+      holder.appendChild(hint);
+    }
+  }
+
+  renderHubBar();
   render();
   loadList();
 })();

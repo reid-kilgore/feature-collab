@@ -72,3 +72,7 @@ button.card { -webkit-touch-callout: none; user-select: none; -webkit-user-selec
 .field .done { display: none; margin-left: auto; padding: 4px 0 0; }
 .field:focus-within .done { display: block; }
 body.typing .bottom { display: none; }
+.hubbar { display: flex; gap: 8px; padding: 8px 0 0; }
+.hublink { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 10px; background: var(--card); color: var(--link); text-decoration: none; font-weight: 600; }
+.hubhint { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0 0; }
+.hubhint-close { min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--hint); font-size: 22px; line-height: 1; cursor: pointer; }
