@@ -162,32 +162,70 @@ export function markdownToNodes(input: string): MdNode[] {
   return htmlToNodes(markdownToTelegramHtml(input));
 }
 
+// Room kept in each chunk for the tags that balanceTags closes at its end and opens again at the start of the next.
+const TAG_RESERVE = 128;
+
 // Telegram HTML message limit is 4096 characters. Split on paragraph (blank-line)
-// boundaries where possible, falling back to hard splits for a single huge paragraph.
+// boundaries where possible; a single paragraph that is too long is cut at a line break, then a space,
+// and never inside a tag or an entity. A tag that is open at a cut is closed there and opened again at the
+// start of the next chunk, so every chunk parses on its own and none is longer than the limit.
 export function splitMessage(text: string, limit = 4096): string[] {
   if (text.length <= limit) return [text];
+  const max = Math.max(1, limit - TAG_RESERVE);
   const paragraphs = text.split(/\n\n/);
-  const chunks: string[] = [];
+  const pieces: string[] = [];
   let current = "";
   for (const paragraph of paragraphs) {
     const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (candidate.length <= limit) {
+    if (candidate.length <= max) {
       current = candidate;
       continue;
     }
-    if (current) chunks.push(current);
-    if (paragraph.length <= limit) {
-      current = paragraph;
-    } else {
-      // A single paragraph longer than the limit: hard-split it.
-      let rest = paragraph;
-      while (rest.length > limit) {
-        chunks.push(rest.slice(0, limit));
-        rest = rest.slice(limit);
-      }
-      current = rest;
-    }
+    if (current) pieces.push(current);
+    current = paragraph;
   }
-  if (current) chunks.push(current);
-  return chunks;
+  if (current) pieces.push(current);
+  return balanceTags(pieces.flatMap((piece) => hardSplit(piece, max)), limit);
+}
+
+// Cuts a piece into parts of at most `limit` characters: at a line break if one sits in the back half, else
+// at a space, else at the limit; the cut is moved back out of a tag or entity that it would split.
+function hardSplit(piece: string, max: number): string[] {
+  if (piece.length <= max) return [piece];
+  const parts: string[] = [];
+  let rest = piece;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
+    if (cut < max / 2) cut = max;
+    const lt = rest.lastIndexOf("<", cut - 1);
+    if (lt > rest.lastIndexOf(">", cut - 1) && lt > 0) cut = lt;
+    const amp = rest.lastIndexOf("&", cut - 1);
+    if (amp >= 0 && cut - amp <= 8 && rest.indexOf(";", amp) >= cut && amp > 0) cut = amp;
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut).replace(/^[ \n]/, "");
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
+function balanceTags(chunks: string[], limit: number): string[] {
+  const out: string[] = [];
+  let open: string[] = []; // full opening tags, outermost first
+  for (const chunk of chunks) {
+    let body = open.join("") + chunk;
+    const stack = [...open];
+    for (const m of chunk.matchAll(/<(\/?)([a-z][a-z0-9-]*)([^>]*)>/gi)) {
+      if (m[1]) {
+        const at = stack.map((t) => /^<([a-z0-9-]+)/i.exec(t)![1]!.toLowerCase()).lastIndexOf(m[2]!.toLowerCase());
+        if (at >= 0) stack.length = at;
+      } else {
+        stack.push(m[0]);
+      }
+    }
+    body += [...stack].reverse().map((t) => `</${/^<([a-z0-9-]+)/i.exec(t)![1]}>`).join("");
+    out.push(body.length <= limit ? body : body.slice(0, limit));
+    open = stack;
+  }
+  return out;
 }

@@ -100,7 +100,7 @@ test("a question prompt and option descriptions render links in chat, with no ne
     },
   });
   assert.match(view.text, /^<b>Q1\/2 — Read <a href="https:\/\/a\.com\/p">the page<\/a> and decide<\/b>/);
-  assert.match(view.text, /• <b>A: keep<\/b> — Cheapest\. See <a href="https:\/\/a\.com\/n">notes<\/a>\./);
+  assert.match(view.text, /<b>A\.<\/b> <b>A: keep<\/b> — Cheapest\. See <a href="https:\/\/a\.com\/n">notes<\/a>\./);
   assert.doesNotMatch(view.text, /<b>[^<]*<b>/);
 });
 
@@ -130,4 +130,29 @@ test("markdownToNodes: hostile input yields text nodes and only http(s) links", 
   assert.deepEqual(links.map((n) => n.href), ["https://ok.com"]);
   assert.ok(nodes.every((n) => ["text", "a", "b", "i", "code", "pre"].includes(n.t)));
   assert.match(flat, /<script>alert\(1\)<\/script>/, "shown as text, not dropped");
+});
+
+test("option buttons show a letter; the body lists each letter with its full label and description", () => {
+  const long = "Quizzes in the Telegram mini app, answered in place with the grade shown after each question";
+  const question = { id: "q", prompt: "Which?", type: "single" as const, options: [{ value: "a", label: long, description: "Biggest" }, { value: "b", label: "Second" }] };
+  const view = renderQuestionView({ shortId: "abc", index: 0, total: 1, selected: [], question });
+  assert.deepEqual(view.replyMarkup.inline_keyboard!.flat().filter((b) => b.callback_data!.includes(":s:")).map((b) => b.text), ["A", "B"]);
+  assert.ok(view.text.includes(`<b>A.</b> <b>${long}</b> — Biggest`));
+  assert.ok(view.text.includes("<b>B.</b> <b>Second</b>"));
+  for (const b of view.replyMarkup.inline_keyboard!.flat()) assert.ok(Buffer.byteLength(b.callback_data!) <= 64);
+});
+
+test("multiple choice buttons show a box and a letter; letters run past Z", () => {
+  const options = Array.from({ length: 28 }, (_, i) => ({ value: `v${i}`, label: `Option ${i}` }));
+  const view = renderQuestionView({ shortId: "abc", index: 0, total: 1, selected: ["v1"], question: { id: "q", prompt: "P", type: "multiple", options } });
+  const texts = view.replyMarkup.inline_keyboard!.flat().map((b) => b.text);
+  assert.ok(texts.includes("☐ A") && texts.includes("☑ B") && texts.includes("☐ Z") && texts.includes("☐ AA") && texts.includes("☐ AB"));
+});
+
+test("a question over the Telegram limit is split; the keyboard stays on the last part and every part fits", () => {
+  const options = Array.from({ length: 40 }, (_, i) => ({ value: `v${i}`, label: `Option ${i}`, description: "d ".repeat(100) }));
+  const view = renderQuestionView({ shortId: "abc", index: 0, total: 1, selected: [], question: { id: "q", prompt: "P", type: "single", options } });
+  assert.ok(view.leadTexts.length >= 1);
+  for (const part of [...view.leadTexts, view.text]) assert.ok(part.length <= 4096);
+  assert.ok(view.text.includes("<b>B.</b>") === false || view.leadTexts.join("").includes("<b>A.</b>"));
 });

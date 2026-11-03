@@ -75,3 +75,25 @@ test("documented: a language word after the opening fence is printed inside the 
 test("documented: bold, italic and code can sit in one line, and ids in code stay literal", () => {
   assert.equal(markdownToTelegramHtml("**Done**: item `a1307` is *filed*"), "<b>Done</b>: item <code>a1307</code> is <i>filed</i>");
 });
+
+test("a long paragraph is cut at a line break or space, never inside a tag or entity, and every chunk fits", () => {
+  const line = `<a href="https://example.com/a/b/c?x=1&amp;y=2">link &amp; text</a> and plain words`;
+  const text = Array.from({ length: 200 }, () => line).join("\n");
+  const chunks = splitMessage(text, 1000);
+  assert.ok(chunks.length > 1);
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 1000);
+    assert.equal((chunk.match(/</g) ?? []).length, (chunk.match(/>/g) ?? []).length);
+    assert.equal((chunk.match(/<a /g) ?? []).length, (chunk.match(/<\/a>/g) ?? []).length);
+  }
+});
+
+test("a tag open at a cut is closed there and opened again in the next chunk", () => {
+  const text = `<b>${"word ".repeat(1000)}</b>`;
+  const chunks = splitMessage(text, 1000);
+  assert.ok(chunks.length > 1);
+  for (const chunk of chunks) {
+    assert.ok(chunk.length <= 1000);
+    assert.ok(chunk.startsWith("<b>") && chunk.endsWith("</b>"));
+  }
+});
