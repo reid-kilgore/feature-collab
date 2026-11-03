@@ -8,6 +8,7 @@ import path from "node:path";
 import { socketFile } from "../config.ts";
 import type { DaemonRequest, DaemonResponse, AskResolvedResponse, ErrorResponse } from "../daemon/protocol.ts";
 import type { AskResult } from "../contract/payload.ts";
+import { kickstartLaunchd, launchdInstalled } from "./launchd.ts";
 
 const CONNECT_RETRY_MS = 200;
 const CONNECT_TIMEOUT_MS = Number(process.env.AGENT_TELEGRAM_CONNECT_MS) || 5000;
@@ -42,13 +43,28 @@ function spawnDaemon(): void {
   child.unref();
 }
 
+// Starts the daemon when none answers. With a launchd job installed, launchd starts it: a daemon the CLI starts
+// itself is outside launchd, holds the lock, and the job then exits "already running" in a loop. With no job, or
+// when launchctl refuses, the CLI starts a detached daemon.
+export interface StartDeps {
+  installed: () => boolean;
+  kickstart: () => boolean;
+  spawn: () => void;
+}
+
+export function startDaemon(deps: StartDeps): "launchd" | "spawn" {
+  if (deps.installed() && deps.kickstart()) return "launchd";
+  deps.spawn();
+  return "spawn";
+}
+
 export async function connectToDaemon(): Promise<net.Socket> {
   const first = await tryConnectOnce();
   if (first) return first;
 
   // A caller that supervises its own reconnecting (the dispatcher's wait) or a test can turn the
   // automatic start off; the polling below still gives a daemon that is mid-start a few seconds.
-  if (!process.env.AGENT_TELEGRAM_NO_AUTOSTART) spawnDaemon();
+  if (!process.env.AGENT_TELEGRAM_NO_AUTOSTART) startDaemon({ installed: () => launchdInstalled(), kickstart: () => kickstartLaunchd(), spawn: spawnDaemon });
 
   const deadline = Date.now() + CONNECT_TIMEOUT_MS;
   while (Date.now() < deadline) {

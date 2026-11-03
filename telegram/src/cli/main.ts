@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { oneShot, connectToDaemon, sendRequest, readResponses, waitForResult, LostDaemonError } from "./client.ts";
 import { runSetup } from "./setup.ts";
+import { strayDaemonWarningReal } from "./launchd.ts";
 import { dispatcherHealthLine } from "../dispatcher/health.ts";
 import { cmdDispatcher, cmdDispatch, cmdInquiries, dispatcherDoctor } from "./dispatcher.ts";
 import { runDaemon } from "../daemon/server.ts";
@@ -781,6 +782,8 @@ async function cmdDoctor(): Promise<void> {
     console.log(`config: chatId=${config.chatId} userId=${config.userId} bot=@${config.botUsername}`);
   }
   for (const line of dispatcherDoctor()) console.log(line);
+  const stray = strayDaemonWarningReal();
+  if (stray) console.log(stray);
   try {
     const response = await oneShot({ op: "status" });
     if ("error" in response) {
