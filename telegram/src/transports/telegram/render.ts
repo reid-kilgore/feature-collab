@@ -2,16 +2,25 @@
 
 import type { Question, AskPayload } from "../../contract/payload.ts";
 import type { Level } from "../../contract/notify.ts";
-import { markdownToTelegramHtml, markdownInline } from "../../core/markdown.ts";
+import { markdownToTelegramHtml, markdownInline, splitMessage } from "../../core/markdown.ts";
 import type { InlineKeyboardButton, ReplyMarkup } from "./api.ts";
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function truncate(label: string, max = 40): string {
-  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
+// A, B, ... Z, then AA, AB, ... for the option at a zero-based index.
+export function optionLetter(index: number): string {
+  let n = index;
+  let letters = "";
+  do {
+    letters = String.fromCharCode(65 + (n % 26)) + letters;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letters;
 }
+
+const LETTERS_PER_ROW = 4;
 
 // callback_data: q:<shortId>:<action>[:<arg>] - kept well under Telegram's 64-byte limit.
 export type CallbackAction = "t" | "s" | "go" | "other" | "skip" | "x";
@@ -46,36 +55,44 @@ export interface QuestionRenderState {
   selected: string[]; // for "multiple", currently toggled option values
 }
 
-export function renderQuestionView(state: QuestionRenderState): { text: string; replyMarkup: ReplyMarkup } {
+// Option buttons show only a letter; the message body lists each letter with its full label and description, so
+// nothing is cut at the button width. A body over Telegram's limit is split: `leadTexts` are the earlier parts
+// (sent first, with no keyboard) and `text` is the last part, which carries the keyboard and is the one that
+// is edited when a choice is toggled.
+export function renderQuestionView(state: QuestionRenderState): { text: string; leadTexts: string[]; replyMarkup: ReplyMarkup } {
   const { question, shortId, index, total, selected } = state;
   // The prompt is Markdown too (links, code), but it sits inside a bold header, so its own bold is dropped.
   const header = `<b>Q${index + 1}/${total} — ${markdownInline(question.prompt, { bold: false })}</b>`;
   const lines = [header];
   if (question.options) {
-    for (const option of question.options) {
+    for (const [i, option] of question.options.entries()) {
       const desc = option.description ? ` — ${markdownInline(option.description)}` : "";
       const star = question.default !== undefined && isDefault(question, option.value) ? " ★" : "";
-      lines.push(`• <b>${escapeHtml(option.label)}</b>${desc}${star}`);
+      lines.push(`<b>${optionLetter(i)}.</b> <b>${escapeHtml(option.label)}</b>${desc}${star}`);
     }
   }
-  const text = lines.join("\n");
+  const parts = splitMessage(lines.join("\n"));
+  const text = parts[parts.length - 1]!;
+  const leadTexts = parts.slice(0, -1);
 
   const rows: InlineKeyboardButton[][] = [];
   if (question.type === "single" && question.options) {
-    for (let i = 0; i < question.options.length; i++) {
-      const option = question.options[i]!;
-      rows.push([{ text: truncate(option.label), callback_data: encodeCallback(shortId, "s", i) }]);
-    }
-  } else if (question.type === "multiple" && question.options) {
-    const shortLabels = question.options.every((o) => o.label.length <= 16);
-    const perRow = shortLabels ? 2 : 1;
     let row: InlineKeyboardButton[] = [];
     for (let i = 0; i < question.options.length; i++) {
-      const option = question.options[i]!;
-      const checked = selected.includes(option.value);
+      row.push({ text: optionLetter(i), callback_data: encodeCallback(shortId, "s", i) });
+      if (row.length === LETTERS_PER_ROW) {
+        rows.push(row);
+        row = [];
+      }
+    }
+    if (row.length) rows.push(row);
+  } else if (question.type === "multiple" && question.options) {
+    let row: InlineKeyboardButton[] = [];
+    for (let i = 0; i < question.options.length; i++) {
+      const checked = selected.includes(question.options[i]!.value);
       const box = checked ? "☑" : "☐";
-      row.push({ text: truncate(`${box} ${option.label}`), callback_data: encodeCallback(shortId, "t", i) });
-      if (row.length === perRow) {
+      row.push({ text: `${box} ${optionLetter(i)}`, callback_data: encodeCallback(shortId, "t", i) });
+      if (row.length === LETTERS_PER_ROW) {
         rows.push(row);
         row = [];
       }
@@ -94,7 +111,7 @@ export function renderQuestionView(state: QuestionRenderState): { text: string; 
   extras.push({ text: "✖ Cancel batch", callback_data: encodeCallback(shortId, "x") });
   if (extras.length) rows.push(extras);
 
-  return { text, replyMarkup: { inline_keyboard: rows } };
+  return { text, leadTexts, replyMarkup: { inline_keyboard: rows } };
 }
 
 function isDefault(question: Question, value: string): boolean {

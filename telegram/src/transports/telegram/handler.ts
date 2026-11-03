@@ -19,6 +19,7 @@ import { inboxDir } from "../../config.ts";
 import { TelegramApi, classifyAttachment } from "./api.ts";
 import { extractDiagrams, isImagePath } from "../../core/diagrams.ts";
 import type { Diagram } from "../../core/diagrams.ts";
+import { splitMessage } from "../../core/markdown.ts";
 import { renderDiagramToPng } from "./diagram-render.ts";
 import type { DiagramRenderer } from "./diagram-render.ts";
 import {
@@ -128,7 +129,12 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
         // message can be a button here without clashing with anything.
         const button = singleLinkButton(messageParts?.text ?? payload.message);
         const markup = button ? buttonRows([button]) : undefined;
-        await withButtonFallback(markup, (m) => api.sendMessage(batch.chat_id, text, { html: true, replyMarkup: m as ReplyMarkup | undefined }), log);
+        // A header over Telegram's limit is split; the button rides on the last part.
+        const parts = splitMessage(text);
+        for (const [i, part] of parts.entries()) {
+          const partMarkup = i === parts.length - 1 ? markup : undefined;
+          await withButtonFallback(partMarkup, (m) => api.sendMessage(batch.chat_id, part, { html: true, replyMarkup: m as ReplyMarkup | undefined }), log);
+        }
       }
       if (messageParts?.diagrams.length) {
         await sendDiagrams(api, batch.chat_id, payload.title ?? "Message", messageParts.diagrams, render);
@@ -161,6 +167,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
     },
     async sendQuestion(batch, question: Question, questionRow: QuestionRow, index, total, selected, opts): Promise<SentQuestion> {
       const view = renderQuestionView({ shortId: questionRow.short_id, index, total, question, selected });
+      for (const lead of view.leadTexts) await api.sendMessage(batch.chat_id, lead, { html: true, replyToMessageId: opts?.replyToMessageId });
       const sent = await api.sendMessage(batch.chat_id, view.text, { html: true, replyMarkup: view.replyMarkup, replyToMessageId: opts?.replyToMessageId });
       if (question.type === "text") {
         const prompt = renderForceReplyPrompt();
