@@ -88,7 +88,7 @@ export function makeStore(): Store {
   return new Store(path.join(dir, "state.sqlite"));
 }
 
-export function createBatch(store: Store, payload: AskPayload, opts: { timeoutAt?: string; tmuxWindow?: string } = {}): string {
+export function createBatch(store: Store, payload: AskPayload, opts: { timeoutAt?: string; tmuxWindow?: string; askKey?: string } = {}): string {
   const id = newId();
   store.createBatch({
     id,
@@ -100,6 +100,7 @@ export function createBatch(store: Store, payload: AskPayload, opts: { timeoutAt
     on_timeout: "cancel",
     chat_id: "1",
     user_id: "1",
+    ...(opts.askKey ? { ask_key: opts.askKey } : {}),
   });
   payload.questions.forEach((_q, idx) => {
     store.createQuestion({

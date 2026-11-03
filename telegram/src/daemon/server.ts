@@ -13,6 +13,7 @@ import {
   readConfig,
   resolveMiniapp,
   resolveHubUrl,
+  resolveAskdUrl,
   apiBase,
   redact,
   shortHostname,
@@ -42,7 +43,9 @@ import { TailscaleWatcher, readTailscaleWatchConfig, describeWatchState } from "
 import { pendingTailscaleChecks } from "../inbox/tailscale.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
-import { listView } from "../miniapp/views.ts";
+import { mergedListView } from "../miniapp/views.ts";
+import { fetchAskdSets } from "../miniapp/askd.ts";
+import type { AskdSource } from "../miniapp/askd.ts";
 import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus, TailscaleStatus } from "./protocol.ts";
 
 interface ChannelEntry {
@@ -222,6 +225,9 @@ export async function runDaemon(): Promise<void> {
   const miniappSettings = resolveMiniapp(config);
   if (miniappSettings && "error" in miniappSettings) log(`mini app disabled: ${miniappSettings.error}`);
   const miniapp = miniappSettings && !("error" in miniappSettings) ? miniappSettings : undefined;
+  // askd, on this machine, says what is waiting; the Mini App and the menu button count follow it (src/miniapp/askd.ts).
+  const askdUrl = resolveAskdUrl(config);
+  const askdSource: AskdSource = () => fetchAskdSets(askdUrl);
   const miniappServer = miniapp
     ? createMiniappServer({
         store,
@@ -232,6 +238,7 @@ export async function runDaemon(): Promise<void> {
         secret: miniapp.secret,
         maxAgeSeconds: miniapp.maxAgeSeconds,
         hubUrl: resolveHubUrl(config),
+        askd: askdSource,
         log,
       })
     : undefined;
@@ -284,14 +291,18 @@ export async function runDaemon(): Promise<void> {
   }
   // The button text carries the number of open sets (src/miniapp/menu-count.ts).
   let menuUpdater: ReturnType<typeof createMenuCountUpdater> | undefined;
+  let menuTicker: ReturnType<typeof setInterval> | undefined;
   if (miniappUrl) {
     const url = miniappUrl;
     menuUpdater = createMenuCountUpdater({
-      getCount: () => listView(store).batches.length,
+      getCount: async () => mergedListView(store, await askdSource()).batches.length,
       setText: (text) => api.setChatMenuButton(config.chatId, text, url),
       log,
     });
     menuChanged = () => menuUpdater!.schedule();
+    // askd sets that never touch this daemon (a quiz, a link-only set) come and go unseen, so look again every minute.
+    menuTicker = setInterval(() => menuUpdater!.schedule(), 60_000);
+    menuTicker.unref();
     await menuUpdater.syncNow();
   } else {
     try {
@@ -443,6 +454,7 @@ export async function runDaemon(): Promise<void> {
       clearInterval(healTimer);
       tailscaleWatcher.stop();
       menuUpdater?.stop();
+      if (menuTicker) clearInterval(menuTicker);
       for (const socket of openSockets) socket.destroy();
       await Promise.race([poller.stop(), sleep(2500)]);
       await new Promise<void>((resolve) => server.close(() => resolve()));

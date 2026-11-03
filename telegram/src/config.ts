@@ -25,6 +25,9 @@ export interface MiniappConfig {
   // Tailnet-only hub the Mini App's top bar links to (opened in the phone's browser, never
   // embedded). The HUB_URL environment variable overrides it. Default DEFAULT_HUB_URL.
   hubUrl?: string;
+  // Where askd answers (the list of open question sets). The ASKD_URL environment variable overrides it.
+  // Default DEFAULT_ASKD_URL; only a loopback or tailnet address is used.
+  askdUrl?: string;
 }
 
 export interface Config {
@@ -44,6 +47,32 @@ export interface ResolvedMiniapp {
 
 export const DEFAULT_MINIAPP_MAX_AGE_SECONDS = 3600;
 export const DEFAULT_HUB_URL = "https://redd-mason.tail342c6f.ts.net:8443";
+
+export const DEFAULT_ASKD_URL = "http://127.0.0.1:18780";
+
+// A loopback address, a tailnet name (*.ts.net) or a tailnet address (100.64.0.0/10).
+function isLocalOrTailnet(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h === "::1" || h.endsWith(".ts.net")) return true;
+  const m = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(h);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a === 127 || (a === 100 && b >= 64 && b <= 127);
+}
+
+// askd's origin: ASKD_URL, else miniapp.askdUrl, else the loopback default (askd and the daemon run on one machine).
+// A value that is not an http(s) URL to this machine or the tailnet is skipped.
+export function resolveAskdUrl(config: Config, env: NodeJS.ProcessEnv = process.env): string {
+  for (const candidate of [env.ASKD_URL, config.miniapp?.askdUrl]) {
+    if (!candidate) continue;
+    try {
+      const u = new URL(candidate);
+      if ((u.protocol === "https:" || u.protocol === "http:") && isLocalOrTailnet(u.hostname)) return u.origin;
+    } catch { /* try the next */ }
+  }
+  return DEFAULT_ASKD_URL;
+}
 
 // The hub origin for the Mini App's link bar: HUB_URL, else miniapp.hubUrl, else the default.
 // A value that is not an http(s) URL falls back to the default, so the bar always has a target.

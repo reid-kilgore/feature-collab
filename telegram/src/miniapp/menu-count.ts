@@ -4,7 +4,7 @@
 
 export interface MenuCountDeps {
   // How many sets are open now.
-  getCount: () => number;
+  getCount: () => number | Promise<number>;
   // Sends the new text to Telegram.
   setText: (text: string) => Promise<void>;
   log: (line: string) => void;
@@ -40,9 +40,9 @@ export function createMenuCountUpdater(deps: MenuCountDeps): MenuCountUpdater {
     try {
       do {
         dirty = false;
-        // Counting reads the store and parses stored payloads, so it can throw too.
+        // Counting reads the store and asks askd, so it can throw too.
         try {
-          const count = deps.getCount();
+          const count = await deps.getCount();
           if (!force && count === shown) continue;
           force = false;
           await deps.setText(menuText(count));
