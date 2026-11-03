@@ -9,9 +9,10 @@
   var app = document.getElementById('app');
 
   var state = {
-    screen: 'list', // list | set
+    screen: 'list', // list | set | askd
     list: null,
     detail: null,
+    askd: null, // an askd set answered here: { id, title, message, questions, picked, answers, busy, sending, done, error }
     answers: Object.create(null), // questionId -> { selected: [], other: '', text: '', skip: false }
     results: Object.create(null), // questionId -> { status, reason }
     sending: false,
@@ -34,7 +35,7 @@
 
   function syncBackButton() {
     if (!nativeBack) return;
-    try { if (state.screen === 'set') tg.BackButton.show(); else tg.BackButton.hide(); } catch (e) { /* ignore */ }
+    try { if (state.screen === 'set' || state.screen === 'askd') tg.BackButton.show(); else tg.BackButton.hide(); } catch (e) { /* ignore */ }
   }
 
   function haptic(kind) {
@@ -135,6 +136,7 @@
     state.menu = false;
     state.screen = 'list';
     state.detail = null;
+    state.askd = null;
     state.error = null;
     loadList();
   }
@@ -159,6 +161,200 @@
       state.error = null;
       render();
     }, fail);
+  }
+
+
+  // ---- an askd set answered here (a quiz above all) ----
+  // askd keeps the answer key. The view has none; a pick goes to askd, which locks it and sends back the verdict.
+
+  var LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  function letter(i) { return i < LETTERS.length ? LETTERS.charAt(i) : String(i + 1); }
+
+  // fallbackUrl: the form to open in the browser when the set cannot be answered here.
+  function openAskdSet(id, fallbackUrl) {
+    state.menu = false;
+    api('sets/' + id).then(function (r) {
+      if (r.status !== 200 || !r.body || !Array.isArray(r.body.questions)) {
+        if (fallbackUrl) { openForm(fallbackUrl); return; }
+        goList();
+        showToast(r.status === 409 || r.status === 404 ? 'That set is already closed.' : 'Could not open that set.', 5000);
+        return;
+      }
+      var answers = Object.create(null);
+      r.body.questions.forEach(function (q) { answers[q.id] = { selected: [], other: '', text: '', skip: false, notes: '', disagree: false }; });
+      state.askd = { id: r.body.id, title: r.body.title, message: r.body.message || '', questions: r.body.questions, picked: Object.assign(Object.create(null), r.body.picked || {}), answers: answers, busy: Object.create(null), sending: false, done: null, error: null };
+      state.screen = 'askd';
+      state.error = null;
+      render();
+    }, function (e) { if (fallbackUrl && !(e && e.auth)) openForm(fallbackUrl); else fail(e); });
+  }
+
+  function pickQuiz(q, value) {
+    var d = state.askd;
+    if (!d || d.picked[q.id] || d.busy[q.id]) return;
+    d.busy[q.id] = true;
+    d.error = null;
+    render();
+    api('sets/' + d.id + '/check', { method: 'POST', body: JSON.stringify({ questionId: q.id, value: value }) }).then(function (r) {
+      delete d.busy[q.id];
+      if (r.status === 200 && r.body && typeof r.body.correct === 'boolean') {
+        d.picked[q.id] = r.body;
+        haptic(r.body.correct ? 'success' : 'warning');
+      } else if (r.status === 409 || r.status === 404) {
+        state.askd = null;
+        goList();
+        showToast('That set is already closed.', 5000);
+        return;
+      } else {
+        d.error = 'Could not record that pick. Try again.';
+      }
+      render();
+    }, function (e) { delete d.busy[q.id]; fail(e); });
+  }
+
+  function askdAnswered(q) {
+    var d = state.askd;
+    if (q.required === false) return true;
+    var a = d.answers[q.id];
+    if (q.type === 'quiz') return !!d.picked[q.id];
+    if (q.type === 'text') return a.text.trim().length > 0;
+    return a.selected.length > 0 || a.other.trim().length > 0;
+  }
+
+  function askdReady() {
+    var d = state.askd;
+    return !d.sending && !d.done && d.questions.every(askdAnswered);
+  }
+
+  function askdBody() {
+    var d = state.askd;
+    return d.questions.map(function (q) {
+      var a = d.answers[q.id];
+      var value = null;
+      if (q.type === 'quiz') value = d.picked[q.id] ? d.picked[q.id].value : null;
+      else if (q.type === 'text') value = a.text.trim() || null;
+      else if (q.type === 'single') value = a.other.trim() || a.selected[0] || null;
+      else value = a.selected.concat(a.other.trim() ? [a.other.trim()] : []);
+      var item = { questionId: q.id, value: value, notes: a.notes.trim() };
+      if (q.type === 'quiz' && a.disagree) item.disagree = true;
+      return item;
+    });
+  }
+
+  function sendAskd() {
+    var d = state.askd;
+    if (!d || !askdReady()) return;
+    d.sending = true;
+    d.error = null;
+    render();
+    api('sets/' + d.id + '/submit', { method: 'POST', body: JSON.stringify({ answers: askdBody() }) }).then(function (r) {
+      d.sending = false;
+      if (r.status === 200 && r.body && r.body.ok) {
+        d.done = { score: r.body.score || null };
+        haptic('success');
+      } else if (r.status === 409 || r.status === 404) {
+        goList();
+        showToast('That set was closed before your answers arrived.', 6000);
+        return;
+      } else {
+        var issue = r.body && r.body.issues && r.body.issues[0] ? r.body.issues[0].message : '';
+        d.error = 'askd did not take those answers' + (issue ? ': ' + issue : '') + '. Check them and try again.';
+      }
+      render();
+    }, function (e) { d.sending = false; fail(e); });
+  }
+
+  function quizOption(q, opt, i) {
+    var d = state.askd;
+    var v = d.picked[q.id];
+    var cls = 'option';
+    var mark = null;
+    var why = null;
+    if (v) {
+      if (opt.value === v.answer) { cls += ' right'; mark = 'Right answer'; }
+      else if (opt.value === v.value) { cls += ' wrong'; mark = 'Your pick'; }
+      if (opt.value !== v.answer && v.whyWrongAll && v.whyWrongAll[opt.value]) why = v.whyWrongAll[opt.value];
+      else if (opt.value !== v.answer && opt.value === v.value && v.whyWrong) why = v.whyWrong;
+      if (opt.value === v.value) cls += ' selected';
+    }
+    var label = h('span', { class: 'label' },
+      h('strong', { text: letter(i) + '. ' }),
+      opt.label,
+      mark ? h('span', { class: 'tag' + (opt.value === v.answer ? ' ok' : ' bad'), text: mark }) : null,
+      opt.description ? h('span', { class: 'desc', text: opt.description }) : null,
+      why ? h('span', { class: 'why', text: why }) : null);
+    return h('button', { class: cls, type: 'button', disabled: !!v || !!d.busy[q.id], onclick: function () { pickQuiz(q, opt.value); } }, label);
+  }
+
+  function askdQuestionNode(q, index, total) {
+    var d = state.askd;
+    var a = d.answers[q.id];
+    var card = h('section', { class: 'card' }, h('div', { class: 'row qhead' }, h('div', { class: 'qnum', text: 'Question ' + (index + 1) + ' of ' + total })));
+    card.appendChild(h('p', { class: 'prompt', text: q.prompt }));
+    var rerender = function () { render(); };
+    if (q.type === 'quiz') {
+      q.options.forEach(function (opt, i) { card.appendChild(quizOption(q, opt, i)); });
+      var v = d.picked[q.id];
+      if (!v) {
+        card.appendChild(h('div', { class: 'hint', text: d.busy[q.id] ? 'Checking…' : 'Your first pick is final.' }));
+      } else {
+        card.appendChild(h('div', { class: 'verdict ' + (v.correct ? 'ok' : 'bad'), text: v.correct ? 'Right.' : 'Wrong. The right answer is ' + v.answer + '.' }));
+        if (v.why) card.appendChild(h('p', { class: 'explain', text: v.why }));
+        if (v.cite) card.appendChild(h('p', { class: 'hint', text: v.cite }));
+        if (q.allowDisagree !== false) {
+          card.appendChild(h('label', { class: 'disagree' },
+            h('input', { type: 'checkbox', checked: a.disagree, onchange: function (e) { a.disagree = e.target.checked; rerender(); } }),
+            h('span', { text: ' I disagree with this answer' })));
+          if (a.disagree) {
+            card.appendChild(fieldWithDone(h('input', {
+              type: 'text', enterkeyhint: 'done', placeholder: 'Why? (optional)', value: a.notes,
+              oninput: function (e) { a.notes = e.target.value; },
+              onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+            })));
+          }
+        }
+      }
+    } else if (q.type === 'text') {
+      card.appendChild(fieldWithDone(h('textarea', { placeholder: q.placeholder || 'Your answer', value: a.text, oninput: function (e) { a.text = e.target.value; updateAskdSend(); } })));
+    } else {
+      q.options.forEach(function (opt) { card.appendChild(optionNode(q, opt, a, rerender)); });
+      if (q.allowOther) {
+        card.appendChild(fieldWithDone(h('input', {
+          type: 'text', enterkeyhint: 'done', placeholder: 'Other, or a note', value: a.other,
+          oninput: function (e) { a.other = e.target.value; if (q.type === 'single' && a.other.trim()) { a.selected = []; refreshSelection(card); } updateAskdSend(); },
+          onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+        })));
+      }
+    }
+    return card;
+  }
+
+  function updateAskdSend() {
+    var button = document.getElementById('send');
+    if (!button || !state.askd) return;
+    button.disabled = !askdReady();
+    button.textContent = state.askd.sending ? 'Sending…' : 'Send answers';
+  }
+
+  function renderAskd() {
+    var d = state.askd;
+    var nodes = [];
+    nodes.push(h('div', { class: 'row' }, nativeBack ? h('span') : h('button', { class: 'link', text: '‹ Back', onclick: goList }), h('span')));
+    nodes.push(h('h1', { text: d.title }));
+    if (d.done) {
+      var sc = d.done.score;
+      nodes.push(h('div', { class: 'card' },
+        h('h2', { text: sc && sc.total ? 'Score: ' + sc.right + ' of ' + sc.total + ' right' : 'Answers sent' }),
+        sc && sc.total && sc.disagree ? h('p', { class: 'hint', text: 'You disagreed with ' + sc.disagree + '.' }) : null,
+        h('p', { class: 'hint', text: 'askd has your answers.' })));
+      nodes.push(h('button', { class: 'send inline', text: 'Back to the list', onclick: function () { goList(); } }));
+      return nodes;
+    }
+    if (d.message) nodes.push(h('p', { class: 'message', text: d.message }));
+    d.questions.forEach(function (q, i) { nodes.push(askdQuestionNode(q, i, d.questions.length)); });
+    if (d.error) nodes.push(h('div', { class: 'card' }, h('p', { class: 'note error', text: d.error })));
+    nodes.push(h('div', { class: 'bottom' }, h('button', { id: 'send', class: 'send', onclick: sendAskd })));
+    return nodes;
   }
 
   // ---- answers ----
@@ -340,16 +536,16 @@
     state.list.batches.forEach(function (b) {
       var due = deadline(b.timeoutAt);
       if (b.url) {
-        // An askd set with no batch here (a quiz, a link-only set, a failed send): it is answered in its form, in the browser.
+        // An askd set with no batch here (a quiz, a link-only set, a failed send): it is answered here through askd; if askd cannot be reached its form opens in the browser.
         var safe = SAFE_HREF.test(b.url);
-        nodes.push(h('button', { class: 'card', disabled: safe ? null : 'disabled', onclick: function () { openForm(b.url); } },
+        nodes.push(h('button', { class: 'card', disabled: safe ? null : 'disabled', onclick: function () { openAskdSet(b.id, b.url); } },
           h('h2', { text: b.title }),
           h('div', { class: 'meta hint' },
             h('span', { text: b.asker }),
             h('span', { text: b.total + (b.total === 1 ? ' question' : ' questions') }),
             h('span', { text: ago(b.createdAt) }),
             due ? h('span', { text: due }) : null),
-          h('div', { class: 'hint', text: 'Answered in the form: tap to open it in your browser' })));
+          h('div', { class: 'hint', text: 'Tap to answer here' })));
         return;
       }
       var bar = h('div', { class: 'bar' }, h('div'));
@@ -606,11 +802,11 @@
       app.appendChild(h('div', { class: 'card' }, h('p', { class: 'note error', text: state.error })));
       if (state.screen === 'list' && !state.list) return;
     }
-    var nodes = state.screen === 'set' && state.detail ? renderSet() : renderList();
+    var nodes = state.screen === 'askd' && state.askd ? renderAskd() : state.screen === 'set' && state.detail ? renderSet() : renderList();
     nodes.forEach(function (n) { app.appendChild(n); });
     if (state.sheet && state.screen === 'list') app.appendChild(renderSheet());
     if (state.toast) app.appendChild(h('div', { class: 'toast', role: 'status', text: state.toast }));
-    updateSendButton();
+    if (state.screen === 'askd') updateAskdSend(); else updateSendButton();
     syncBackButton();
     window.scrollTo(0, scroll);
   }
@@ -670,4 +866,7 @@
   renderHubBar();
   render();
   loadList();
+  // A button in the chat opens this page with ?set=<askd set id>: go straight to that set.
+  var wanted = /(?:^|[?&])set=([0-9a-f]{12})(?:&|$)/.exec(String(location.search || ''));
+  if (wanted) openAskdSet(wanted[1], null);
 })();

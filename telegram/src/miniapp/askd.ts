@@ -66,3 +66,57 @@ export async function fetchAskdSets(baseUrl: string, opts: { fetch?: typeof fetc
     return undefined;
   }
 }
+
+// ---- answering an askd set in the app ----
+// A set with no live batch here (a quiz above all) is answered through three askd routes. askd keeps the quiz key: the view has
+// no answer, and a verdict comes back only after a pick, which askd locks. This only forwards; it grades nothing.
+
+export interface AskdReply {
+  status: number;
+  body: unknown;
+}
+
+export interface AskdAnswering {
+  view(setId: string): Promise<AskdReply>;
+  check(setId: string, body: { questionId: string; value: string }): Promise<AskdReply>;
+  submit(setId: string, body: { answers: MiniAnswer[]; annotations: Record<string, never> }): Promise<AskdReply>;
+}
+
+export interface MiniAnswer {
+  questionId: string;
+  value: string | string[] | null;
+  notes: string;
+  disagree?: boolean;
+}
+
+export function isSetId(value: string): boolean {
+  return SET_ID.test(value);
+}
+
+export function createAskdAnswering(baseUrl: string, opts: { fetch?: typeof fetch; timeoutMs?: number } = {}): AskdAnswering {
+  const doFetch = opts.fetch ?? fetch;
+  const root = baseUrl.replace(/\/+$/, "");
+  async function call(setId: string, op: string, body?: unknown): Promise<AskdReply> {
+    if (!SET_ID.test(setId)) return { status: 404, body: { error: "not_found" } };
+    try {
+      const res = await doFetch(`${root}/sets/${setId}/api/${op}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: body === undefined ? {} : { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10000),
+      });
+      let parsed: unknown = {};
+      try {
+        parsed = await res.json();
+      } catch { /* an empty or odd body: the status says enough */ }
+      return { status: res.status, body: parsed };
+    } catch {
+      return { status: 502, body: { error: "askd_unreachable" } };
+    }
+  }
+  return {
+    view: (setId) => call(setId, "mini"),
+    check: (setId, body) => call(setId, "mini-check", body),
+    submit: (setId, body) => call(setId, "mini-submit", body),
+  };
+}

@@ -130,6 +130,11 @@ test("a busy miniapp port is logged and the daemon still serves the CLI", async 
     await waitForSocketAt(daemonSocketPath(h.home));
     const result = await h.runCli(["send", "--title", "Still alive", "hello"]);
     assert.equal(result.code, 0, result.stderr);
+    // With the mini app not running, a send that asks for its button is refused, so the sender can send the message without it.
+    const refused = await h.runCli(["send", "--miniapp-set", "a1b2c3d4e5f6", "Quiz waiting"]);
+    assert.equal(refused.code, 1);
+    assert.match(refused.stderr, /Mini App is not set up/);
+    assert.ok(!h.fake.sent.some((m) => String(m.body.text ?? "").includes("Quiz waiting")));
     await waitUntil(() => h.fake.sent.some((m) => m.method === "setChatMenuButton"));
     assert.deepEqual(h.fake.sent.find((m) => m.method === "setChatMenuButton")!.body.menu_button, { type: "default" });
     daemon.kill("SIGKILL");
@@ -301,6 +306,28 @@ test("the menu button text follows the number of open sets through the daemon", 
     await new Promise<number | null>((resolve) => askProc.once("close", resolve));
     await waitUntil(() => texts().at(-1) === "Questions", 6000);
     assert.deepEqual(texts(), ["Questions", "Questions (1)", "Questions"]);
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});
+
+test("tg send --miniapp-set puts a button under the message that opens that set in the mini app", async () => {
+  const h = await setupHarness();
+  try {
+    const port = await freePort();
+    writeConfig(h, { miniapp: { port, secret: SECRET, publicUrl: "https://redd.example.ts.net" } });
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    await waitUntil(() => h.fake.sent.some((m) => m.method === "setChatMenuButton"));
+    const bad = await h.runCli(["send", "--miniapp-set", "not-an-id", "x"]);
+    assert.equal(bad.code, 1);
+    const sent = await h.runCli(["send", "Quiz waiting for you. Form: https://askd.example.ts.net:8443/sets/a1b2c3d4e5f6/", "--miniapp-set", "a1b2c3d4e5f6"]);
+    assert.equal(sent.code, 0, sent.stderr);
+    const message = h.fake.sent.find((m) => m.method === "sendMessage" && String(m.body.text ?? "").includes("Quiz waiting"))!;
+    const rows = (message.body.reply_markup as { inline_keyboard: Array<Array<{ text: string; web_app?: { url: string }; url?: string }>> }).inline_keyboard;
+    assert.equal(rows[0]![0]!.web_app!.url, `https://redd.example.ts.net/${SECRET}/?set=a1b2c3d4e5f6`);
+    assert.equal(rows[1]![0]!.url, "https://askd.example.ts.net:8443/sets/a1b2c3d4e5f6/", "the lone link in the text stays a button below");
     daemon.kill("SIGKILL");
   } finally {
     await h.teardown();

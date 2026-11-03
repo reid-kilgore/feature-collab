@@ -179,7 +179,7 @@ export interface Route {
 
 // Loads app.js into a fresh sandbox. `routes` maps "METHOD path" (path after /api/) to a response,
 // or a function returning one.
-export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Route | ((body?: string) => Route)>; hub?: string; openLink?: boolean; storage?: Map<string, string> }): PageRig {
+export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Route | ((body?: string) => Route)>; hub?: string; openLink?: boolean; storage?: Map<string, string>; search?: string }): PageRig {
   const doc = new FakeDocument();
   const calls: string[] = [];
   const fetches: PageRig["fetches"] = [];
@@ -219,7 +219,7 @@ export function loadPage(opts: { nativeBack: boolean; routes: Record<string, Rou
   const sandbox = {
     window: { Telegram: { WebApp: tg }, scrollY: 0, scrollTo() {}, localStorage },
     document: doc,
-    location: { pathname: "/secret/" },
+    location: { pathname: "/secret/", search: opts.search ?? "" },
     navigator: {},
     localStorage,
     sessionStorage: {

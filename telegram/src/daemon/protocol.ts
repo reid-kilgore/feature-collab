@@ -23,6 +23,8 @@ export interface NotifyRequest {
   // that link as a button, unless noButton is set.
   buttons?: Array<{ text: string; url: string }>;
   noButton?: boolean;
+  // An askd set id: a button under the message opens that set in the Mini App. Refused when the Mini App is not running.
+  miniappSet?: string;
 }
 
 export interface AskRequest {

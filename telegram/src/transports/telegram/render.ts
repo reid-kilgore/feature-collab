@@ -125,16 +125,34 @@ export function renderForceReplyPrompt(): { text: string; replyMarkup: ReplyMark
 
 export type ResolvedKind = "answered" | "skipped" | "cancelled" | "expired";
 
+// An edit over Telegram's 4096-character limit is refused, which would leave a resolved question looking open. So the prompt
+// and the answer are clipped (with a "…") until the whole text fits, leaving room for the tags and the words around them.
+const FIT = 4000;
+
+// `text` cut, with a "…", so that its escaped form is at most `max` characters; text that already fits is returned as it is.
+function clip(text: string, max: number): string {
+  if (escapeHtml(text).length <= max) return text;
+  let used = 0;
+  let out = "";
+  for (const ch of text) {
+    used += escapeHtml(ch).length;
+    if (used > max - 1) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 export function renderResolvedView(question: Question, kind: ResolvedKind, answerText?: string): string {
-  const prompt = `✅ <b>${escapeHtml(question.prompt)}</b>`;
-  if (kind === "answered") return `${prompt}\n<i>${escapeHtml(answerText ?? "")}</i>`;
-  if (kind === "skipped") return `${prompt}\n<i>⏭ skipped</i>`;
-  if (kind === "cancelled") return `${prompt}\n<i>✖ cancelled</i>`;
-  return `${prompt}\n<i>⏰ expired</i>`;
+  if (kind === "answered") {
+    const answer = clip(answerText ?? "", FIT / 2);
+    return `✅ <b>${escapeHtml(clip(question.prompt, FIT - 200 - escapeHtml(answer).length))}</b>\n<i>${escapeHtml(answer)}</i>`;
+  }
+  const note = kind === "skipped" ? "⏭ skipped" : kind === "cancelled" ? "✖ cancelled" : "⏰ expired";
+  return `✅ <b>${escapeHtml(clip(question.prompt, FIT - 200))}</b>\n<i>${note}</i>`;
 }
 
 export function renderMovedView(question: Question): string {
-  return `↪ <b>${escapeHtml(question.prompt)}</b>\n<i>moved to the message below</i>`;
+  return `↪ <b>${escapeHtml(clip(question.prompt, FIT - 200))}</b>\n<i>moved to the message below</i>`;
 }
 
 export function renderHeader(payload: AskPayload, askerAddress?: string): string | undefined {
