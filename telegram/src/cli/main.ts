@@ -97,6 +97,7 @@ Commands:
        [--button "label=url"]... [--no-button]
       (a --button is a tappable link under the message, one per row; with none, a lone http(s) link in the text becomes one
        unless --no-button)
+      [--miniapp-set SET_ID] (adds a button that opens that askd set in the Mini App; exit 1 when the Mini App is not set up)
   status
   pending [--json]
   cancel <id|all> | cancel --key KEY
@@ -409,6 +410,7 @@ function parseSendArgs(argv: string[]): {
   from?: string;
   buttons: LinkButton[];
   noButton: boolean;
+  miniappSet?: string;
 } {
   let level: Level = "info";
   let title: string | undefined;
@@ -420,6 +422,7 @@ function parseSendArgs(argv: string[]): {
   let from: string | undefined;
   const buttons: LinkButton[] = [];
   let noButton = false;
+  let miniappSet: string | undefined;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -428,6 +431,9 @@ function parseSendArgs(argv: string[]): {
       buttons.push(parseButtonArg(argv[++i] ?? ""));
     } else if (arg === "--no-button") {
       noButton = true;
+    } else if (arg === "--miniapp-set") {
+      miniappSet = argv[++i];
+      if (!miniappSet || !/^[0-9a-f]{12}$/.test(miniappSet)) throw new Error("--miniapp-set needs an askd set id (12 hex characters)");
     } else if (arg === "--level") {
       const v = argv[++i];
       if (v !== "info" && v !== "success" && v !== "warning" && v !== "error") throw new Error("--level must be info, success, warning, or error");
@@ -451,7 +457,7 @@ function parseSendArgs(argv: string[]): {
       positional.push(arg!);
     }
   }
-  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton };
+  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton, ...(miniappSet ? { miniappSet } : {}) };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -483,6 +489,7 @@ async function cmdSend(argv: string[]): Promise<void> {
     sender: senderName(args),
     ...(args.buttons.length ? { buttons: args.buttons } : {}),
     ...(args.noButton ? { noButton: true } : {}),
+    ...(args.miniappSet ? { miniappSet: args.miniappSet } : {}),
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {

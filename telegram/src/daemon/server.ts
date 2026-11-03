@@ -44,7 +44,7 @@ import { pendingTailscaleChecks } from "../inbox/tailscale.ts";
 import { createMiniappServer, listenLoopback } from "../miniapp/server.ts";
 import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
 import { mergedListView } from "../miniapp/views.ts";
-import { fetchAskdSets } from "../miniapp/askd.ts";
+import { fetchAskdSets, createAskdAnswering } from "../miniapp/askd.ts";
 import type { AskdSource } from "../miniapp/askd.ts";
 import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus, TailscaleStatus } from "./protocol.ts";
 
@@ -239,6 +239,7 @@ export async function runDaemon(): Promise<void> {
         maxAgeSeconds: miniapp.maxAgeSeconds,
         hubUrl: resolveHubUrl(config),
         askd: askdSource,
+        askdAnswering: createAskdAnswering(askdUrl),
         log,
       })
     : undefined;
@@ -421,6 +422,7 @@ export async function runDaemon(): Promise<void> {
       dispatcherStatus,
       tailscaleStatus,
       menuChanged: () => menuChanged(),
+      miniappUrl: () => miniappUrl,
     }).catch((error) => {
       log(`connection error: ${(error as Error).message}`);
     });
@@ -567,6 +569,8 @@ interface ConnectionDeps {
   tailscaleStatus: () => TailscaleStatus;
   // A set was created (resolved sets are reported through onResolved): the menu count may differ.
   menuChanged: () => void;
+  // The Mini App's address while it is running, else undefined.
+  miniappUrl: () => string | undefined;
 }
 
 async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promise<void> {
@@ -1044,6 +1048,7 @@ async function sendNotification(
     sender?: string;
     buttons?: Array<{ text: string; url: string }>;
     noButton?: boolean;
+    miniappSet?: string;
   },
 ): Promise<number | undefined> {
   const bodyHtml = request.body ? markdownToTelegramHtml(request.body) : undefined;
@@ -1060,7 +1065,8 @@ async function sendNotification(
   // Explicit buttons win; otherwise a lone link in the text (or the caption) becomes one, unless switched off.
   const explicit = (request.buttons ?? []).filter((b) => b.text && isHttpUrl(b.url));
   const auto = explicit.length || request.noButton ? undefined : singleLinkButton(request.caption ?? request.body);
-  const markup = buttonRows(explicit.length ? explicit : auto ? [auto] : []);
+  const urlMarkup = buttonRows(explicit.length ? explicit : auto ? [auto] : []);
+  const markup = request.miniappSet ? withMiniappButton(urlMarkup, miniappSetUrl(deps, request.miniappSet)) : urlMarkup;
 
   const attachmentPath = request.imagePath ?? request.filePath;
   if (attachmentPath) {
@@ -1086,6 +1092,21 @@ async function sendNotification(
 
   await sendTextWithFallback(deps, text, recordSent, request.replyToMessageId, markup);
   return firstMessageId;
+}
+
+// The Mini App address with the set to open: the page reads ?set= when it starts.
+function miniappSetUrl(deps: ConnectionDeps, setId: string): string {
+  const base = deps.miniappUrl();
+  if (!base) throw new Error("the Mini App is not set up on this machine");
+  if (!/^[0-9a-f]{12}$/.test(setId)) throw new Error("not an askd set id");
+  const url = new URL(base);
+  url.searchParams.set("set", setId);
+  return url.href;
+}
+
+// An inline button that opens the Mini App (Telegram allows web_app buttons in a private chat), above any url buttons.
+function withMiniappButton(markup: ReturnType<typeof buttonRows>, url: string): ReplyMarkup {
+  return { inline_keyboard: [[{ text: "Answer in the app", web_app: { url } }], ...(markup?.inline_keyboard ?? [])] };
 }
 
 async function sendTextWithFallback(deps: ConnectionDeps, html: string, recordSent: (messageId: number) => void, replyToMessageId?: number, markup?: ReplyMarkup): Promise<void> {

@@ -16,7 +16,8 @@ import { cancelBatch } from "../core/interaction.ts";
 import type { Submission } from "../core/answers.ts";
 import { validateInitData } from "./initdata.ts";
 import { mergedListView, detailView } from "./views.ts";
-import type { AskdSource } from "./askd.ts";
+import type { AskdSource, AskdAnswering, MiniAnswer } from "./askd.ts";
+import { isSetId } from "./askd.ts";
 import { PAGE_HTML, PAGE_JS, PAGE_CSS } from "./page.ts";
 
 export interface MiniappServerDeps {
@@ -32,6 +33,8 @@ export interface MiniappServerDeps {
   hubUrl?: string;
   // askd's open sets (src/miniapp/askd.ts). Optional: without it the list is this daemon's own batches.
   askd?: AskdSource;
+  // Answering an askd set that has no live batch here (a quiz above all); without it those cards open their form.
+  askdAnswering?: AskdAnswering;
   log: (line: string) => void;
 }
 
@@ -136,6 +139,33 @@ export function parseSubmissions(raw: string): Submission[] | undefined {
   return out;
 }
 
+const MAX_NOTE_LENGTH = 4000;
+
+// Strict parse of a quiz or set answer. Anything unexpected is a 400; only these fields are forwarded to askd.
+export function parseMiniAnswers(raw: string): MiniAnswer[] | undefined {
+  const body = parseObject(raw);
+  const list = body?.answers;
+  if (!Array.isArray(list) || list.length === 0 || list.length > MAX_SUBMISSIONS) return undefined;
+  const out: MiniAnswer[] = [];
+  for (const item of list) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return undefined;
+    const a = item as Record<string, unknown>;
+    if (typeof a.questionId !== "string" || a.questionId.length === 0 || a.questionId.length > MAX_ID_LENGTH) return undefined;
+    const value = a.value ?? null;
+    const okValue = value === null || typeof value === "string" || (Array.isArray(value) && value.length <= 200 && value.every((v) => typeof v === "string"));
+    if (!okValue) return undefined;
+    if (a.notes !== undefined && (typeof a.notes !== "string" || a.notes.length > MAX_NOTE_LENGTH)) return undefined;
+    if (a.disagree !== undefined && typeof a.disagree !== "boolean") return undefined;
+    out.push({
+      questionId: a.questionId,
+      value: value as string | string[] | null,
+      notes: (a.notes as string | undefined) ?? "",
+      ...(a.disagree ? { disagree: true } : {}),
+    });
+  }
+  return out;
+}
+
 function parseObject(raw: string): Record<string, unknown> | undefined {
   try {
     const value = JSON.parse(raw === "" ? "{}" : raw) as unknown;
@@ -161,6 +191,46 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
     if (u.protocol === "https:" || u.protocol === "http:") hubAttr = u.origin.replace(/[&"<>']/g, "");
   } catch { /* no hub: the bar stays empty */ }
 
+  // The three askd set routes: view, pick (a quiz verdict) and submit. Same initData check as every /api route.
+  async function routeAskdSet(req: http.IncomingMessage, res: http.ServerResponse, setId: string, action: string | undefined): Promise<void> {
+    const auth = validateInitData(headerValue(req.headers["x-telegram-init-data"]), {
+      botToken: deps.botToken,
+      allowedUserId: deps.allowedUserId,
+      maxAgeSeconds: deps.maxAgeSeconds,
+    });
+    if (!auth.ok) return send(res, 401, "");
+    const answering = deps.askdAnswering;
+    if (!answering || !isSetId(setId)) return sendJson(res, 404, { error: "not_found" });
+    if (action === undefined) {
+      if (req.method !== "GET") return send(res, 405, "");
+      const reply = await answering.view(setId);
+      return sendJson(res, reply.status === 200 ? 200 : reply.status === 409 || reply.status === 404 ? reply.status : 502, reply.body);
+    }
+    if (req.method !== "POST") return send(res, 405, "");
+    const contentType = headerValue(req.headers["content-type"]) ?? "";
+    if (!contentType.toLowerCase().startsWith("application/json")) return sendJson(res, 415, { error: "bad_request" });
+    let raw: string;
+    try {
+      raw = await readBody(req);
+    } catch (error) {
+      res.setHeader("connection", "close");
+      return sendJson(res, error instanceof BodyTooLarge ? 413 : 400, { error: "bad_request" });
+    }
+    let reply;
+    if (action === "check") {
+      const body = parseObject(raw);
+      if (!body || typeof body.questionId !== "string" || !body.questionId || body.questionId.length > MAX_ID_LENGTH || typeof body.value !== "string" || !body.value || body.value.length > MAX_ID_LENGTH) {
+        return sendJson(res, 400, { error: "bad_request" });
+      }
+      reply = await answering.check(setId, { questionId: body.questionId, value: body.value });
+    } else {
+      const answers = parseMiniAnswers(raw);
+      if (!answers) return sendJson(res, 400, { error: "bad_request" });
+      reply = await answering.submit(setId, { answers, annotations: {} });
+    }
+    return sendJson(res, [200, 400, 404, 409].includes(reply.status) ? reply.status : 502, reply.body);
+  }
+
   async function route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // Parse by hand: new URL("//") throws, and an unauthenticated request must not reach the log.
     const rawUrl = req.url ?? "/";
@@ -178,6 +248,9 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
       if (rest === "/app.js") return send(res, 200, PAGE_JS, { "content-type": "text/javascript; charset=utf-8" });
       return send(res, 200, PAGE_CSS, { "content-type": "text/css; charset=utf-8" });
     }
+
+    const setMatch = /^\/api\/sets\/([^/]+)(?:\/(check|submit))?$/.exec(rest);
+    if (setMatch) return routeAskdSet(req, res, setMatch[1]!, setMatch[2]);
 
     const apiMatch = /^\/api\/batches(?:\/([^/]+)(?:\/(answers|chat|cancel))?)?$/.exec(rest);
     if (!apiMatch) return send(res, 404, "");

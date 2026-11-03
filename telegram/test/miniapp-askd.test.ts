@@ -155,7 +155,7 @@ test("GET /api/batches serves the merged list", async () => {
   }
 });
 
-test("a card for a set without a batch opens its form in the browser and has no answer screen", async () => {
+test("a card for a set without a batch opens in the app; if askd cannot show it, its form opens in the browser", async () => {
   const url = `${FORM}/${A}/`;
   const t = loadPage({
     nativeBack: true,
@@ -167,6 +167,7 @@ test("a card for a set without a batch opens its form in the browser and has no 
           batches: [{ id: A, title: "Quiz", asker: "ship:x", createdAt: "2026-11-03T01:44:46Z", timeoutAt: null, total: 11, done: 0, url }],
         },
       },
+      [`GET sets/${A}`]: { status: 502, body: { error: "askd_unreachable" } },
     },
   });
   await t.flush();
@@ -175,7 +176,7 @@ test("a card for a set without a batch opens its form in the browser and has no 
   t.doc.fire(card, "click");
   await t.flush();
   assert.ok(t.calls.includes(`openLink ${url}`));
-  assert.ok(!t.calls.some((c) => c.startsWith("GET batches/")), "no detail request for a set the app cannot answer");
+  assert.ok(!t.calls.some((c) => c.startsWith("GET batches/")), "no batch detail request for a set that has no batch");
 });
 
 test("askd's address comes from ASKD_URL, then config, then the loopback default; other hosts are skipped", () => {

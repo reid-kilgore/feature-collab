@@ -76,3 +76,16 @@ body.typing .bottom { display: none; }
 .hublink { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 10px; background: var(--card); color: var(--link); text-decoration: none; font-weight: 600; }
 .hubhint { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0 0; }
 .hubhint-close { min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--hint); font-size: 22px; line-height: 1; cursor: pointer; }
+button.option { width: 100%; text-align: left; color: inherit; font: inherit; }
+button.option:disabled { opacity: 1; cursor: default; }
+.option.right { border-color: #2e9e5b; background: color-mix(in srgb, #2e9e5b 14%, var(--bg)); }
+.option.wrong { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
+.tag.ok { background: #2e9e5b; }
+.tag.bad { background: var(--danger); }
+.option .why { display: block; margin-top: 4px; font-size: 14px; }
+.verdict { font-weight: 600; margin: 10px 0 4px; }
+.verdict.ok { color: #2e9e5b; }
+.verdict.bad { color: var(--danger); }
+.explain { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+.disagree { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 15px; }
+.send.inline { margin-top: 12px; }
