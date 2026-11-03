@@ -15,7 +15,8 @@ import { openInChat } from "../core/chat-move.ts";
 import { cancelBatch } from "../core/interaction.ts";
 import type { Submission } from "../core/answers.ts";
 import { validateInitData } from "./initdata.ts";
-import { listView, detailView } from "./views.ts";
+import { mergedListView, detailView } from "./views.ts";
+import type { AskdSource } from "./askd.ts";
 import { PAGE_HTML, PAGE_JS, PAGE_CSS } from "./page.ts";
 
 export interface MiniappServerDeps {
@@ -29,6 +30,8 @@ export interface MiniappServerDeps {
   maxAgeSeconds: number;
   // Origin of the tailnet hub the top bar links to. Optional: the page falls back to no bar.
   hubUrl?: string;
+  // askd's open sets (src/miniapp/askd.ts). Optional: without it the list is this daemon's own batches.
+  askd?: AskdSource;
   log: (line: string) => void;
 }
 
@@ -190,7 +193,7 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
     const action = apiMatch[2];
     if (batchId === undefined) {
       if (req.method !== "GET") return send(res, 405, "");
-      return sendJson(res, 200, listView(deps.store));
+      return sendJson(res, 200, mergedListView(deps.store, await deps.askd?.()));
     }
     if (!BATCH_ID.test(batchId)) return sendJson(res, 404, { error: "not_found" });
 

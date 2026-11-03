@@ -7,6 +7,7 @@ import path from "node:path";
 import type { Store, BatchRow, QuestionRow } from "../core/store.ts";
 import type { AskPayload, Question } from "../contract/payload.ts";
 import { isBatchTimedOut } from "../core/interaction.ts";
+import type { AskdSet } from "./askd.ts";
 
 export interface ListItem {
   id: string;
@@ -16,6 +17,8 @@ export interface ListItem {
   timeoutAt: string | null;
   total: number;
   done: number;
+  // Only on a card for an askd set that has no live batch here: the form to open. Such a card cannot be answered in the app.
+  url?: string;
 }
 
 export interface ListView {
@@ -92,6 +95,30 @@ export function listView(store: Store, now: Date = new Date()): ListView {
     .filter((b) => isOpenBatch(b, now))
     .reverse()
     .map((b) => listItem(b, JSON.parse(b.payload_json) as AskPayload, store.listQuestionsForBatch(b.id)));
+  return { readAt: now.toISOString(), batches };
+}
+
+// The list when askd is the source of truth: askd's open sets in askd's order. A set with a live batch
+// (the batch carries the key "askd-<set id>") is a normal card; any other set is a card with the form's url.
+// A batch that askd does not own (an ordinary `tg ask`) is kept after them, so nothing disappears.
+// A batch keyed to a set askd no longer lists as open is left out. askd undefined (unreachable): this
+// application's own list, as before.
+export function mergedListView(store: Store, askd: AskdSet[] | undefined, now: Date = new Date()): ListView {
+  if (!askd) return listView(store, now);
+  const open = store.listPendingBatches().filter((b) => isOpenBatch(b, now));
+  const used = new Set<string>();
+  const batches: ListItem[] = askd.map((set) => {
+    const batch = open.find((b) => b.ask_key === `askd-${set.id}`);
+    if (batch) {
+      used.add(batch.id);
+      return listItem(batch, JSON.parse(batch.payload_json) as AskPayload, store.listQuestionsForBatch(batch.id));
+    }
+    return { id: set.id, title: set.title, asker: set.asker, createdAt: set.createdAt, timeoutAt: set.expiresAt, total: set.questions, done: 0, url: set.url };
+  });
+  for (const b of open.slice().reverse()) {
+    if (used.has(b.id) || (b.ask_key ?? "").startsWith("askd-")) continue;
+    batches.push(listItem(b, JSON.parse(b.payload_json) as AskPayload, store.listQuestionsForBatch(b.id)));
+  }
   return { readAt: now.toISOString(), batches };
 }
 

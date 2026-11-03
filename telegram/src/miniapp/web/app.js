@@ -322,6 +322,12 @@
 
   // ---- rendering ----
 
+  function openForm(url) {
+    if (!SAFE_HREF.test(url)) return;
+    if (tg && typeof tg.openLink === 'function') { try { tg.openLink(url); return; } catch (x) { /* falls back to a new tab */ } }
+    window.open(url, '_blank', 'noopener');
+  }
+
   function renderList() {
     var nodes = [];
     nodes.push(h('h1', { text: 'Open questions' }));
@@ -333,6 +339,19 @@
     }
     state.list.batches.forEach(function (b) {
       var due = deadline(b.timeoutAt);
+      if (b.url) {
+        // An askd set with no batch here (a quiz, a link-only set, a failed send): it is answered in its form, in the browser.
+        var safe = SAFE_HREF.test(b.url);
+        nodes.push(h('button', { class: 'card', disabled: safe ? null : 'disabled', onclick: function () { openForm(b.url); } },
+          h('h2', { text: b.title }),
+          h('div', { class: 'meta hint' },
+            h('span', { text: b.asker }),
+            h('span', { text: b.total + (b.total === 1 ? ' question' : ' questions') }),
+            h('span', { text: ago(b.createdAt) }),
+            due ? h('span', { text: due }) : null),
+          h('div', { class: 'hint', text: 'Answered in the form: tap to open it in your browser' })));
+        return;
+      }
       var bar = h('div', { class: 'bar' }, h('div'));
       bar.firstChild.style.width = (b.total ? Math.round(100 * b.done / b.total) : 0) + '%';
       var card = h('button', { class: 'card', oncontextmenu: function (e) { e.preventDefault(); } },
