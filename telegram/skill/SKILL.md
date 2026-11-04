@@ -218,6 +218,21 @@ tg send --image ./status.png "Release 4.2: all checks green"
   Make the page about 720 pixels wide with large text, so it reads at phone size.
 - `png`, `jpg`, `jpeg`, `gif` and `webp` files up to 10 MB are sent as photos; anything else
   goes as a file.
+- To send several pictures, or to choose photo or document yourself, use `--photo` and `--document`.
+  Both repeat and are sent in order. A `--caption` belongs to the file before it. Text, if given,
+  goes first as its own message:
+
+  ```
+  tg send "Morning report" --photo ./a.png --caption "Sales" --photo ./b.png --caption "Labor"
+  tg send --document ./report.pdf --caption "Full report"
+  ```
+
+  `--photo` takes png, jpg, jpeg, gif or webp up to 10 MB and sends a compressed photo (best for a
+  phone). `--document` takes any file up to 50 MB and sends it untouched, which keeps a PNG sharp.
+  The CLI makes each path absolute, checks that it exists, is readable and fits the limit, and fails
+  before sending anything if not. The file must be on the machine where the daemon runs (the CLI
+  talks to it over a local socket, so that is the machine you run `tg` on). `--channel`, `--reply-to`,
+  `--button` and the other flags work as for text; buttons and the reply go on the first message.
 - The caption is limited to 1024 characters. A longer one is sent as a separate message after
   the picture, so keep it to a line or two.
 - In `tg ask`, a ```` ```mermaid ```` or `svg` fence inside `message` or a document is rendered
