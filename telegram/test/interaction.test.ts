@@ -16,6 +16,7 @@ import {
   applyAnswerText,
   applySkip,
   cancelBatch,
+  deleteFinishedBatchMessages,
   expireBatch,
   requestOther,
 } from "../src/core/interaction.ts";
@@ -255,6 +256,34 @@ test("cancelBatch with deleteMessages deletes the question message, and edits it
     if (!canDelete) assert.deepEqual(JSON.parse(rows[0].detail!), { error: "Bad Request: message can't be deleted" });
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("deleteFinishedBatchMessages deletes the messages of an answered batch once, and leaves a pending batch alone", async () => {
+  const { store, dir } = makeStore();
+  const payload: AskPayload = {
+    version: 1,
+    questions: [{ id: "q1", prompt: "Pick one", type: "single", options: [{ value: "a", label: "A" }] }],
+  };
+  const batchId = createBatch(store, payload);
+  const port = makeFakePort();
+  const deletedIds: number[] = [];
+  const withDelete = Object.assign(port, {
+    async deleteQuestionMessage(_b: unknown, row: { message_id: number | null }) {
+      deletedIds.push(row.message_id!);
+      return true;
+    },
+  });
+  await startBatch(store, withDelete, batchId);
+  assert.equal(await deleteFinishedBatchMessages(store, withDelete, batchId), 0); // still pending: nothing happens
+  const q1 = store.listQuestionsForBatch(batchId)[0]!;
+  await applyAnswerSingle(store, withDelete, () => {}, q1.id, "a");
+  assert.equal(store.getBatch(batchId)!.status, "submitted");
+  assert.equal(await deleteFinishedBatchMessages(store, withDelete, batchId), 1);
+  assert.deepEqual(deletedIds, [1]);
+  assert.equal(await deleteFinishedBatchMessages(store, withDelete, batchId), 0); // already gone: no second call
+  assert.deepEqual(deletedIds, [1]);
+  assert.equal(store.getQuestion(q1.id)!.status, "answered"); // the stored answer is untouched
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("cancelBatch without deleteMessages edits and never deletes", async () => {
