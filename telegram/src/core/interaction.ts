@@ -23,7 +23,8 @@ export interface OutboundPort {
   editResolved(batch: BatchRow, question: Question, questionRow: QuestionRow, kind: ResolvedKind, answerText?: string): Promise<void>;
   deleteForceReply(batch: BatchRow, questionRow: QuestionRow): Promise<void>;
   // Deletes a question's own message; false when it could not be deleted, so the caller edits it instead.
-  deleteQuestionMessage?(batch: BatchRow, questionRow: QuestionRow): Promise<boolean>;
+  // true: deleted. false or { error }: Telegram refused (error is its description, when known).
+  deleteQuestionMessage?(batch: BatchRow, questionRow: QuestionRow): Promise<boolean | { error: string }>;
   sendBatchDone(batch: BatchRow): Promise<void>;
 }
 
@@ -261,8 +262,12 @@ export async function cancelBatch(store: Store, port: OutboundPort, onResolved: 
     if (row.message_id) {
       const question = questionFromPayload(payload, row);
       if (row.force_reply_message_id) await port.deleteForceReply(batch, row);
-      const deleted = opts?.deleteMessages && port.deleteQuestionMessage ? await port.deleteQuestionMessage(batch, row) : false;
-      if (!deleted) await port.editResolved(batch, question, store.getQuestion(row.id)!, "cancelled");
+      const outcome = opts?.deleteMessages && port.deleteQuestionMessage ? await port.deleteQuestionMessage(batch, row) : false;
+      if (opts?.deleteMessages && port.deleteQuestionMessage) {
+        if (outcome === true) store.appendAudit("question_deleted", batchId, row.id, null);
+        else store.appendAudit("question_delete_fell_back", batchId, row.id, { error: typeof outcome === "object" ? outcome.error : null });
+      }
+      if (outcome !== true) await port.editResolved(batch, question, store.getQuestion(row.id)!, "cancelled");
     }
   }
   const result = buildResult(store, batch, payload, "cancelled");
