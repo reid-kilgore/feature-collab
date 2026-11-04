@@ -261,6 +261,7 @@ export type DaemonResponse =
   | StatusResponse
   | PendingResponse
   | CancelResponse
+  | ResolveResponse
   | SweepResponse
   | RecvResponse
   | QuarantineResponse
