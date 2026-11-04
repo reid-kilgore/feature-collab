@@ -240,7 +240,7 @@ test("cancelBatch with deleteMessages deletes the question message, and edits it
     const deleted: number[] = [];
     const withDelete = Object.assign(port, {
       async deleteQuestionMessage(_b: unknown, row: { message_id: number | null }) {
-        if (!canDelete) return false; // older than 48 hours
+        if (!canDelete) return { error: "Bad Request: message can't be deleted" }; // older than 48 hours
         deleted.push(row.message_id!);
         return true;
       },
@@ -249,6 +249,10 @@ test("cancelBatch with deleteMessages deletes the question message, and edits it
     assert.deepEqual(deleted, canDelete ? [1] : []);
     assert.deepEqual(port.resolvedViews, canDelete ? [] : ["cancelled:"]);
     assert.equal(store.getBatch(batchId)!.status, "cancelled");
+    const rows = store.db.prepare("SELECT kind, detail_json AS detail FROM audit WHERE kind LIKE 'question_delete%'").all() as Array<{ kind: string; detail: string | null }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, canDelete ? "question_deleted" : "question_delete_fell_back");
+    if (!canDelete) assert.deepEqual(JSON.parse(rows[0].detail!), { error: "Bad Request: message can't be deleted" });
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -267,6 +271,7 @@ test("cancelBatch without deleteMessages edits and never deletes", async () => {
   await cancelBatch(store, withDelete, () => {}, batchId);
   assert.equal(calls, 0);
   assert.deepEqual(port.resolvedViews, ["cancelled:"]);
+  assert.equal(store.db.prepare("SELECT count(*) AS n FROM audit WHERE kind LIKE 'question_delete%'").get()!.n, 0);
   rmSync(dir, { recursive: true, force: true });
 });
 

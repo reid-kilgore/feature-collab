@@ -200,7 +200,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
       if (questionRow.force_reply_message_id) await api.deleteMessage(batch.chat_id, questionRow.force_reply_message_id);
     },
     async deleteQuestionMessage(batch, questionRow: QuestionRow) {
-      if (!questionRow.message_id) return false;
+      if (!questionRow.message_id) return { error: "no message id" };
       return api.tryDeleteMessage(batch.chat_id, questionRow.message_id);
     },
     async sendBatchDone(batch: BatchRow) {
