@@ -106,7 +106,7 @@ Commands:
       [--miniapp-set SET_ID] (adds a button that opens that askd set in the Mini App; exit 1 when the Mini App is not set up)
   status
   pending [--json]
-  cancel <id|all> | cancel --key KEY
+  cancel <id|all> | cancel --key KEY [--delete]
   wait <id>
   recv [--wait] [--timeout DURATION] [--peek] [--channel KEY]
   dispatcher wait | targets | start | stop | status
@@ -705,13 +705,14 @@ async function cmdPending(argv: string[]): Promise<void> {
 async function cmdCancel(argv: string[]): Promise<void> {
   const byKey = argv[0] === "--key";
   const id = argv[0];
-  if (!id || (byKey && (!argv[1] || argv.length > 2))) {
-    console.error("Usage: tg cancel <id|all> | tg cancel --key KEY");
+  const del = byKey && argv[2] === "--delete";
+  if (!id || (byKey && (!argv[1] || argv.length > (del ? 3 : 2)))) {
+    console.error("Usage: tg cancel <id|all> | tg cancel --key KEY [--delete]");
     process.exitCode = 1;
     return;
   }
   try {
-    const response = await oneShot(byKey ? { op: "cancel", key: argv[1]! } : { op: "cancel", id });
+    const response = await oneShot(byKey ? { op: "cancel", key: argv[1]!, ...(del ? { delete: true } : {}) } : { op: "cancel", id });
     if ("error" in response) {
       console.error(redact((response as ErrorResponse).error));
       process.exitCode = 1;

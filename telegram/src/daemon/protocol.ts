@@ -51,6 +51,7 @@ export interface CancelRequest {
   op: "cancel";
   id?: string; // batch id, or "all"
   key?: string; // or: every pending batch with this decision key
+  delete?: boolean; // delete the question messages instead of editing them (edit is the fallback)
 }
 
 // The dispatcher's sweep of stale questions: list the batches due a ping, record a ping, or cancel one.

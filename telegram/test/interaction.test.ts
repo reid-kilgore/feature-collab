@@ -227,6 +227,49 @@ test("cancelling a batch discards partial answers", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("cancelBatch with deleteMessages deletes the question message, and edits it when it cannot be deleted", async () => {
+  for (const canDelete of [true, false]) {
+    const { store, dir } = makeStore();
+    const payload: AskPayload = {
+      version: 1,
+      questions: [{ id: "q1", prompt: "Pick one", type: "single", options: [{ value: "a", label: "A" }] }],
+    };
+    const batchId = createBatch(store, payload);
+    const port = makeFakePort();
+    await startBatch(store, port, batchId);
+    const deleted: number[] = [];
+    const withDelete = Object.assign(port, {
+      async deleteQuestionMessage(_b: unknown, row: { message_id: number | null }) {
+        if (!canDelete) return false; // older than 48 hours
+        deleted.push(row.message_id!);
+        return true;
+      },
+    });
+    await cancelBatch(store, withDelete, () => {}, batchId, { deleteMessages: true });
+    assert.deepEqual(deleted, canDelete ? [1] : []);
+    assert.deepEqual(port.resolvedViews, canDelete ? [] : ["cancelled:"]);
+    assert.equal(store.getBatch(batchId)!.status, "cancelled");
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cancelBatch without deleteMessages edits and never deletes", async () => {
+  const { store, dir } = makeStore();
+  const payload: AskPayload = {
+    version: 1,
+    questions: [{ id: "q1", prompt: "Pick one", type: "single", options: [{ value: "a", label: "A" }] }],
+  };
+  const batchId = createBatch(store, payload);
+  const port = makeFakePort();
+  await startBatch(store, port, batchId);
+  let calls = 0;
+  const withDelete = Object.assign(port, { async deleteQuestionMessage() { calls++; return true; } });
+  await cancelBatch(store, withDelete, () => {}, batchId);
+  assert.equal(calls, 0);
+  assert.deepEqual(port.resolvedViews, ["cancelled:"]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("timeout with onTimeout=cancel expires unanswered questions with null values", async () => {
   const { store, dir } = makeStore();
   const payload: AskPayload = {

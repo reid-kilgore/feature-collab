@@ -876,7 +876,7 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
           if (request.key !== undefined) {
             const ids: string[] = [];
             for (const batch of deps.store.listPendingBatchesByKey(request.key)) {
-              await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id);
+              await cancelBatch(deps.store, deps.port, deps.onResolved, batch.id, { deleteMessages: request.delete === true });
               deps.store.appendAudit("batch_cancelled_by_key", batch.id, null, { key: request.key });
               ids.push(batch.id);
             }

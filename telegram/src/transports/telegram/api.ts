@@ -166,6 +166,16 @@ export class TelegramApi {
     }
   }
 
+  // Like deleteMessage, but says whether Telegram removed it (it refuses after 48 hours, or when already gone).
+  async tryDeleteMessage(chatId: string, messageId: number): Promise<boolean> {
+    try {
+      await this.call("deleteMessage", { chat_id: chatId, message_id: messageId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async answerCallbackQuery(id: string, text?: string, showAlert = false): Promise<void> {
     await this.call("answerCallbackQuery", { callback_query_id: id, text, show_alert: showAlert });
   }
