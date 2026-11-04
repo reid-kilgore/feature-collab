@@ -22,6 +22,8 @@ export interface OutboundPort {
   retract(batch: BatchRow, messageId: number): Promise<void>;
   editResolved(batch: BatchRow, question: Question, questionRow: QuestionRow, kind: ResolvedKind, answerText?: string): Promise<void>;
   deleteForceReply(batch: BatchRow, questionRow: QuestionRow): Promise<void>;
+  // Deletes a question's own message; false when it could not be deleted, so the caller edits it instead.
+  deleteQuestionMessage?(batch: BatchRow, questionRow: QuestionRow): Promise<boolean>;
   sendBatchDone(batch: BatchRow): Promise<void>;
 }
 
@@ -246,7 +248,9 @@ export async function applySkip(store: Store, port: OutboundPort, onResolved: On
   return true;
 }
 
-export async function cancelBatch(store: Store, port: OutboundPort, onResolved: OnResolved, batchId: string): Promise<void> {
+// deleteMessages: remove the question messages instead of editing them to "cancelled"; a message that cannot be
+// deleted (older than 48 hours, already gone) is edited as before.
+export async function cancelBatch(store: Store, port: OutboundPort, onResolved: OnResolved, batchId: string, opts?: { deleteMessages?: boolean }): Promise<void> {
   const batch = store.getBatch(batchId);
   if (!batch || batch.status !== "pending") return;
   const payload = JSON.parse(batch.payload_json) as AskPayload;
@@ -257,7 +261,8 @@ export async function cancelBatch(store: Store, port: OutboundPort, onResolved: 
     if (row.message_id) {
       const question = questionFromPayload(payload, row);
       if (row.force_reply_message_id) await port.deleteForceReply(batch, row);
-      await port.editResolved(batch, question, store.getQuestion(row.id)!, "cancelled");
+      const deleted = opts?.deleteMessages && port.deleteQuestionMessage ? await port.deleteQuestionMessage(batch, row) : false;
+      if (!deleted) await port.editResolved(batch, question, store.getQuestion(row.id)!, "cancelled");
     }
   }
   const result = buildResult(store, batch, payload, "cancelled");

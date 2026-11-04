@@ -57,7 +57,7 @@ over ssh has no tmux here, so it passes its own address: `ssh host "tg send --fr
 (or the environment variable `AGENT_TELEGRAM_FROM`); get it with `tmux display-message -p '#S:#W'`.
 `tg ask` shows the same address as the last line of its header and in the "Answers sent to the agent" footer; it takes `--from` and `AGENT_TELEGRAM_FROM` the same way. The address must be SESSION:WINDOW (it must contain a colon); a bare name is refused with exit 2. `tg ask` needs a sender address: with none of `--from`, `AGENT_TELEGRAM_FROM` or a tmux window it prints one line and exits 2, without asking anything.
 
-`tg ask --key KEY` (or a top-level `"key"` in the payload) tags a question with a decision key. When the answer is recorded some other way, `tg cancel --key KEY` cancels every pending question with that key and prints `{"cancelled":[ids]}` (exit 0, also when none match). `tg pending` shows each question's sender and key; `tg pending --json` prints one entry per pending question set with `id`, `title`, `key`, `sender` and `created_at`.
+`tg ask --key KEY` (or a top-level `"key"` in the payload) tags a question with a decision key. When the answer is recorded some other way, `tg cancel --key KEY` cancels every pending question with that key and prints `{"cancelled":[ids]}` (exit 0, also when none match). Add `--delete` to remove the question messages from the chat instead of editing them to "cancelled"; a message Telegram refuses to delete (older than 48 hours, already gone) is edited as before. `tg pending` shows each question's sender and key; `tg pending --json` prints one entry per pending question set with `id`, `title`, `key`, `sender` and `created_at`.
 
 A question left open for over an hour is swept. The daemon cancels one that names no sender by itself (one notice to you, one audit row). For one with a sender, the dispatcher session is handed a nudge for the asking session ("is this still needed? cancel it if not"); once it sends it, that question is left alone for three hours. If the asking session cannot be reached, the dispatcher cancels the question and tells you once.
 
@@ -78,7 +78,7 @@ fails, the fence source is sent as a code block and the daemon logs a warning.
 for the full agent-facing contract, including timeouts, defaults, and conversation mode
 (`tg send` / `tg recv --wait` loop).
 
-Other commands: `tg status`, `tg pending [--json]`, `tg cancel <id|all>`, `tg cancel --key KEY`, `tg wait <id>`,
+Other commands: `tg status`, `tg pending [--json]`, `tg cancel <id|all>`, `tg cancel --key KEY [--delete]`, `tg wait <id>`,
 `tg doctor`, `tg daemon` (foreground, what launchd runs).
 
 ## Dispatcher: one session that listens for your bare messages

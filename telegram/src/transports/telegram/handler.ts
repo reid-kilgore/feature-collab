@@ -199,6 +199,10 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
     async deleteForceReply(batch, questionRow: QuestionRow) {
       if (questionRow.force_reply_message_id) await api.deleteMessage(batch.chat_id, questionRow.force_reply_message_id);
     },
+    async deleteQuestionMessage(batch, questionRow: QuestionRow) {
+      if (!questionRow.message_id) return false;
+      return api.tryDeleteMessage(batch.chat_id, questionRow.message_id);
+    },
     async sendBatchDone(batch: BatchRow) {
       const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined, batch.asker_address ?? undefined);
       await api.sendMessage(batch.chat_id, text, { html: true });
