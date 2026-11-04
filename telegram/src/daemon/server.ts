@@ -32,7 +32,7 @@ import { TelegramApi, classifyAttachment } from "../transports/telegram/api.ts";
 import { createTelegramPort, BOT_COMMANDS, OPEN_COMMAND } from "../transports/telegram/handler.ts";
 import type { HandlerContext } from "../transports/telegram/handler.ts";
 import { Poller } from "../transports/telegram/poller.ts";
-import { startBatch, cancelBatch, expireBatch, isBatchTimedOut, buildResult, advanceOrFinish } from "../core/interaction.ts";
+import { startBatch, cancelBatch, expireBatch, deleteFinishedBatchMessages, isBatchTimedOut, buildResult, advanceOrFinish } from "../core/interaction.ts";
 import type { OnResolved } from "../core/interaction.ts";
 import { validatePayload, ContractError } from "../contract/payload.ts";
 import type { AskPayload, AskResult } from "../contract/payload.ts";
@@ -890,7 +890,16 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
               deps.store.appendAudit("batch_cancelled_by_key", batch.id, null, { key: request.key });
               ids.push(batch.id);
             }
-            write({ cancelled: ids.length, ids });
+            // With --delete, also remove the messages of asks under this key that already finished (answered in
+            // Telegram, so there was nothing pending to cancel).
+            let deleted: number | undefined;
+            if (request.delete === true) {
+              deleted = 0;
+              for (const batch of deps.store.listFinishedBatchesByKey(request.key)) {
+                deleted += await deleteFinishedBatchMessages(deps.store, deps.port, batch.id);
+              }
+            }
+            write({ cancelled: ids.length, ids, ...(deleted !== undefined ? { deleted } : {}) });
             return;
           }
           if (request.id === "all") {

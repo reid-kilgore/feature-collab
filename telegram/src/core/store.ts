@@ -288,6 +288,12 @@ export class Store {
     return this.db.prepare("SELECT * FROM batches WHERE status = 'pending' AND ask_key = ? ORDER BY created_at").all(key) as unknown as BatchRow[];
   }
 
+  // Batches with this key that are over (answered, cancelled or expired). `tg cancel --key K --delete` uses them to
+  // remove the messages of an ask that finished before the delete was asked for (Reid answered it in Telegram).
+  listFinishedBatchesByKey(key: string): BatchRow[] {
+    return this.db.prepare("SELECT * FROM batches WHERE status != 'pending' AND ask_key = ? ORDER BY created_at").all(key) as unknown as BatchRow[];
+  }
+
   // True when someone has started answering the batch: a question is answered or skipped, or one is
   // open for a typed answer right now (a force-reply). The store keeps no state for a mini-app page
   // that is open but not yet submitted, so a half-filled page is not seen here. Such a batch is never

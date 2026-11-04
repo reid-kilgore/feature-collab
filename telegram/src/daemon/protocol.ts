@@ -248,6 +248,7 @@ export interface PendingResponse {
 export interface CancelResponse {
   cancelled: number;
   ids?: string[]; // set for a cancel by key
+  deleted?: number; // set for a cancel by key with delete: messages removed from asks that had already finished
 }
 
 export interface ErrorResponse {

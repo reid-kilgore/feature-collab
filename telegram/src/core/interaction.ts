@@ -276,6 +276,27 @@ export async function cancelBatch(store: Store, port: OutboundPort, onResolved: 
   onResolved(batchId, result);
 }
 
+// A finished batch has no pending work, but its question messages are still in the chat (edited to "answered").
+// Delete them. A message Telegram refuses to delete (older than 48 hours, already gone) is left as it is: it already
+// shows the answer. A deleted message's id is cleared, so a second call has nothing to do. Returns how many were deleted.
+export async function deleteFinishedBatchMessages(store: Store, port: OutboundPort, batchId: string): Promise<number> {
+  const batch = store.getBatch(batchId);
+  if (!batch || batch.status === "pending" || !port.deleteQuestionMessage) return 0;
+  let deleted = 0;
+  for (const row of store.listQuestionsForBatch(batchId)) {
+    if (!row.message_id) continue;
+    const outcome = await port.deleteQuestionMessage(batch, row);
+    if (outcome === true) {
+      store.appendAudit("question_deleted", batchId, row.id, { finished: true });
+      store.updateQuestion(row.id, { message_id: null });
+      deleted++;
+    } else {
+      store.appendAudit("question_delete_fell_back", batchId, row.id, { finished: true, error: typeof outcome === "object" ? outcome.error : null });
+    }
+  }
+  return deleted;
+}
+
 export async function expireBatch(store: Store, port: OutboundPort, onResolved: OnResolved, batchId: string): Promise<void> {
   const batch = store.getBatch(batchId);
   if (!batch || batch.status !== "pending") return;
