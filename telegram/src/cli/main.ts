@@ -15,6 +15,7 @@ import type { AskPayload, DocumentInput } from "../contract/payload.ts";
 import { extractMarkdownImageRefs, isImagePath } from "../core/diagrams.ts";
 import type { Level } from "../contract/notify.ts";
 import { parseButtonArg, type LinkButton } from "../core/buttons.ts";
+import { resolveAttachmentPath, type Attachment } from "./attachments.ts";
 import { readPresence, setPresence, describePresence } from "../presence.ts";
 import { getToken, readConfig, configExists, shortHostname, redact, tmuxBin } from "../config.ts";
 import type {
@@ -94,6 +95,11 @@ Commands:
   ask [--file F | --json J | (stdin)] [--timeout DURATION] [--on-timeout cancel|default] [--key KEY] --from ADDRESS
       (--from, AGENT_TELEGRAM_FROM or a tmux session:window is required; exit 2 without one)
   send [TEXT | -] [--level info|success|warning|error] [--title T] [--image PATH] [--file PATH] [--reply-to MESSAGE_ID] [--from ADDRESS]
+       [--photo FILE [--caption TEXT]]... [--document FILE [--caption TEXT]]...
+      (--photo sends an image as a Telegram photo (png, jpg, gif, webp; up to 10 MB); --document sends any file as a document
+       (up to 50 MB; a PNG sent this way is not compressed). Repeat them to send several, in order. A --caption belongs to the
+       --photo or --document before it. TEXT, if given, is sent first as its own message. The file must be on this machine,
+       where the daemon runs; a relative path is made absolute from the current directory.)
        [--button "label=url"]... [--no-button]
       (a --button is a tappable link under the message, one per row; with none, a lone http(s) link in the text becomes one
        unless --no-button)
@@ -411,6 +417,7 @@ function parseSendArgs(argv: string[]): {
   buttons: LinkButton[];
   noButton: boolean;
   miniappSet?: string;
+  attachments: Attachment[];
 } {
   let level: Level = "info";
   let title: string | undefined;
@@ -423,11 +430,26 @@ function parseSendArgs(argv: string[]): {
   const buttons: LinkButton[] = [];
   let noButton = false;
   let miniappSet: string | undefined;
+  const attachments: Attachment[] = [];
+  let pendingCaption: string | undefined;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--button") {
+    if (arg === "--photo" || arg === "--document") {
+      const kind = arg === "--photo" ? "photo" : "document";
+      const item: Attachment = { kind, path: resolveAttachmentPath(kind, argv[++i] ?? "") };
+      if (pendingCaption !== undefined) item.caption = pendingCaption;
+      pendingCaption = undefined;
+      attachments.push(item);
+    } else if (arg === "--caption") {
+      const value = argv[++i];
+      if (value === undefined) throw new Error("--caption needs text");
+      const last = attachments[attachments.length - 1];
+      if (last && last.caption === undefined) last.caption = value;
+      else if (!last && pendingCaption === undefined) pendingCaption = value;
+      else throw new Error("--caption goes after the --photo or --document it belongs to, once each");
+    } else if (arg === "--button") {
       buttons.push(parseButtonArg(argv[++i] ?? ""));
     } else if (arg === "--no-button") {
       noButton = true;
@@ -457,7 +479,9 @@ function parseSendArgs(argv: string[]): {
       positional.push(arg!);
     }
   }
-  return { text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton, ...(miniappSet ? { miniappSet } : {}) };
+  if (pendingCaption !== undefined) throw new Error("--caption needs a --photo or --document");
+  if (attachments.length && (imagePath || filePath)) throw new Error("Use --photo/--document or --image/--file, not both.");
+  return { attachments, text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton, ...(miniappSet ? { miniappSet } : {}) };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -473,6 +497,11 @@ async function cmdSend(argv: string[]): Promise<void> {
   let body = args.text;
   let caption: string | undefined;
   if (args.stdin) body = await readAllStdin();
+
+  if (args.attachments.length) {
+    await sendAttachments(args, body);
+    return;
+  }
 
   if (args.imagePath || args.filePath) caption = body;
 
@@ -508,6 +537,47 @@ async function cmdSend(argv: string[]): Promise<void> {
     process.exitCode = 0;
   } catch (error) {
     console.error(redact((error as Error).message));
+    process.exitCode = 1;
+  }
+}
+
+// --photo / --document: the text first as its own message, then one message per file, in order. Files were
+// checked while the arguments were parsed, so a bad one stops the run before anything is sent. The buttons,
+// reply-to and Mini App button ride on the first message.
+async function sendAttachments(args: ReturnType<typeof parseSendArgs>, body: string | undefined): Promise<void> {
+  const channel = resolveChannel(args.channel);
+  const sender = senderName(args);
+  const requests: DaemonRequest[] = [];
+  const first = () => requests.length === 0;
+  const lead = () => ({
+    ...(first() && args.replyToMessageId ? { replyToMessageId: args.replyToMessageId } : {}),
+    ...(first() && args.buttons.length ? { buttons: args.buttons } : {}),
+    ...(first() && args.miniappSet ? { miniappSet: args.miniappSet } : {}),
+    ...(args.noButton ? { noButton: true } : {}),
+  });
+  if (body) requests.push({ op: "notify", level: args.level, title: args.title, body, channel, sender, ...lead() });
+  for (const item of args.attachments) {
+    requests.push({
+      op: "notify",
+      level: args.level,
+      ...(item.kind === "photo" ? { imagePath: item.path } : { filePath: item.path }),
+      ...(item.caption !== undefined ? { caption: item.caption } : {}),
+      channel,
+      sender,
+      ...lead(),
+    });
+  }
+  let sent = 0;
+  try {
+    for (const request of requests) {
+      const response = await oneShot(request);
+      if ("error" in response) throw new Error((response as ErrorResponse).error);
+      sent++;
+    }
+    process.exitCode = 0;
+  } catch (error) {
+    console.error(redact((error as Error).message));
+    if (sent > 0) console.error(`${sent} of ${requests.length} messages were sent before this failed.`);
     process.exitCode = 1;
   }
 }
