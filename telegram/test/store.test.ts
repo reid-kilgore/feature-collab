@@ -126,7 +126,7 @@ test("opening a pre-channel-routing database adds the missing column and table i
       store.recordMessageChannel(123, "chanA");
       assert.equal(store.getChannelForMessage(123), "chanA");
 
-      assert.equal(store.getMeta("schema_version"), "4");
+      assert.equal(store.getMeta("schema_version"), "5");
     } finally {
       store.close();
     }
@@ -168,7 +168,7 @@ test("opening a version 3 database adds batches.ask_key, keeps its rows, and lis
     raw.close();
     const store = new Store(dbFile);
     try {
-      assert.equal(store.getMeta("schema_version"), "4");
+      assert.equal(store.getMeta("schema_version"), "5");
       assert.equal(store.getBatch("old")!.ask_key, null);
       assert.equal(store.getBatch("old")!.asker_address, "a:b");
       assert.deepEqual(store.listPendingBatchesByKey("k"), []);

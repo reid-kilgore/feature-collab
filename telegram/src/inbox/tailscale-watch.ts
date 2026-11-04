@@ -129,7 +129,10 @@ export function describeWatchState(
 
 export interface WatcherDeps {
   startCheck?: (alias: string, options?: StartCheckOptions) => TailscaleCheckHandle;
-  send: (html: string, url?: string) => Promise<void>;
+  // `key` marks a link notice: the daemon remembers the message under it so `resolve` can delete it later.
+  send: (html: string, url?: string, key?: string) => Promise<void>;
+  // Removes the messages sent under a key (delete, or edit to "Resolved." when Telegram refuses).
+  resolve?: (key: string) => Promise<void>;
   now: () => number;
   // How this machine is named in messages ("mbp to duo").
   localName: string;
@@ -267,7 +270,7 @@ export class TailscaleWatcher {
       if (st.state !== "needs_check" || reminderDue) {
         const lead = st.state === "needs_check" ? "Still waiting: Tailscale SSH needs approval" : "Tailscale SSH needs approval";
         const tail = st.state === "needs_check" ? "Here is a fresh link." : "Tap to approve. I will say when it works.";
-        await this.deps.send(`<b>${lead}</b>\n${this.label(alias, via)}\n${tail}`, result.url);
+        await this.deps.send(`<b>${lead}</b>\n${this.label(alias, via)}\n${tail}`, result.url, this.linkKey(key));
         this.deps.log(`tailscale link sent for ${this.plainLabel(alias, via)}`);
         this.record(alias, via, "needs approval (link sent)", { state: "needs_check", noticeAt: this.deps.now(), hungCount: 0 });
       } else {
@@ -310,9 +313,19 @@ export class TailscaleWatcher {
     }
   }
 
+  private linkKey(key: string): string {
+    return `tailscale-link:${key}`;
+  }
+
   private async markOk(alias: string, via: string | undefined): Promise<void> {
     const key = this.key(alias, via);
     const st = this.load(key);
+    // The pair works, so any approval link sent for it is stale: remove it (nothing open under the key is a no-op).
+    try {
+      await this.deps.resolve?.(this.linkKey(key));
+    } catch (error) {
+      this.deps.log(`tailscale watch: could not resolve the link notice for ${this.plainLabel(alias, via)}: ${(error as Error).message}`);
+    }
     if (st.state === "needs_check") await this.deps.send(`<b>Tailscale SSH works again</b>\n${this.label(alias, via)}`);
     else if (st.hungNotified) await this.deps.send(`<b>Tailscale probe answers again</b>\n${this.label(alias, via)}`);
     this.patch(alias, via, { state: "ok", hungCount: 0, hungNotified: false, noticeAt: undefined });

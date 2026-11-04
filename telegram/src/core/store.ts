@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS message_channel (
   channel TEXT NOT NULL,
   at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS keyed_message (
+  key TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  resolved_at TEXT,
+  PRIMARY KEY (key, message_id)
+);
 `;
 
 // Schema version, recorded in meta after migrate() brings the database up to date.
@@ -133,7 +140,7 @@ CREATE TABLE IF NOT EXISTS message_channel (
 // explicitly checking for and adding columns/tables introduced after a table's original
 // release, so restarting the daemon on an existing state.sqlite never fails with
 // "no such column" again.
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
@@ -189,6 +196,10 @@ function migrate(db: DatabaseSync): void {
     }
     if (!tableExists(db, "message_inquiry")) {
       db.exec("CREATE TABLE message_inquiry (message_id INTEGER PRIMARY KEY, inquiry_id TEXT NOT NULL, at TEXT NOT NULL)");
+    }
+    // v5: messages sent with a key (tg send --key), so tg resolve --key can delete them later. Additive.
+    if (!tableExists(db, "keyed_message")) {
+      db.exec("CREATE TABLE keyed_message (key TEXT NOT NULL, message_id INTEGER NOT NULL, at TEXT NOT NULL, resolved_at TEXT, PRIMARY KEY (key, message_id))");
     }
 
     db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
@@ -544,6 +555,23 @@ export class Store {
     const now = new Date().toISOString();
     const stmt = this.db.prepare("UPDATE inbox SET consumed_at = ? WHERE id = ?");
     for (const id of ids) stmt.run(now, id);
+  }
+
+  // ---- keyed_message (tg send --key remembers what it sent; tg resolve --key removes it) ----
+
+  recordKeyedMessage(key: string, messageId: number): void {
+    this.db
+      .prepare("INSERT INTO keyed_message (key, message_id, at, resolved_at) VALUES (?, ?, ?, NULL) ON CONFLICT(key, message_id) DO UPDATE SET resolved_at = NULL")
+      .run(key, messageId, new Date().toISOString());
+  }
+
+  listOpenKeyedMessages(key: string): number[] {
+    const rows = this.db.prepare("SELECT message_id FROM keyed_message WHERE key = ? AND resolved_at IS NULL ORDER BY message_id").all(key) as Array<{ message_id: number }>;
+    return rows.map((r) => r.message_id);
+  }
+
+  markKeyedMessageResolved(key: string, messageId: number): void {
+    this.db.prepare("UPDATE keyed_message SET resolved_at = ? WHERE key = ? AND message_id = ?").run(new Date().toISOString(), key, messageId);
   }
 
   // ---- message_channel (reply-to routing for tg send) ----

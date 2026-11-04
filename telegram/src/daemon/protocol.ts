@@ -25,6 +25,18 @@ export interface NotifyRequest {
   noButton?: boolean;
   // An askd set id: a button under the message opens that set in the Mini App. Refused when the Mini App is not running.
   miniappSet?: string;
+  // Remember the message(s) sent under this key, so `tg resolve --key` can delete them once the matter is settled.
+  key?: string;
+}
+
+export interface ResolveRequest {
+  op: "resolve";
+  key: string;
+}
+
+export interface ResolveResponse {
+  deleted: number;
+  edited: number; // Telegram refused the delete (older than 48 hours, say): the message was edited to "Resolved." instead
 }
 
 export interface AskRequest {
@@ -123,6 +135,7 @@ export interface QuarantineResponse {
 
 export type DaemonRequest =
   | NotifyRequest
+  | ResolveRequest
   | AskRequest
   | StatusRequest
   | PendingRequest
@@ -248,6 +261,7 @@ export type DaemonResponse =
   | StatusResponse
   | PendingResponse
   | CancelResponse
+  | ResolveResponse
   | SweepResponse
   | RecvResponse
   | QuarantineResponse
