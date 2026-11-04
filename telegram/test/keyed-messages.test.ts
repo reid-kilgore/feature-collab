@@ -74,9 +74,11 @@ test("the Tailscale watch keys its link notice and resolves it when the pair pro
     { kind: "no-link", detail: "(no output)", exitCode: 0 },
   ];
   const meta = new Map<string, string>();
+  const children: EventEmitter[] = [];
   const watcher = new TailscaleWatcher({
     startCheck: () => {
       const child = Object.assign(new EventEmitter(), { kill() {} });
+      children.push(child);
       return { result: Promise.resolve(script.shift()!), child: child as never } as TailscaleCheckHandle;
     },
     send: async (text, _url, key) => void sent.push({ text, key }),
@@ -89,6 +91,7 @@ test("the Tailscale watch keys its link notice and resolves it when the pair pro
     config: () => ({ hosts: ["duo"], reverse: [], intervalSeconds: 600, reminderSeconds: 3600 }),
   });
   await watcher.tick();
+  children[0]!.emit("close", null); // the ssh that waited for approval ends
   assert.equal(sent[0]!.key, "tailscale-link:duo");
   assert.deepEqual(resolved, [], "still waiting for approval");
   await watcher.tick();
