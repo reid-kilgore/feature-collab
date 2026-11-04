@@ -27,6 +27,7 @@ import type {
   StatusResponse,
   PendingResponse,
   CancelResponse,
+  ResolveResponse,
   RecvResponse,
   QuarantineResponse,
 } from "../daemon/protocol.ts";
@@ -51,6 +52,9 @@ async function main(): Promise<void> {
       return;
     case "cancel":
       await cmdCancel(rest);
+      return;
+    case "resolve":
+      await cmdResolve(rest);
       return;
     case "wait":
       await cmdWait(rest);
@@ -103,10 +107,14 @@ Commands:
        [--button "label=url"]... [--no-button]
       (a --button is a tappable link under the message, one per row; with none, a lone http(s) link in the text becomes one
        unless --no-button)
+      [--key KEY] (remember the message under KEY so tg resolve --key KEY can delete it later)
       [--miniapp-set SET_ID] (adds a button that opens that askd set in the Mini App; exit 1 when the Mini App is not set up)
   status
   pending [--json]
   cancel <id|all> | cancel --key KEY [--delete]
+  resolve --key KEY
+      (deletes the messages tg send --key KEY sent, or edits them to "Resolved." when Telegram will not delete them;
+       a key that is unknown or already resolved does nothing and exits 0)
   wait <id>
   recv [--wait] [--timeout DURATION] [--peek] [--channel KEY]
   dispatcher wait | targets | start | stop | status
@@ -417,6 +425,7 @@ function parseSendArgs(argv: string[]): {
   buttons: LinkButton[];
   noButton: boolean;
   miniappSet?: string;
+  key?: string;
   attachments: Attachment[];
 } {
   let level: Level = "info";
@@ -430,6 +439,7 @@ function parseSendArgs(argv: string[]): {
   const buttons: LinkButton[] = [];
   let noButton = false;
   let miniappSet: string | undefined;
+  let key: string | undefined;
   const attachments: Attachment[] = [];
   let pendingCaption: string | undefined;
   const positional: string[] = [];
@@ -453,6 +463,9 @@ function parseSendArgs(argv: string[]): {
       buttons.push(parseButtonArg(argv[++i] ?? ""));
     } else if (arg === "--no-button") {
       noButton = true;
+    } else if (arg === "--key") {
+      key = argv[++i];
+      if (!key) throw new Error("--key needs a name");
     } else if (arg === "--miniapp-set") {
       miniappSet = argv[++i];
       if (!miniappSet || !/^[0-9a-f]{12}$/.test(miniappSet)) throw new Error("--miniapp-set needs an askd set id (12 hex characters)");
@@ -481,7 +494,7 @@ function parseSendArgs(argv: string[]): {
   }
   if (pendingCaption !== undefined) throw new Error("--caption needs a --photo or --document");
   if (attachments.length && (imagePath || filePath)) throw new Error("Use --photo/--document or --image/--file, not both.");
-  return { attachments, text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton, ...(miniappSet ? { miniappSet } : {}) };
+  return { attachments, text: positional.length ? positional.join(" ") : undefined, level, title, imagePath, filePath, stdin, channel, replyToMessageId, from, buttons, noButton, ...(miniappSet ? { miniappSet } : {}), ...(key ? { key } : {}) };
 }
 
 async function cmdSend(argv: string[]): Promise<void> {
@@ -519,6 +532,7 @@ async function cmdSend(argv: string[]): Promise<void> {
     ...(args.buttons.length ? { buttons: args.buttons } : {}),
     ...(args.noButton ? { noButton: true } : {}),
     ...(args.miniappSet ? { miniappSet: args.miniappSet } : {}),
+    ...(args.key ? { key: args.key } : {}),
   };
 
   if (!request.body && !request.imagePath && !request.filePath) {
@@ -554,6 +568,7 @@ async function sendAttachments(args: ReturnType<typeof parseSendArgs>, body: str
     ...(first() && args.buttons.length ? { buttons: args.buttons } : {}),
     ...(first() && args.miniappSet ? { miniappSet: args.miniappSet } : {}),
     ...(args.noButton ? { noButton: true } : {}),
+    ...(args.key ? { key: args.key } : {}),
   });
   if (body) requests.push({ op: "notify", level: args.level, title: args.title, body, channel, sender, ...lead() });
   for (const item of args.attachments) {
@@ -720,6 +735,34 @@ async function cmdCancel(argv: string[]): Promise<void> {
     }
     if (byKey) console.log(JSON.stringify({ cancelled: (response as CancelResponse).ids ?? [] }));
     else console.log(`Cancelled ${(response as CancelResponse).cancelled} batch(es).`);
+  } catch (error) {
+    console.error(redact((error as Error).message));
+    process.exitCode = 1;
+  }
+}
+
+// tg resolve --key KEY. Help is only ever help: this command acts on a message, so anything it does not
+// recognise (including --help) prints usage and does nothing.
+async function cmdResolve(argv: string[]): Promise<void> {
+  const usage = "Usage: tg resolve --key KEY";
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(`${usage}\nDeletes the messages that \`tg send --key KEY\` sent, or edits them to "Resolved." when Telegram refuses the delete.\nA key that is unknown or already resolved does nothing and exits 0.`);
+    return;
+  }
+  if (argv.length !== 2 || argv[0] !== "--key" || !argv[1] || argv[1].startsWith("-")) {
+    console.error(usage);
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const response = await oneShot({ op: "resolve", key: argv[1] });
+    if ("error" in response) {
+      console.error(redact((response as ErrorResponse).error));
+      process.exitCode = 1;
+      return;
+    }
+    const r = response as ResolveResponse;
+    console.log(JSON.stringify({ deleted: r.deleted, edited: r.edited }));
   } catch (error) {
     console.error(redact((error as Error).message));
     process.exitCode = 1;

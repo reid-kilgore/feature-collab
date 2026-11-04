@@ -46,7 +46,8 @@ import { createMenuCountUpdater } from "../miniapp/menu-count.ts";
 import { mergedListView } from "../miniapp/views.ts";
 import { fetchAskdSets, createAskdAnswering } from "../miniapp/askd.ts";
 import type { AskdSource } from "../miniapp/askd.ts";
-import type { DaemonRequest, DaemonResponse, ChannelStatus, DispatcherStatus, TailscaleStatus } from "./protocol.ts";
+import { resolveKeyedMessages } from "../core/keyed-messages.ts";
+import type { DaemonRequest, DaemonResponse, ResolveResponse, ChannelStatus, DispatcherStatus, TailscaleStatus } from "./protocol.ts";
 
 interface ChannelEntry {
   lastSendAt: number;
@@ -321,11 +322,15 @@ export async function runDaemon(): Promise<void> {
   // The standing Tailscale re-approval watch: off unless tailscale.json exists. It talks to Reid through
   // the same chat as everything else, and a failure in it is logged, never raised.
   const tailscaleWatcher = new TailscaleWatcher({
-    send: async (html, url) => {
-      await api.sendMessage(config.chatId, html, {
+    send: async (html, url, key) => {
+      const sent = await api.sendMessage(config.chatId, html, {
         html: true,
         ...(url ? { replyMarkup: { inline_keyboard: [[{ text: "Approve", url }]] } } : {}),
       });
+      if (key) store.recordKeyedMessage(key, sent.message_id);
+    },
+    resolve: async (key) => {
+      await resolveKey(store, api, config.chatId, key);
     },
     now: () => Date.now(),
     localName: hostname,
@@ -620,6 +625,11 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
         case "notify": {
           const messageId = await sendNotification(deps, request);
           write({ ok: true, ...(messageId !== undefined ? { messageId } : {}) });
+          return;
+        }
+        case "resolve": {
+          if (typeof request.key !== "string" || !request.key) throw new Error("resolve needs a key");
+          write(await resolveKey(deps.store, deps.api, deps.config.chatId, request.key));
           return;
         }
         case "ask": {
@@ -1033,6 +1043,19 @@ function createAskBatch(
   return id;
 }
 
+// Delete (or, when Telegram refuses, edit to "Resolved.") every open message sent under this key.
+function resolveKey(store: Store, api: TelegramApi, chatId: string, key: string): Promise<ResolveResponse> {
+  return resolveKeyedMessages(
+    store,
+    {
+      tryDelete: (c, m) => api.tryDeleteMessage(c, m),
+      edit: (c, m, text) => api.editMessageText(c, m, text, { replyMarkup: { inline_keyboard: [] } }),
+    },
+    chatId,
+    key,
+  );
+}
+
 async function sendNotification(
   deps: ConnectionDeps,
   request: {
@@ -1049,6 +1072,7 @@ async function sendNotification(
     buttons?: Array<{ text: string; url: string }>;
     noButton?: boolean;
     miniappSet?: string;
+    key?: string;
   },
 ): Promise<number | undefined> {
   const bodyHtml = request.body ? markdownToTelegramHtml(request.body) : undefined;
@@ -1059,6 +1083,7 @@ async function sendNotification(
     if (firstMessageId === undefined) firstMessageId = messageId;
     deps.store.recordMessageChannel(messageId, request.channel);
     if (request.inquiryId) deps.store.recordMessageInquiry(messageId, request.inquiryId);
+    if (request.key) deps.store.recordKeyedMessage(request.key, messageId);
     deps.markSend(request.channel);
   };
 
