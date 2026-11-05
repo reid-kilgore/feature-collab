@@ -91,6 +91,11 @@
     return frag;
   }
 
+  // An element whose children are the Markdown nodes, or the plain text when the server sent no nodes.
+  function md(tag, props, nodes, fallback) {
+    return h.apply(null, [tag, props].concat(mdNodes(nodes, fallback)));
+  }
+
   function api(path, options) {
     options = options || {};
     var headers = { 'x-telegram-init-data': initData };
@@ -182,7 +187,7 @@
       }
       var answers = Object.create(null);
       r.body.questions.forEach(function (q) { answers[q.id] = { selected: [], other: '', text: '', skip: false, notes: '', disagree: false }; });
-      state.askd = { id: r.body.id, title: r.body.title, message: r.body.message || '', questions: r.body.questions, picked: Object.assign(Object.create(null), r.body.picked || {}), answers: answers, busy: Object.create(null), sending: false, done: null, error: null };
+      state.askd = { id: r.body.id, title: r.body.title, message: r.body.message || '', messageNodes: r.body.messageNodes, questions: r.body.questions, picked: Object.assign(Object.create(null), r.body.picked || {}), answers: answers, busy: Object.create(null), sending: false, done: null, error: null };
       state.screen = 'askd';
       state.error = null;
       render();
@@ -273,16 +278,16 @@
     if (v) {
       if (opt.value === v.answer) { cls += ' right'; mark = 'Right answer'; }
       else if (opt.value === v.value) { cls += ' wrong'; mark = 'Your pick'; }
-      if (opt.value !== v.answer && v.whyWrongAll && v.whyWrongAll[opt.value]) why = v.whyWrongAll[opt.value];
-      else if (opt.value !== v.answer && opt.value === v.value && v.whyWrong) why = v.whyWrong;
+      if (opt.value !== v.answer && v.whyWrongAll && v.whyWrongAll[opt.value]) why = { text: v.whyWrongAll[opt.value], nodes: v.whyWrongAllNodes && v.whyWrongAllNodes[opt.value] };
+      else if (opt.value !== v.answer && opt.value === v.value && v.whyWrong) why = { text: v.whyWrong, nodes: v.whyWrongNodes };
       if (opt.value === v.value) cls += ' selected';
     }
     var label = h('span', { class: 'label' },
       h('strong', { text: letter(i) + '. ' }),
-      opt.label,
+      md('span', { class: 'olabel' }, opt.labelNodes, opt.label),
       mark ? h('span', { class: 'tag' + (opt.value === v.answer ? ' ok' : ' bad'), text: mark }) : null,
-      opt.description ? h('span', { class: 'desc', text: opt.description }) : null,
-      why ? h('span', { class: 'why', text: why }) : null);
+      opt.description ? md('span', { class: 'desc' }, opt.descriptionNodes, opt.description) : null,
+      why ? md('span', { class: 'why' }, why.nodes, why.text) : null);
     return h('button', { class: cls, type: 'button', disabled: !!v || !!d.busy[q.id], onclick: function () { pickQuiz(q, opt.value); } }, label);
   }
 
@@ -290,7 +295,7 @@
     var d = state.askd;
     var a = d.answers[q.id];
     var card = h('section', { class: 'card' }, h('div', { class: 'row qhead' }, h('div', { class: 'qnum', text: 'Question ' + (index + 1) + ' of ' + total })));
-    card.appendChild(h('p', { class: 'prompt', text: q.prompt }));
+    card.appendChild(md('p', { class: 'prompt' }, q.promptNodes, q.prompt));
     var rerender = function () { render(); };
     if (q.type === 'quiz') {
       q.options.forEach(function (opt, i) { card.appendChild(quizOption(q, opt, i)); });
@@ -299,8 +304,8 @@
         card.appendChild(h('div', { class: 'hint', text: d.busy[q.id] ? 'Checking…' : 'Your first pick is final.' }));
       } else {
         card.appendChild(h('div', { class: 'verdict ' + (v.correct ? 'ok' : 'bad'), text: v.correct ? 'Right.' : 'Wrong. The right answer is ' + v.answer + '.' }));
-        if (v.why) card.appendChild(h('p', { class: 'explain', text: v.why }));
-        if (v.cite) card.appendChild(h('p', { class: 'hint', text: v.cite }));
+        if (v.why) card.appendChild(md('p', { class: 'explain' }, v.whyNodes, v.why));
+        if (v.cite) card.appendChild(md('p', { class: 'hint' }, v.citeNodes, v.cite));
         if (q.allowDisagree !== false) {
           card.appendChild(h('label', { class: 'disagree' },
             h('input', { type: 'checkbox', checked: a.disagree, onchange: function (e) { a.disagree = e.target.checked; rerender(); } }),
@@ -350,7 +355,7 @@
       nodes.push(h('button', { class: 'send inline', text: 'Back to the list', onclick: function () { goList(); } }));
       return nodes;
     }
-    if (d.message) nodes.push(h('p', { class: 'message', text: d.message }));
+    if (d.message) nodes.push(md('p', { class: 'message' }, d.messageNodes, d.message));
     d.questions.forEach(function (q, i) { nodes.push(askdQuestionNode(q, i, d.questions.length)); });
     if (d.error) nodes.push(h('div', { class: 'card' }, h('p', { class: 'note error', text: d.error })));
     nodes.push(h('div', { class: 'bottom' }, h('button', { id: 'send', class: 'send', onclick: sendAskd })));
@@ -645,7 +650,7 @@
     return h('label', { class: 'option' + (checked ? ' selected' : '') },
       input,
       h('span', { class: 'label' },
-        opt.label,
+        md('span', { class: 'olabel' }, opt.labelNodes, opt.label),
         opt.recommended ? h('span', { class: 'tag', text: 'RECOMMENDED' }) : null,
         opt.description ? h.apply(null, ['span', { class: 'desc' }].concat(mdNodes(opt.descriptionNodes, opt.description))) : null));
   }

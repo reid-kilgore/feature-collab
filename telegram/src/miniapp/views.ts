@@ -164,3 +164,63 @@ export function detailView(store: Store, batchId: string, now: Date = new Date()
   });
   return { ...listItem(batch, payload, rows), ...(payload.message ? { message: payload.message, messageNodes: markdownToNodes(payload.message) } : {}), readAt: now.toISOString(), questions };
 }
+
+// ---- askd sets: Markdown as nodes ----
+//
+// askd's view of a set (and the verdict of a quiz pick) carries plain Markdown text. askd is a Python program with
+// no Markdown for the page, so this daemon adds the nodes on the way through, with the same converter the chat and
+// the batch view use. The page builds its DOM from the nodes and never parses HTML. The original text stays beside
+// each field as the fallback. askd's own fields are never removed or changed.
+
+// The page cannot show a picture: its content security policy allows no image from another host, and askd's
+// pictures (/img/...) are on askd, not here. An image in the text becomes its alt text, in brackets.
+const IMAGE = /!\[([^\]\n]*)\]\([^)\n]*\)/g;
+
+export function mdWithoutImages(text: string): MdNode[] {
+  return markdownToNodes(text.replace(IMAGE, (_m, alt: string) => (alt.trim() ? `[image: ${alt.trim()}]` : "[image]")));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function withNodes(record: Record<string, unknown>, keys: Array<[string, string]>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...record };
+  for (const [key, nodesKey] of keys) {
+    const text = record[key];
+    if (typeof text === "string" && text) out[nodesKey] = mdWithoutImages(text);
+  }
+  return out;
+}
+
+// A quiz verdict from askd's mini-check route (and each entry of a view's `picked`).
+export function askdVerdictWithNodes(verdict: unknown): unknown {
+  if (!isRecord(verdict)) return verdict;
+  const out = withNodes(verdict, [["why", "whyNodes"], ["whyWrong", "whyWrongNodes"], ["cite", "citeNodes"]]);
+  if (isRecord(verdict.whyWrongAll)) {
+    const all: Record<string, MdNode[]> = Object.create(null);
+    for (const [value, text] of Object.entries(verdict.whyWrongAll)) if (typeof text === "string" && text) all[value] = mdWithoutImages(text);
+    out.whyWrongAllNodes = all;
+  }
+  return out;
+}
+
+// askd's view of an open set (GET /sets/<id>/api/mini): the message, each prompt, each option's label and description.
+export function askdViewWithNodes(view: unknown): unknown {
+  if (!isRecord(view)) return view;
+  const out = withNodes(view, [["message", "messageNodes"]]);
+  if (Array.isArray(view.questions)) {
+    out.questions = view.questions.map((q) => {
+      if (!isRecord(q)) return q;
+      const question = withNodes(q, [["prompt", "promptNodes"]]);
+      if (Array.isArray(q.options)) question.options = q.options.map((o) => (isRecord(o) ? withNodes(o, [["label", "labelNodes"], ["description", "descriptionNodes"]]) : o));
+      return question;
+    });
+  }
+  if (isRecord(view.picked)) {
+    const picked: Record<string, unknown> = Object.create(null);
+    for (const [id, verdict] of Object.entries(view.picked)) picked[id] = askdVerdictWithNodes(verdict);
+    out.picked = picked;
+  }
+  return out;
+}

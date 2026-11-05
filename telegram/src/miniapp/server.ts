@@ -15,7 +15,7 @@ import { openInChat } from "../core/chat-move.ts";
 import { cancelBatch } from "../core/interaction.ts";
 import type { Submission } from "../core/answers.ts";
 import { validateInitData } from "./initdata.ts";
-import { mergedListView, detailView } from "./views.ts";
+import { mergedListView, detailView, askdViewWithNodes, askdVerdictWithNodes } from "./views.ts";
 import type { AskdSource, AskdAnswering, MiniAnswer } from "./askd.ts";
 import { isSetId } from "./askd.ts";
 import { PAGE_HTML, PAGE_JS, PAGE_CSS } from "./page.ts";
@@ -204,7 +204,7 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
     if (action === undefined) {
       if (req.method !== "GET") return send(res, 405, "");
       const reply = await answering.view(setId);
-      return sendJson(res, reply.status === 200 ? 200 : reply.status === 409 || reply.status === 404 ? reply.status : 502, reply.body);
+      return sendJson(res, reply.status === 200 ? 200 : reply.status === 409 || reply.status === 404 ? reply.status : 502, reply.status === 200 ? askdViewWithNodes(reply.body) : reply.body);
     }
     if (req.method !== "POST") return send(res, 405, "");
     const contentType = headerValue(req.headers["content-type"]) ?? "";
@@ -223,6 +223,7 @@ export function createMiniappServer(deps: MiniappServerDeps): http.Server {
         return sendJson(res, 400, { error: "bad_request" });
       }
       reply = await answering.check(setId, { questionId: body.questionId, value: body.value });
+      if (reply.status === 200) reply = { status: 200, body: askdVerdictWithNodes(reply.body) };
     } else {
       const answers = parseMiniAnswers(raw);
       if (!answers) return sendJson(res, 400, { error: "bad_request" });

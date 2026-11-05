@@ -264,3 +264,99 @@ test("a resolved or moved question with a prompt over Telegram's limit is cut so
 test("a short resolved view is unchanged", () => {
   assert.equal(renderResolvedView({ id: "q", prompt: "Ship it?", type: "single" }, "answered", "Yes"), "✅ <b>Ship it?</b>\n<i>Yes</i>");
 });
+
+// ---- Markdown in an askd set ----
+
+const MD_VIEW = {
+  id: SET,
+  title: "Markdown set",
+  message: "Read **REPORTS-RANGE-SPEC.md** at [the spec](https://a.com/s) and <script>x</script>.\n\n![the chart](/img/abc.png)",
+  questions: [{ id: "Q1", type: "quiz", prompt: "Is `366` the cap?", options: [{ value: "A", label: "**Yes**, both sides", description: "see _the spec_" }, { value: "B", label: "No" }] }],
+  picked: { Q1: { value: "B", correct: false, answer: "A", whyWrong: "It is **not** 365.", whyWrongAll: { B: "It is **not** 365." }, why: "One shared `predicate`.", cite: "Spec: `range`" } },
+};
+
+test("the view route adds Markdown nodes beside the text, turns an image into its alt text, and keeps askd's own fields", async () => {
+  const t = await rig(fakeAnswering({ view: { status: 200, body: MD_VIEW } }).answering);
+  try {
+    const body = (await (await t.call(SET)).json()) as Record<string, any>;
+    assert.equal(body.message, MD_VIEW.message);
+    assert.deepEqual(body.messageNodes.slice(0, 2), [{ t: "text", v: "Read " }, { t: "b", c: [{ t: "text", v: "REPORTS-RANGE-SPEC.md" }] }]);
+    const flat = JSON.stringify(body.messageNodes);
+    assert.match(flat, /"href":"https:\/\/a\.com\/s"/);
+    assert.match(flat, /\[image: the chart\]/);
+    assert.doesNotMatch(flat, /\/img\/abc\.png/);
+    assert.deepEqual(body.questions[0].promptNodes, [{ t: "text", v: "Is " }, { t: "code", c: [{ t: "text", v: "366" }] }, { t: "text", v: " the cap?" }]);
+    assert.deepEqual(body.questions[0].options[0].labelNodes[0], { t: "b", c: [{ t: "text", v: "Yes" }] });
+    assert.deepEqual(body.questions[0].options[0].descriptionNodes[1], { t: "i", c: [{ t: "text", v: "the spec" }] });
+    assert.deepEqual(body.picked.Q1.whyNodes[1], { t: "code", c: [{ t: "text", v: "predicate" }] });
+    assert.deepEqual(body.picked.Q1.whyWrongAllNodes.B[1], { t: "b", c: [{ t: "text", v: "not" }] });
+    assert.deepEqual(body.picked.Q1.citeNodes[1], { t: "code", c: [{ t: "text", v: "range" }] });
+  } finally {
+    await t.close();
+  }
+});
+
+test("the check route adds nodes to the verdict, and a closed or failed reply passes through untouched", async () => {
+  const verdict = { value: "A", correct: false, answer: "B", whyWrong: "Plain **bold** reason.", whyWrongAll: {}, why: "", cite: "" };
+  const t = await rig(fakeAnswering({ check: { status: 200, body: verdict } }).answering);
+  const closed = await rig(fakeAnswering({ view: { status: 409, body: { error: "closed" } } }).answering);
+  try {
+    const body = (await (await t.call(`${SET}/check`, { method: "POST", body: { questionId: "Q1", value: "A" } })).json()) as Record<string, any>;
+    assert.equal(body.whyWrong, verdict.whyWrong);
+    assert.deepEqual(body.whyWrongNodes[1], { t: "b", c: [{ t: "text", v: "bold" }] });
+    assert.equal("whyNodes" in body, false, "an empty field gets no nodes");
+    assert.deepEqual(await (await closed.call(SET)).json(), { error: "closed" });
+  } finally {
+    await t.close();
+    await closed.close();
+  }
+});
+
+test("the quiz page renders Markdown in the message, prompt, labels, descriptions and the reveal, and never as raw markers", async () => {
+  const t = await rig(fakeAnswering({ view: { status: 200, body: MD_VIEW } }).answering);
+  try {
+    const view = await (await t.call(SET)).json();
+    const page = loadPage({
+      nativeBack: true,
+      openLink: true,
+      search: `?set=${SET}`,
+      routes: { "GET batches": { body: LIST }, [`GET sets/${SET}`]: { body: view } },
+    });
+    await page.flush();
+    const message = page.doc.root.find((n) => n.className === "message")[0]!;
+    assert.equal(message.find((n) => n.tagName === "STRONG")[0]!.textContent, "REPORTS-RANGE-SPEC.md");
+    assert.equal(message.find((n) => n.tagName === "A")[0]!.getAttribute("href"), "https://a.com/s");
+    assert.ok(!page.texts().includes("**"), "no literal bold markers");
+    assert.match(message.textContent, /\[image: the chart\]/);
+    assert.equal(message.find((n) => n.tagName === "IMG" || n.tagName === "SCRIPT").length, 0, "no image or script element");
+    assert.match(message.textContent, /<script>x<\/script>/, "markup in the text stays text");
+    assert.equal(page.doc.root.find((n) => n.className === "prompt")[0]!.find((n) => n.tagName === "CODE")[0]!.textContent, "366");
+    assert.equal(optionButton(page, /Yes/).find((n) => n.tagName === "STRONG").length, 2, "the letter and the bold label");
+    assert.equal(optionButton(page, /Yes/).find((n) => n.tagName === "EM")[0]!.textContent, "the spec");
+  } finally {
+    await t.close();
+  }
+});
+
+test("the quiz reveal renders Markdown in the reason for each option, the explanation and the citation", async () => {
+  const t = await rig(fakeAnswering({ view: { status: 200, body: { ...MD_VIEW, picked: {} } }, check: { status: 200, body: MD_VIEW.picked.Q1 } }).answering);
+  try {
+    const view = await (await t.call(SET)).json();
+    const check = await (await t.call(`${SET}/check`, { method: "POST", body: { questionId: "Q1", value: "B" } })).json();
+    const page = loadPage({
+      nativeBack: true,
+      openLink: true,
+      search: `?set=${SET}`,
+      routes: { "GET batches": { body: LIST }, [`GET sets/${SET}`]: { body: view }, [`POST sets/${SET}/check`]: { body: check } },
+    });
+    await page.flush();
+    page.doc.fire(optionButton(page, /^B\. No/), "click");
+    await page.flush();
+    assert.ok(!page.texts().includes("**") && !page.texts().includes("`"), "no literal markers in the reveal");
+    assert.equal(page.doc.root.find((n) => n.className === "why")[0]!.find((n) => n.tagName === "STRONG")[0]!.textContent, "not");
+    assert.equal(page.doc.root.find((n) => n.className === "explain")[0]!.find((n) => n.tagName === "CODE")[0]!.textContent, "predicate");
+    assert.equal(page.doc.root.find((n) => n.className === "hint" && n.find((c) => c.tagName === "CODE").length > 0)[0]!.find((c) => c.tagName === "CODE")[0]!.textContent, "range");
+  } finally {
+    await t.close();
+  }
+});
