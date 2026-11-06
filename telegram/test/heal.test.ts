@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { DispatcherHealer, parseLimit, parseSchedule, type HealDeps } from "../src/daemon/heal.ts";
+import { pickTmux } from "../src/config.ts";
 
 const MIN = 60_000;
 
@@ -191,4 +192,30 @@ test("parseSchedule and parseLimit", () => {
   assert.equal(parseLimit("You've hit your usage limit · resets 5pm", now).resetAt, new Date(2026, 9, 28, 17, 0).getTime());
   assert.equal(parseLimit("You've hit your session limit · resets 12am", now).resetAt, new Date(2026, 9, 29, 0, 0).getTime());
   assert.deepEqual(parseLimit("You've hit your weekly limit · resets Nov 3 at 9am", now), { limited: true });
+});
+
+test("a self-heal that throws sends one notice per run of errors, and another after it recovers and fails again", async () => {
+  const f = fake();
+  const healer = new DispatcherHealer(f.deps);
+  f.deps.screen = () => {
+    throw new Error("spawnSync tmux ENOENT");
+  };
+  advance(f, 6 * MIN);
+  await healer.tick();
+  await healer.tick();
+  assert.equal(f.notices.length, 1);
+  assert.match(f.notices[0]!, /self-heal is failing \(spawnSync tmux ENOENT\)/);
+  assert.equal(f.logs.filter((l) => l === "dispatcher self-heal error: spawnSync tmux ENOENT").length, 2);
+  f.state.listening = true;
+  await healer.tick();
+  f.state.listening = false;
+  f.state.downSince = f.clock.t;
+  advance(f, 6 * MIN);
+  await healer.tick();
+  assert.equal(f.notices.length, 2);
+});
+
+test("tmux is taken from a known install path, since launchd's PATH has no tmux", () => {
+  assert.equal(pickTmux(["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"], (p) => p === "/usr/local/bin/tmux"), "/usr/local/bin/tmux");
+  assert.equal(pickTmux(["/opt/homebrew/bin/tmux"], () => false), "tmux");
 });

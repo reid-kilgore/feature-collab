@@ -124,7 +124,14 @@ export function tmuxBin(): string {
   const override = process.env.AGENT_TELEGRAM_TMUX_BIN;
   if (override) return override;
   if (testHome) throw new Error("refusing to run the real tmux under AGENT_TELEGRAM_HOME (test mode): set AGENT_TELEGRAM_TMUX_BIN to a stub first");
-  return "tmux";
+  return pickTmux(TMUX_PATHS, existsSync);
+}
+
+// launchd starts the daemon with PATH=/usr/bin:/bin:/usr/sbin:/sbin, where a bare "tmux" is not found, so the
+// self-heal failed with "spawnSync tmux ENOENT" from 2026-10-28 to 2026-11-06. Use a known install path first.
+const TMUX_PATHS = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
+export function pickTmux(paths: string[], exists: (p: string) => boolean): string {
+  return paths.find((p) => exists(p)) ?? "tmux";
 }
 
 export function stateDir(): string {
