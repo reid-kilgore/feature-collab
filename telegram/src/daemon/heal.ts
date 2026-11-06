@@ -83,6 +83,8 @@ interface Incident {
 export class DispatcherHealer {
   private incident: Incident | undefined;
   private running = false;
+  // A failing watchdog is silent unless it says so: one Telegram notice per run of errors (2026-11-06, a1983).
+  private errorNotified = false;
   private readonly d: HealDeps;
   constructor(deps: HealDeps) {
     this.d = deps;
@@ -93,38 +95,51 @@ export class DispatcherHealer {
     if (this.running || d.scheduleMs.length === 0) return;
     this.running = true;
     try {
-      if (!d.active()) {
-        this.incident = undefined;
-        return;
+      await this.check();
+      this.errorNotified = false;
+    } catch (error) {
+      const message = (error as Error).message;
+      d.log(`dispatcher self-heal error: ${message}`);
+      if (!this.errorNotified) {
+        this.errorNotified = true;
+        await d.notify(`The dispatcher self-heal is failing (${message.slice(0, 160)}), so it cannot restart the dispatcher if its listener stops. I will not message again until it recovers.`).catch((e: Error) => d.log(`dispatcher self-heal error notice failed: ${e.message}`));
       }
-      if (d.listening()) {
-        if (this.incident) d.log(`dispatcher listener is back after ${this.incident.attempts} self-restart(s)`);
-        this.incident = undefined;
-        return;
-      }
-      const now = d.now();
-      if (!this.incident) {
-        const since = now - d.noListenerSeconds() * 1000;
-        this.incident = { attempts: 0, startedAt: since, anchor: since, notified: false, noProcessLogged: false };
-      }
-      const inc = this.incident;
-      let due = inc.anchor + d.scheduleMs[Math.min(inc.attempts, d.scheduleMs.length - 1)]!;
-      if (now < due) return;
-      const limit = parseLimit(d.screen(), now);
-      if (inc.resetAt === undefined && limit.resetAt !== undefined) inc.resetAt = limit.resetAt;
-      if (inc.resetAt !== undefined) due = Math.max(due, inc.resetAt + RESET_MARGIN_MS);
-      if (now < due) return;
-      const pid = d.findPid();
-      if (pid === undefined) {
-        if (!inc.noProcessLogged) d.log("dispatcher listener is down but no dispatcher claude process was found; nothing to restart");
-        inc.noProcessLogged = true;
-        return;
-      }
-      inc.noProcessLogged = false;
-      await this.restart(inc, pid, now, limit);
     } finally {
       this.running = false;
     }
+  }
+
+  private async check(): Promise<void> {
+    const d = this.d;
+    if (!d.active()) {
+      this.incident = undefined;
+      return;
+    }
+    if (d.listening()) {
+      if (this.incident) d.log(`dispatcher listener is back after ${this.incident.attempts} self-restart(s)`);
+      this.incident = undefined;
+      return;
+    }
+    const now = d.now();
+    if (!this.incident) {
+      const since = now - d.noListenerSeconds() * 1000;
+      this.incident = { attempts: 0, startedAt: since, anchor: since, notified: false, noProcessLogged: false };
+    }
+    const inc = this.incident;
+    let due = inc.anchor + d.scheduleMs[Math.min(inc.attempts, d.scheduleMs.length - 1)]!;
+    if (now < due) return;
+    const limit = parseLimit(d.screen(), now);
+    if (inc.resetAt === undefined && limit.resetAt !== undefined) inc.resetAt = limit.resetAt;
+    if (inc.resetAt !== undefined) due = Math.max(due, inc.resetAt + RESET_MARGIN_MS);
+    if (now < due) return;
+    const pid = d.findPid();
+    if (pid === undefined) {
+      if (!inc.noProcessLogged) d.log("dispatcher listener is down but no dispatcher claude process was found; nothing to restart");
+      inc.noProcessLogged = true;
+      return;
+    }
+    inc.noProcessLogged = false;
+    await this.restart(inc, pid, now, limit);
   }
 
   private async restart(inc: Incident, pid: number, now: number, limit: { limited: boolean; resetAt?: number }): Promise<void> {
