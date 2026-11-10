@@ -155,16 +155,24 @@ export function renderMovedView(question: Question): string {
   return `↪ <b>${escapeHtml(clip(question.prompt, FIT - 200))}</b>\n<i>moved to the message below</i>`;
 }
 
-export function renderHeader(payload: AskPayload, askerAddress?: string): string | undefined {
+// askd (ask key askd-...) opens the set on Telegram with its own link and sends from the set's tmux address, which
+// is only the asker's pane: it is not shown on those messages (Reid, 2026-11-10).
+export function isAskdKey(key: string | null | undefined): boolean {
+  return typeof key === "string" && key.startsWith("askd-");
+}
+
+export function renderHeader(payload: AskPayload, askerAddress?: string, askKey?: string | null): string | undefined {
   if (!payload.title && !payload.message) return undefined;
   const parts: string[] = [];
   if (payload.title) parts.push(`📋 <b>${escapeHtml(payload.title)}</b>`);
   if (payload.message) parts.push(markdownToTelegramHtml(payload.message));
-  if (askerAddress) parts.push(`<i>${escapeHtml(askerAddress)}</i>`);
+  if (askerAddress && !isAskdKey(askKey)) parts.push(`<i>${escapeHtml(askerAddress)}</i>`);
   return parts.join("\n");
 }
 
-export function renderBatchDone(askerBasename: string, tmuxWindow?: string, askerAddress?: string): string {
+export function renderBatchDone(askerBasename: string, tmuxWindow?: string, askerAddress?: string, askKey?: string | null): string {
+  // An askd set has no asker worth naming: its address is only the pane that submitted it.
+  if (isAskdKey(askKey)) return "✅ Answers sent to the agent";
   // The address (session:window) says more than the window name alone, so it replaces it.
   const who = askerAddress ?? tmuxWindow;
   const where = who ? `${askerBasename}, ${who}` : askerBasename;

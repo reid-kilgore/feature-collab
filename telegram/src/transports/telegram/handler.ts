@@ -123,7 +123,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
     async sendHeader(batch, payload: AskPayload) {
       const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
       const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
-      const text = renderHeader(headerPayload, batch.asker_address ?? undefined);
+      const text = renderHeader(headerPayload, batch.asker_address ?? undefined, batch.ask_key);
       if (text) {
         // The header carries no answer keyboard (those sit on the question messages), so a lone link in the
         // message can be a button here without clashing with anything.
@@ -204,7 +204,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
       return api.tryDeleteMessage(batch.chat_id, questionRow.message_id);
     },
     async sendBatchDone(batch: BatchRow) {
-      const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined, batch.asker_address ?? undefined);
+      const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined, batch.asker_address ?? undefined, batch.ask_key);
       await api.sendMessage(batch.chat_id, text, { html: true });
     },
   };

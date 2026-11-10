@@ -20,6 +20,9 @@ test("the footer names the address in place of the window name", () => {
   assert.equal(renderBatchDone("proj", "geo", "ship:geo"), "✅ Answers sent to the agent (proj, ship:geo)");
   assert.equal(renderBatchDone("proj", "geo"), "✅ Answers sent to the agent (proj, geo)");
   assert.equal(renderBatchDone("proj"), "✅ Answers sent to the agent (proj)");
+  // an askd set (ask key askd-...) names no asker: its address is only the pane that submitted it
+  assert.equal(renderBatchDone("proj", "geo", "review:perms", "askd-812e91e99b53"), "✅ Answers sent to the agent");
+  assert.equal(renderBatchDone("proj", "geo", "ship:geo", "ask-both-1"), "✅ Answers sent to the agent (proj, ship:geo)");
 });
 
 async function waitFor(pred: () => boolean): Promise<void> {
