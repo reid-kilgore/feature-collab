@@ -261,7 +261,12 @@ message). Each question message: `<b>Q2/3 — prompt</b>` then option descriptio
 - **Resolved edit**: after any resolution edit the question message to
   `✅ <b>prompt</b>\n<i>answer text</i>` (or `⏭ skipped`, `✖ cancelled`, `⏰ expired`) and remove the
   keyboard. ForceReply helper message is deleted.
-- **Batch done**: after the last question, send `✅ Answers sent to the agent (askerPath basename, tmux window)`.
+- **Batch done**: after the last question, an askd set (ask key `askd-...`) is marked done on its intro message
+  (the one with the title and the link to the questions page): that message is edited to start with `✅ `, and keeps
+  its link button. An edit shows on every client; a reaction may not. The intro message id is stored in
+  `batches.header_message_id` (schema v6). No separate message is sent. A set with no stored intro message (opened
+  before v6, or with no title or message) and every plain `tg ask` batch still get the separate
+  `✅ Answers sent to the agent (askerPath basename, tmux window)` message.
 - **callback_data**: `q:<shortId>:t:<optIdx>` toggle, `q:<shortId>:s:<optIdx>` select, `q:<shortId>:go`,
   `q:<shortId>:other`, `q:<shortId>:skip`, `q:<shortId>:x`. `shortId` = 10-char random per question,
   stored in DB. Always ≤ 64 bytes. Every callback gets `answerCallbackQuery` immediately.

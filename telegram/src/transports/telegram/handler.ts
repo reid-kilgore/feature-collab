@@ -29,6 +29,8 @@ import {
   renderHeader,
   renderMovedView,
   renderBatchDone,
+  renderHeaderDone,
+  isAskdKey,
   decodeCallback,
 } from "./render.ts";
 import { REACTION_DELIVERED, REACTION_QUEUED } from "./reactions.ts";
@@ -118,22 +120,31 @@ async function sendDiagrams(api: TelegramApi, chatId: string, title: string, dia
   }
 }
 
+// The intro message(s) of a set, and the link button that rides on the last one. Used when the set is
+// opened and again when it is answered, so the edit keeps the text and the button exactly as sent.
+function buildHeader(batch: BatchRow, payload: AskPayload): { parts: string[]; markup: ReplyMarkup | undefined } | undefined {
+  const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
+  const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
+  const text = renderHeader(headerPayload, batch.asker_address ?? undefined, batch.ask_key);
+  if (!text) return undefined;
+  // The header carries no answer keyboard (those sit on the question messages), so a lone link in the
+  // message can be a button here without clashing with anything.
+  const button = singleLinkButton(messageParts?.text ?? payload.message);
+  return { parts: splitMessage(text), markup: button ? (buttonRows([button]) as ReplyMarkup) : undefined };
+}
+
 export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = renderDiagramToPng, log?: (line: string) => void): OutboundPort {
   return {
     async sendHeader(batch, payload: AskPayload) {
       const messageParts = payload.message ? extractDiagrams(payload.message) : undefined;
-      const headerPayload = messageParts ? { ...payload, message: messageParts.text } : payload;
-      const text = renderHeader(headerPayload, batch.asker_address ?? undefined, batch.ask_key);
-      if (text) {
-        // The header carries no answer keyboard (those sit on the question messages), so a lone link in the
-        // message can be a button here without clashing with anything.
-        const button = singleLinkButton(messageParts?.text ?? payload.message);
-        const markup = button ? buttonRows([button]) : undefined;
+      const built = buildHeader(batch, payload);
+      let firstMessageId: number | undefined;
+      if (built) {
         // A header over Telegram's limit is split; the button rides on the last part.
-        const parts = splitMessage(text);
-        for (const [i, part] of parts.entries()) {
-          const partMarkup = i === parts.length - 1 ? markup : undefined;
-          await withButtonFallback(partMarkup, (m) => api.sendMessage(batch.chat_id, part, { html: true, replyMarkup: m as ReplyMarkup | undefined }), log);
+        for (const [i, part] of built.parts.entries()) {
+          const partMarkup = i === built.parts.length - 1 ? built.markup : undefined;
+          const sent = await withButtonFallback(partMarkup, (m) => api.sendMessage(batch.chat_id, part, { html: true, replyMarkup: m as ReplyMarkup | undefined }), log);
+          if (i === 0 && sent && typeof sent.message_id === "number") firstMessageId = sent.message_id;
         }
       }
       if (messageParts?.diagrams.length) {
@@ -164,6 +175,7 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
           }
         }
       }
+      return firstMessageId ? { messageId: firstMessageId } : undefined;
     },
     async sendQuestion(batch, question: Question, questionRow: QuestionRow, index, total, selected, opts): Promise<SentQuestion> {
       const view = renderQuestionView({ shortId: questionRow.short_id, index, total, question, selected });
@@ -204,6 +216,23 @@ export function createTelegramPort(api: TelegramApi, render: DiagramRenderer = r
       return api.tryDeleteMessage(batch.chat_id, questionRow.message_id);
     },
     async sendBatchDone(batch: BatchRow) {
+      // An askd set is marked done on its intro message: edit it to start with a check mark. An edit shows
+      // on every client; a reaction can be hidden. Plain `tg ask` batches keep the separate message, which
+      // also names the asker (their header has no check-mark home worth the change).
+      if (isAskdKey(batch.ask_key) && batch.header_message_id) {
+        const built = buildHeader(batch, JSON.parse(batch.payload_json) as AskPayload);
+        if (built) {
+          try {
+            await api.editMessageText(batch.chat_id, batch.header_message_id, renderHeaderDone(built.parts[0]!), {
+              html: true,
+              replyMarkup: built.parts.length === 1 ? built.markup : undefined,
+            });
+            return;
+          } catch {
+            // fall through: the intro message is gone or cannot be edited, so say it in a message instead
+          }
+        }
+      }
       const text = renderBatchDone(path.basename(batch.asker_path), batch.asker_tmux_window ?? undefined, batch.asker_address ?? undefined, batch.ask_key);
       await api.sendMessage(batch.chat_id, text, { html: true });
     },
