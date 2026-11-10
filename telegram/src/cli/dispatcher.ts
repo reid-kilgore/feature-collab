@@ -131,7 +131,12 @@ async function dispatcherSweep(argv: string[]): Promise<void> {
     if (isError(r)) return fail(r.error);
     const result = r as SweepResponse;
     if (action === "cancel" && result.deferred) {
-      console.log(JSON.stringify({ status: "deferred", id, reason: result.deferred === "first-unreachable" ? "first unreachable report recorded; the question stays open and comes back at a later sweep" : "an unreachable report was recorded less than 30 minutes ago; the question stays open" }));
+      const reasons = {
+        "first-unreachable": "first unreachable report recorded; the question stays open and comes back at a later sweep",
+        "too-soon": "an unreachable report was recorded less than 30 minutes ago; the question stays open",
+        "owned-by-askd": "askd asked this question itself and ends it; the sweep never cancels it and the question stays open",
+      };
+      console.log(JSON.stringify({ status: "deferred", id, reason: reasons[result.deferred] }));
       return;
     }
     if (action === "cancel") {

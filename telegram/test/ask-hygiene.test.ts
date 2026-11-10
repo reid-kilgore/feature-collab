@@ -364,3 +364,55 @@ test("tg ask refuses a sender address with no colon, from --from and from the en
     await h.teardown();
   }
 });
+
+test("sweep cancel never cancels a question asked by askd; ping works; an ask-both key is still cancelled after two reports", async () => {
+  const h = await setupHarness();
+  try {
+    const daemon = h.spawnCli(["daemon"]);
+    await waitForSocketAt(daemonSocketPath(h.home));
+    const askd = await openAsk(h, ["--from", "gone:win", "--key", "askd-274721137f53"], { title: "T" });
+    const direct = await openAsk(h, ["--from", "gone:other", "--key", "ask-both-abc123"], { title: "T" });
+    await until(async () => (await pendingJson(h)).length === 2);
+    const rows = await pendingJson(h);
+    const askdId = rows.find((r) => r.key === "askd-274721137f53")!.id;
+    const directId = rows.find((r) => r.key === "ask-both-abc123")!.id;
+    const age = (id: string, ms: number) => db(h).prepare("UPDATE batches SET created_at = ? WHERE id = ?").run(new Date(Date.now() - ms).toISOString(), id);
+    age(askdId, 61 * 60_000);
+    age(directId, 61 * 60_000);
+    const due = async () => JSON.parse((await h.runCli(["dispatcher", "sweep"])).stdout).due as Array<Record<string, any>>;
+    assert.deepEqual((await due()).map((x) => x.id).sort(), [askdId, directId].sort(), "the askd question is still nudged");
+
+    assert.equal((await h.runCli(["dispatcher", "sweep", "ping", askdId])).code, 0, "ping works");
+
+    // Reported unreachable three times, with the earlier reports far in the past: it still stays open.
+    for (let i = 0; i < 3; i++) {
+      const r = await h.runCli(["dispatcher", "sweep", "cancel", askdId]);
+      assert.equal(r.code, 0, r.stderr);
+      const out = JSON.parse(r.stdout);
+      assert.equal(out.status, "deferred");
+      assert.equal(out.id, askdId);
+      assert.match(out.reason, /askd/);
+      db(h).prepare("UPDATE audit SET at = ? WHERE batch_id = ?").run(new Date(Date.now() - 5 * 3600_000).toISOString(), askdId);
+    }
+    assert.ok((await pendingJson(h)).some((r) => r.id === askdId), "askd question still pending");
+    const kinds = (db(h).prepare("SELECT kind FROM audit WHERE batch_id = ?").all(askdId) as Array<{ kind: string }>).map((x) => x.kind);
+    assert.ok(!kinds.includes("sweep_cancel") && !kinds.includes("sweep_unreachable"), kinds.join());
+    const notice = () => h.fake.sent.filter((m) => m.method === "sendMessage" && /Cancelled the open question/.test(String(m.body.text ?? ""))).length;
+    assert.equal(notice(), 0, "no notice for the askd question");
+
+    // The ask-both question follows the old rule: one miss defers, the second, 31 minutes on, cancels.
+    assert.equal(JSON.parse((await h.runCli(["dispatcher", "sweep", "cancel", directId])).stdout).status, "deferred");
+    db(h).prepare("UPDATE audit SET at = ? WHERE batch_id = ? AND kind = 'sweep_unreachable'").run(new Date(Date.now() - 31 * 60_000).toISOString(), directId);
+    assert.equal(JSON.parse((await h.runCli(["dispatcher", "sweep", "cancel", directId])).stdout).status, "cancelled");
+    await direct.closed;
+    assert.deepEqual((await pendingJson(h)).map((r) => r.id), [askdId]);
+    assert.equal(notice(), 1);
+
+    // askd ends its own question by key.
+    assert.deepEqual(JSON.parse((await h.runCli(["cancel", "--key", "askd-274721137f53"])).stdout), { cancelled: [askdId] });
+    await askd.closed;
+    daemon.kill("SIGKILL");
+  } finally {
+    await h.teardown();
+  }
+});

@@ -943,6 +943,13 @@ async function handleConnection(socket: net.Socket, deps: ConnectionDeps): Promi
             write({ ok: true });
             return;
           }
+          // askd asks tg itself, from a process of its own, and ends the question on an answer, on its own expiry,
+          // or by `tg cancel --key`. The session this sweep nudges is not the waiter, so it being out of reach
+          // says nothing about the question. Nothing is recorded and nothing is cancelled, however often it is asked.
+          if (isAskdOwned(batch)) {
+            write({ ok: true, cancelled: false, deferred: "owned-by-askd" });
+            return;
+          }
           if (deps.store.hasAnswerProgress(batch.id)) {
             write({ error: `refusing to cancel ${batch.id}: the user has already answered or skipped part of it, or is answering it now. Only \`tg cancel ${batch.id}\` by the asker or the user can cancel it.` });
             return;
@@ -1007,6 +1014,11 @@ const SWEEP_STALE_MS = 60 * 60 * 1000;
 const SWEEP_QUIET_MS = 3 * 60 * 60 * 1000;
 // Two unreachable reports at least this far apart (one dispatcher sweep interval) are needed to cancel.
 const SWEEP_RECHECK_MS = 30 * 60 * 1000;
+// A question asked by askd (ask key `askd-<set id>`) is never cancelled by the sweep; askd ends it itself.
+const ASKD_KEY_PREFIX = "askd-";
+function isAskdOwned(batch: { ask_key: string | null }): boolean {
+  return batch.ask_key?.startsWith(ASKD_KEY_PREFIX) === true;
+}
 
 function createAskBatch(
   deps: ConnectionDeps,
