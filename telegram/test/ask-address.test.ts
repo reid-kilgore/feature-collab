@@ -16,7 +16,7 @@ test("the header ends with the asker's address when known, and is unchanged when
   assert.match(renderHeader(payload, "a<b>")!, /<i>a&lt;b&gt;<\/i>$/);
 });
 
-test("the footer names the address in place of the window name", () => {
+test("the footer (plain tg ask, or an askd set with no intro message to mark) names the address in place of the window name", () => {
   assert.equal(renderBatchDone("proj", "geo", "ship:geo"), "✅ Answers sent to the agent (proj, ship:geo)");
   assert.equal(renderBatchDone("proj", "geo"), "✅ Answers sent to the agent (proj, geo)");
   assert.equal(renderBatchDone("proj"), "✅ Answers sent to the agent (proj)");

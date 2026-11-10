@@ -170,6 +170,11 @@ export function renderHeader(payload: AskPayload, askerAddress?: string, askKey?
   return parts.join("\n");
 }
 
+// An askd set marks its intro message done by putting a check mark in front of it, in place of a separate message.
+export function renderHeaderDone(headerPart: string): string {
+  return `✅ ${headerPart}`;
+}
+
 export function renderBatchDone(askerBasename: string, tmuxWindow?: string, askerAddress?: string, askKey?: string | null): string {
   // An askd set has no asker worth naming: its address is only the pane that submitted it.
   if (isAskdKey(askKey)) return "✅ Answers sent to the agent";

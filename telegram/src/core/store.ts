@@ -28,6 +28,8 @@ export interface BatchRow {
   asker_address: string | null;
   // A decision key a caller attaches so the question can be cancelled when the answer is recorded elsewhere.
   ask_key: string | null;
+  // The Telegram message id of the set's intro (title and link) message, so it can be marked done. Null when none was sent.
+  header_message_id: number | null;
   payload_json: string;
   timeout_at: string | null;
   on_timeout: OnTimeout | null;
@@ -62,6 +64,7 @@ CREATE TABLE IF NOT EXISTS batches (
   asker_tmux_window TEXT,
   asker_address TEXT,
   ask_key TEXT,
+  header_message_id INTEGER,
   payload_json TEXT NOT NULL,
   timeout_at TEXT,
   on_timeout TEXT,
@@ -140,7 +143,7 @@ CREATE TABLE IF NOT EXISTS keyed_message (
 // explicitly checking for and adding columns/tables introduced after a table's original
 // release, so restarting the daemon on an existing state.sqlite never fails with
 // "no such column" again.
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
@@ -201,6 +204,10 @@ function migrate(db: DatabaseSync): void {
     if (!tableExists(db, "keyed_message")) {
       db.exec("CREATE TABLE keyed_message (key TEXT NOT NULL, message_id INTEGER NOT NULL, at TEXT NOT NULL, resolved_at TEXT, PRIMARY KEY (key, message_id))");
     }
+    // v6: the Telegram message id of a batch's intro message, so answering the set can put a check mark on it. Additive, nullable.
+    if (tableExists(db, "batches") && !columnExists(db, "batches", "header_message_id")) {
+      db.exec("ALTER TABLE batches ADD COLUMN header_message_id INTEGER");
+    }
 
     db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
       String(CURRENT_SCHEMA_VERSION),
@@ -251,7 +258,7 @@ export class Store {
 
   // ---- batches ----
 
-  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json" | "asker_address" | "ask_key"> & { asker_address?: string | null; ask_key?: string | null }): void {
+  createBatch(row: Omit<BatchRow, "created_at" | "updated_at" | "resolved_at" | "result_json" | "asker_address" | "ask_key" | "header_message_id"> & { asker_address?: string | null; ask_key?: string | null }): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -337,6 +344,10 @@ export class Store {
          ORDER BY b.created_at`,
       )
       .all(cutoff) as unknown as BatchRow[];
+  }
+
+  setBatchHeaderMessage(id: string, messageId: number): void {
+    this.db.prepare("UPDATE batches SET header_message_id = ? WHERE id = ?").run(messageId, id);
   }
 
   updateBatchStatus(id: string, status: BatchStatus, resultJson?: string): void {

@@ -13,7 +13,8 @@ export interface SentQuestion {
 export type ResolvedKind = "answered" | "skipped" | "cancelled" | "expired";
 
 export interface OutboundPort {
-  sendHeader(batch: BatchRow, payload: AskPayload): Promise<void>;
+  // Returns the id of the first intro message when one was sent, so the set can be marked done on it later.
+  sendHeader(batch: BatchRow, payload: AskPayload): Promise<{ messageId?: number } | void>;
   // replyToMessageId posts the question as a reply to an earlier message (used to move a question).
   sendQuestion(batch: BatchRow, question: Question, questionRow: QuestionRow, index: number, total: number, selected: string[], opts?: { replyToMessageId?: number }): Promise<SentQuestion>;
   // Turns the old copy of a moved question into a "moved below" note with no buttons.
@@ -25,6 +26,7 @@ export interface OutboundPort {
   // Deletes a question's own message; false when it could not be deleted, so the caller edits it instead.
   // true: deleted. false or { error }: Telegram refused (error is its description, when known).
   deleteQuestionMessage?(batch: BatchRow, questionRow: QuestionRow): Promise<boolean | { error: string }>;
+  // Tells the chat the set is answered: a check mark on its intro message when the transport can, else a message.
   sendBatchDone(batch: BatchRow): Promise<void>;
 }
 
@@ -40,7 +42,8 @@ export async function startBatch(store: Store, port: OutboundPort, batchId: stri
   const batch = store.getBatch(batchId);
   if (!batch) throw new Error(`unknown batch ${batchId}`);
   const payload = JSON.parse(batch.payload_json) as AskPayload;
-  await port.sendHeader(batch, payload);
+  const header = await port.sendHeader(batch, payload);
+  if (header && header.messageId) store.setBatchHeaderMessage(batch.id, header.messageId);
   await sendQuestionAtIndex(store, port, batch, payload, 0);
 }
 
