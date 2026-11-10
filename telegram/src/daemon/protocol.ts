@@ -77,7 +77,7 @@ export interface SweepResponse {
   due?: Array<PendingBatch & { ageMinutes: number }>;
   ok?: true;
   cancelled?: boolean;
-  deferred?: "first-unreachable" | "too-soon"; // cancel was asked but not done: wait for a later sweep
+  deferred?: "first-unreachable" | "too-soon" | "owned-by-askd"; // cancel was asked but not done: wait for a later sweep
 }
 
 export interface WaitRequest {

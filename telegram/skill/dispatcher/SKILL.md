@@ -57,7 +57,7 @@ command (`tg dispatcher sweep ping <id>`): that question is left alone for three
 answers to `to`, run its `onUnreachable` command (`tg dispatcher sweep cancel <id>`): the first time it only
 records the miss and prints `deferred`; the question stays open and comes back on a later wake-up. Only a second
 miss at least 30 minutes later, with no successful ping between, cancels it and tells the user once. A question
-the user has already answered or skipped part of is never listed, and the command refuses to cancel it. An entry you skip comes back on the next wake-up. `tg dispatcher sweep` with no argument
+the user has already answered or skipped part of is never listed, and the command refuses to cancel it. A question asked by askd (its key starts with `askd-`) is never cancelled by the sweep: askd waits on it from its own process and ends it itself, so run `onUnreachable` as usual and expect `deferred`; the question stays open. An entry you skip comes back on the next wake-up. `tg dispatcher sweep` with no argument
 prints the same list. Each ping and cancel is recorded in the audit table.
 
 A question that names no session at all is not yours to handle: the daemon cancels it itself after an hour,
