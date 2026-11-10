@@ -192,3 +192,12 @@ test("a tmux that fails to answer leaves the old rule: bare text, no sender", as
     await h.teardown();
   }
 });
+
+test("an askd set message (ask key askd-...) has no asker address line; its link stays a labelled link", () => {
+  const payload = { version: 1, title: "Permissions rework: Cash tips", questions: [],
+    message: "Full context on the [questions page](https://example.test/sets/812e/) or in the mini app." } as never;
+  assert.equal(renderHeader(payload, "review:perms", "askd-812e91e99b53"),
+    '📋 <b>Permissions rework: Cash tips</b>\nFull context on the <a href="https://example.test/sets/812e/">questions page</a> or in the mini app.');
+  assert.match(renderHeader(payload, "review:perms", "ask-both-1234")!, /<i>review:perms<\/i>$/);
+  assert.match(renderHeader(payload, "review:perms")!, /<i>review:perms<\/i>$/);
+});
