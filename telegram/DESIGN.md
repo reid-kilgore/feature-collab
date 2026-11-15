@@ -460,6 +460,8 @@ watches for that on a timer so the link reaches Reid on Telegram before somethin
 
 **Addendum, 2026-10-23 (faster and observable).** The default interval is 2 minutes (it was 10; a block that begins and is approved within two minutes could fall between two ticks). Every probe is logged to `daemon.log` ("tailscale probe mbp to duo: ok"), every state change on its own line, and the last probe time and result per direction are kept in `meta` and shown by `tg status`. A probe that printed no link and did not exit within the watch window used to hold its pair until the kill timer (default 1 hour), so no later tick looked at it; it is now killed at once, counted, and reported after two in a row ("probe does not answer"). A probe that simply worked used to be handled twice (once from its result, once from its exit), which probed the reverse direction twice a tick; it is now handled once.
 
+**Addendum, 2026-11-15 (status notices remove themselves).** "Tailscale SSH works again" and "Tailscale probe answers again" are sent under their own key (`tailscale-note:<time>`) and removed 60 seconds later through the same keyed-message removal `tg resolve --key` uses (delete, else edit to "Resolved."). The due times are kept in `meta` (`tsw-expiry`), so a restart removes an overdue notice at start and the first tick, and re-arms the rest. A failed removal is logged and dropped. Approval link notices have no timer: they are removed when the pair is next recorded as working (`tailscale-link:<pair>`, unchanged).
+
 ## Question sweep (added 2026-10-24)
 
 A pending batch older than one hour is swept every 30 seconds (the sweeper timer; `AGENT_TELEGRAM_SWEEP_MS` shortens it in tests). Two halves:

@@ -141,7 +141,14 @@ export interface WatcherDeps {
   log: (line: string) => void;
   config: () => WatchConfig | undefined;
   pending?: Map<string, PendingTailscaleCheck>;
+  // Runs `fn` after `ms`; the daemon uses an unref'd setTimeout. A test passes a fake to control time.
+  setTimer?: (fn: () => void, ms: number) => void;
 }
+
+// "Works again" and "answers again" carry no link, so they remove themselves after this long.
+export const NOTICE_TTL_MS = 60_000;
+// Meta key holding {noteKey: dueMs} for notices not yet removed, so a restart still removes them.
+const EXPIRY_META = "tsw-expiry";
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -162,6 +169,7 @@ export class TailscaleWatcher {
   // restart does not leave a lapse unnoticed for a whole interval.
   start(firstDelayMs = 30_000): void {
     this.stopped = false;
+    void this.sweepNotices();
     const run = (delay: number) => {
       this.timer = setTimeout(async () => {
         try {
@@ -185,6 +193,7 @@ export class TailscaleWatcher {
   }
 
   async tick(): Promise<void> {
+    await this.sweepNotices();
     const config = this.deps.config();
     if (!config) return;
     const down = new Set<string>(); // hosts that did not go through this tick
@@ -313,6 +322,65 @@ export class TailscaleWatcher {
     }
   }
 
+  private loadExpiry(): Record<string, number> {
+    try {
+      const raw = this.deps.getMeta(EXPIRY_META);
+      if (raw) return JSON.parse(raw) as Record<string, number>;
+    } catch {
+      // unreadable: treated as empty
+    }
+    return {};
+  }
+
+  private armed = new Set<string>();
+
+  // Removes every notice whose time is up, and sets a timer for the rest (this is what carries a notice
+  // across a daemon restart: the due times are in meta). A failed removal is logged and dropped.
+  async sweepNotices(): Promise<void> {
+    const table = this.loadExpiry();
+    const now = this.deps.now();
+    for (const [noteKey, due] of Object.entries(table)) {
+      if (due <= now) await this.expireNotice(noteKey);
+      else this.arm(noteKey, due - now);
+    }
+  }
+
+  private arm(noteKey: string, ms: number): void {
+    if (this.armed.has(noteKey)) return;
+    this.armed.add(noteKey);
+    const set = this.deps.setTimer ?? ((fn, delay) => void setTimeout(fn, delay).unref?.());
+    set(() => void this.expireNotice(noteKey), ms);
+  }
+
+  private async expireNotice(noteKey: string): Promise<void> {
+    this.armed.delete(noteKey);
+    try {
+      await this.deps.resolve?.(noteKey);
+    } catch (error) {
+      this.deps.log(`tailscale watch: could not remove notice ${noteKey}: ${(error as Error).message}`);
+    }
+    const table = this.loadExpiry();
+    delete table[noteKey];
+    this.deps.setMeta(EXPIRY_META, JSON.stringify(table));
+  }
+
+  // Sends a notice that removes itself after NOTICE_TTL_MS.
+  private async sendTransient(html: string): Promise<void> {
+    const noteKey = `tailscale-note:${this.deps.now()}`;
+    const due = this.deps.now() + NOTICE_TTL_MS;
+    // Write the due time first, so a failure after the send still leaves it on the table.
+    this.deps.setMeta(EXPIRY_META, JSON.stringify({ ...this.loadExpiry(), [noteKey]: due }));
+    try {
+      await this.deps.send(html, undefined, noteKey);
+    } catch (error) {
+      const table = this.loadExpiry();
+      delete table[noteKey];
+      this.deps.setMeta(EXPIRY_META, JSON.stringify(table));
+      throw error;
+    }
+    this.arm(noteKey, NOTICE_TTL_MS);
+  }
+
   private linkKey(key: string): string {
     return `tailscale-link:${key}`;
   }
@@ -326,8 +394,8 @@ export class TailscaleWatcher {
     } catch (error) {
       this.deps.log(`tailscale watch: could not resolve the link notice for ${this.plainLabel(alias, via)}: ${(error as Error).message}`);
     }
-    if (st.state === "needs_check") await this.deps.send(`<b>Tailscale SSH works again</b>\n${this.label(alias, via)}`);
-    else if (st.hungNotified) await this.deps.send(`<b>Tailscale probe answers again</b>\n${this.label(alias, via)}`);
+    if (st.state === "needs_check") await this.sendTransient(`<b>Tailscale SSH works again</b>\n${this.label(alias, via)}`);
+    else if (st.hungNotified) await this.sendTransient(`<b>Tailscale probe answers again</b>\n${this.label(alias, via)}`);
     this.patch(alias, via, { state: "ok", hungCount: 0, hungNotified: false, noticeAt: undefined });
   }
 }

@@ -97,7 +97,7 @@ test("the Tailscale watch keys its link notice and resolves it when the pair pro
   await watcher.tick();
   assert.deepEqual(resolved, ["tailscale-link:duo"]);
   assert.match(sent[1]!.text, /works again/);
-  assert.equal(sent[1]!.key, undefined, "the status line is not a link notice");
+  assert.match(sent[1]!.key ?? "", /^tailscale-note:/, "the status line has its own key, so it can expire on a timer; it is not a link notice");
 });
 
 test("tg send --key then tg resolve --key deletes the message through the daemon; help acts on nothing", async () => {
