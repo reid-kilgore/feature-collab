@@ -11,7 +11,7 @@ import { TailscaleWatcher, parseTailscaleWatchConfig } from "../src/inbox/tailsc
 import type { TailscaleCheckHandle, TailscaleCheckResult } from "../src/inbox/tailscale.ts";
 import { setupHarness, sleep, waitForSocketAt, daemonSocketPath } from "./support/harness.ts";
 
-type Sent = { text: string; url?: string };
+type Sent = { text: string; url?: string; key?: string };
 
 // A scripted ssh: each call to start() returns the next scripted outcome. `child` lets a test close it.
 function fakes() {
@@ -20,6 +20,9 @@ function fakes() {
   const script: TailscaleCheckResult[] = [];
   let clock = 1_000_000;
   const meta = new Map<string, string>();
+  const resolved: string[] = [];
+  const timers: Array<{ fn: () => void; ms: number }> = [];
+  const opts = { failResolve: false };
   const watcher = (config = { hosts: ["duo"], reverse: [{ via: "duo", target: "mbp" }], intervalSeconds: 600, reminderSeconds: 3600 }) =>
     new TailscaleWatcher({
       startCheck: (alias, opts) => {
@@ -29,9 +32,14 @@ function fakes() {
         const result = script.shift() ?? { kind: "no-link", detail: "(no output)", exitCode: 255 };
         return { result: Promise.resolve(result), child: child as never } as TailscaleCheckHandle;
       },
-      send: async (text, url) => {
-        sent.push({ text, url });
+      send: async (text, url, key) => {
+        sent.push({ text, url, key });
       },
+      resolve: async (key) => {
+        resolved.push(key);
+        if (opts.failResolve) throw new Error("message already gone");
+      },
+      setTimer: (fn, ms) => void timers.push({ fn, ms }),
       now: () => clock,
       localName: "mbp",
       getMeta: (k) => meta.get(k),
@@ -39,7 +47,7 @@ function fakes() {
       log: () => {},
       config: () => config,
     });
-  return { sent, started, script, meta, watcher, advance: (ms: number) => (clock += ms) };
+  return { sent, started, script, meta, resolved, timers, opts, watcher, advance: (ms: number) => (clock += ms) };
 }
 
 const link = (id: string): TailscaleCheckResult => ({ kind: "link", url: `https://login.tailscale.com/a/${id}` });
@@ -88,6 +96,67 @@ test("when the waiting ssh exits 0 (approved) Reid is told, and the reverse dire
   assert.equal(f.sent[2]!.url, "https://login.tailscale.com/a/bbb222");
   assert.match(f.sent[2]!.text, /duo to mbp/);
   assert.equal(f.started[1]!.via, "duo");
+});
+
+// A pair that needed approval, then went through: leaves one "works again" notice (sent.length 3 with the reverse link).
+async function approvedPair(f: ReturnType<typeof fakes>, w: TailscaleWatcher) {
+  f.script.push(link("aaa111"), link("bbb222"));
+  await w.tick();
+  f.started[0]!.child.emit("close", 0, null);
+  await sleep(20);
+}
+
+test("the works-again notice removes itself after 60 seconds; the approval links do not expire on a timer", async () => {
+  const f = fakes();
+  const w = f.watcher();
+  await approvedPair(f, w);
+  const note = f.sent[1]!;
+  assert.match(note.text, /works again/);
+  assert.ok(note.key?.startsWith("tailscale-note:"));
+  assert.equal(f.timers.length, 1, "only the notice has a timer, not the two link messages");
+  assert.equal(f.timers[0]!.ms, 60_000);
+  assert.ok(!f.resolved.includes(note.key!), "not removed before its time");
+  f.timers[0]!.fn();
+  await sleep(5);
+  assert.ok(f.resolved.includes(note.key!));
+  assert.equal(JSON.parse(f.meta.get("tsw-expiry")!)[note.key!], undefined, "its due time is cleared");
+});
+
+test("when SSH works again the earlier needs-approval link notice for that pair is removed", async () => {
+  const f = fakes();
+  await approvedPair(f, f.watcher());
+  assert.equal(f.sent[0]!.key, "tailscale-link:duo");
+  assert.ok(f.resolved.includes("tailscale-link:duo"), "the stale link notice for mbp to duo is deleted");
+  assert.ok(!f.resolved.includes("tailscale-link:duo>mbp"), "the other pair's link is still live");
+});
+
+test("a failed removal is logged and ignored, and the watcher goes on", async () => {
+  const f = fakes();
+  f.opts.failResolve = true;
+  const w = f.watcher();
+  await approvedPair(f, w);
+  assert.equal(f.sent.length, 3, "the clear notice and the reverse probe still happened");
+  f.timers[0]!.fn();
+  await sleep(5);
+  assert.equal(JSON.parse(f.meta.get("tsw-expiry")!)[f.sent[1]!.key!], undefined, "dropped, not retried forever");
+  f.script.push(ok, ok);
+  await w.tick(); // still runs
+});
+
+test("a restart removes a notice that came due while the daemon was down, and re-arms one still waiting", async () => {
+  const f = fakes();
+  await approvedPair(f, f.watcher());
+  const key = f.sent[1]!.key!;
+  f.timers.length = 0;
+  f.resolved.length = 0;
+  f.advance(20_000);
+  f.script.push(ok, ok);
+  await f.watcher().tick(); // new instance, same meta: not yet due
+  assert.equal(f.timers[0]!.ms, 40_000, "re-armed for the time left");
+  assert.ok(!f.resolved.includes(key));
+  f.advance(60_000);
+  await f.watcher().tick(); // another new instance, now overdue
+  assert.ok(f.resolved.includes(key));
 });
 
 test("an unreachable host is silent, and recovering from silence is silent too", async () => {
