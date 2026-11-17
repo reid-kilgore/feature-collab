@@ -13,12 +13,13 @@ function links(t: ReturnType<typeof loadPage>) {
   return t.doc.hubbar.find((n) => n.tagName === "A");
 }
 
-test("the bar has Questions, Threads and Work links pointing at the hub", () => {
+test("the bar has Questions, Threads, Work and Work (phone) links pointing at the hub", () => {
   const t = loadPage({ nativeBack: true, routes, hub: HUB });
   assert.deepEqual(links(t).map((a) => [a.textContent, a.attrs.href]), [
     ["Questions", `${HUB}/`],
     ["Threads", `${HUB}/threads`],
     ["Work", `${HUB}/#work-wip`],
+    ["Work (phone)", `${HUB}/work/phone`],
   ]);
   assert.match(t.doc.hubbar.textContent, /Opens in your browser; needs Tailscale on/);
 });
@@ -40,7 +41,7 @@ test("the hint is dismissible and stays dismissed", () => {
   const close = first.doc.hubbar.find((n) => n.tagName === "BUTTON")[0]!;
   first.doc.fire(close, "click");
   assert.doesNotMatch(first.doc.hubbar.textContent, /Tailscale/);
-  assert.equal(links(first).length, 3, "the links stay");
+  assert.equal(links(first).length, 4, "the links stay");
   const second = loadPage({ nativeBack: true, routes, hub: HUB, storage });
   assert.doesNotMatch(second.doc.hubbar.textContent, /Tailscale/);
 });
