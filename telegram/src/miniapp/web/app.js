@@ -829,7 +829,7 @@
   // Top bar: links to the tailnet hub. They open in the phone's browser (Telegram openLink),
   // never inside this public page. Outside Telegram they are ordinary links.
   var HUB_HINT_KEY = 'hubBarHintDismissed';
-  var HUB_LINKS = [['Questions', '/'], ['Threads', '/threads'], ['Work', '/#work-wip']];
+  var HUB_LINKS = [['Questions', '/'], ['Threads', '/threads'], ['Work', '/#work-wip'], ['Work (phone)', '/work/phone']];
 
   function hintDismissed() {
     try { return window.localStorage.getItem(HUB_HINT_KEY) === '1'; } catch (e) { return false; }
