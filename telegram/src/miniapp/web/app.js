@@ -829,7 +829,8 @@
   // Top bar: links to the tailnet hub. They open in the phone's browser (Telegram openLink),
   // never inside this public page. Outside Telegram they are ordinary links.
   var HUB_HINT_KEY = 'hubBarHintDismissed';
-  var HUB_LINKS = [['Questions', '/'], ['Threads', '/threads'], ['Work', '/#work-wip'], ['Work (phone)', '/work/phone']];
+  // One Work link, to the phone work page; the old work page is not linked (Reid, inbox mbp:a2329, 2026-11-18: "Mini app too").
+  var HUB_LINKS = [['Questions', '/'], ['Threads', '/threads'], ['Work', '/work/phone']];
 
   function hintDismissed() {
     try { return window.localStorage.getItem(HUB_HINT_KEY) === '1'; } catch (e) { return false; }
